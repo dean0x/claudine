@@ -1,9 +1,9 @@
 {
-  "name": "claudine-mcp",
+  "name": "claudine",
   "version": "0.1.0",
   "main": "dist/index.js",
   "bin": {
-    "claudine-mcp": "./dist/cli.js"
+    "claudine": "./dist/cli.js"
   },
   "files": [
     "dist",
@@ -26,7 +26,6 @@
     "test:cancel": "node tests/manual/test-cancel-proper.js",
     "test:comprehensive": "node tests/manual/test-comprehensive.js",
     "validate": "./scripts/validate.sh",
-    "install:setup": "./scripts/install.sh",
     "prepublishOnly": "npm run build",
     "postinstall": "npm run build"
   },

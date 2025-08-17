@@ -100,22 +100,25 @@ Use the MCP Inspector or Claude Code to test the server:
 2. Test tool invocations (DelegateTask, TaskStatus, CancelTask, etc.)
 3. Verify background instance delegation and management
 
-## CLI Usage (Phase 2 Feature)
+## CLI Usage
 
-### Installation
+### MCP Server Commands
 ```bash
-npm install -g claudine
-# or run locally with npx
+# Start the MCP server
+claudine mcp start
+
+# Test the server in mock mode
+claudine mcp test
 ```
 
-### Commands
+### Phase 2 - Direct Task Commands (Future)
 - `claudine delegate <task>` - Delegate a task to background Claude Code instance
 - `claudine status [task-id]` - Check task status (all tasks if no ID provided)
 - `claudine logs <task-id>` - Get task output and logs
 - `claudine cancel <task-id>` - Cancel a running task
 - `claudine list` - List all tasks with their current status
 
-### CLI Examples
+### Future CLI Examples
 ```bash
 # Delegate a simple task
 claudine delegate "analyze the codebase and find all TODO comments"

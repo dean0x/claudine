@@ -22,7 +22,7 @@ Claudine is an MCP (Model Context Protocol) server that enables Claude Code to d
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/claudine.git
+git clone https://github.com/dean0x/claudine.git
 cd claudine
 
 # Install dependencies
@@ -30,6 +30,9 @@ npm install
 
 # Build the project
 npm run build
+
+# Or install globally via npm (once published)
+npm install -g claudine
 ```
 
 ### Configuration
@@ -57,6 +60,21 @@ Add Claudine to your Claude Code MCP configuration:
 3. The MCP server will be available in your next Claude Code session
 
 ## Usage
+
+### CLI Commands
+
+```bash
+# Start the MCP server manually
+claudine mcp start
+
+# Test the server in mock mode
+claudine mcp test
+
+# Show help
+claudine help
+```
+
+### MCP Tools in Claude Code
 
 Once configured, you can use Claudine's tools in Claude Code:
 

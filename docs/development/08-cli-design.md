@@ -63,7 +63,27 @@ While the MCP interface enables seamless Claude Desktop integration, a CLI inter
 
 ## Command Specifications
 
-### Primary Commands
+### Current Commands (Phase 1)
+
+#### `claudine mcp start`
+Start the MCP server for Claude Code integration.
+
+**Examples:**
+```bash
+# Start MCP server
+claudine mcp start
+```
+
+#### `claudine mcp test`
+Test the MCP server in mock mode.
+
+**Examples:**
+```bash
+# Test server functionality
+claudine mcp test
+```
+
+### Future Commands (Phase 2)
 
 #### `claudine delegate <task>`
 Delegate a task to a background Claude Code instance.
@@ -278,7 +298,10 @@ export class StateManager {
 # Global installation
 npm install -g claudine
 
-# Or use npx
+# Or use npx (Phase 1 - MCP commands)
+npx claudine mcp start
+
+# Future Phase 2 commands
 npx claudine delegate "task"
 ```
 
