@@ -1,0 +1,10 @@
+node_modules/
+dist/
+logs/
+.env
+*.log
+.DS_Store
+config/claudine-config.json
+config/mcp-config-snippet.json
+.claudine-worktrees/
+task-outputs/

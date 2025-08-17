@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "claudine": {
+      "command": "node",
+      "args": ["/workspace/claudine/dist/index.js"],
+      "env": {
+        "MOCK_MODE": "true"
+      }
+    }
+  }
+}

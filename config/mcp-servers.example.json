@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "claudine": {
+      "command": "node",
+      "args": ["/absolute/path/to/claudine/dist/index.js"],
+      "env": {
+        "NODE_ENV": "production",
+        "LOG_LEVEL": "info"
+      }
+    },
+    "claudine-dev": {
+      "command": "npx",
+      "args": ["tsx", "/absolute/path/to/claudine/src/index.ts"],
+      "env": {
+        "NODE_ENV": "development",
+        "LOG_LEVEL": "debug",
+        "MOCK_MODE": "false"
+      }
+    }
+  }
+}
