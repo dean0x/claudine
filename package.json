@@ -1,7 +1,16 @@
 {
-  "name": "claudine",
+  "name": "claudine-mcp",
   "version": "0.1.0",
   "main": "dist/index.js",
+  "bin": {
+    "claudine-mcp": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "config/mcp-servers.example.json"
+  ],
   "directories": {
     "doc": "docs"
   },
@@ -17,12 +26,25 @@
     "test:cancel": "node tests/manual/test-cancel-proper.js",
     "test:comprehensive": "node tests/manual/test-comprehensive.js",
     "validate": "./scripts/validate.sh",
-    "install:setup": "./scripts/install.sh"
+    "install:setup": "./scripts/install.sh",
+    "prepublishOnly": "npm run build",
+    "postinstall": "npm run build"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": ["mcp", "claude", "claude-code", "automation", "task-delegation"],
+  "author": "dean0x",
+  "license": "MIT",
   "description": "MCP server for delegating tasks to Claude Code",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dean0x/claudine.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dean0x/claudine/issues"
+  },
+  "homepage": "https://github.com/dean0x/claudine#readme",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "type": "module",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.3",
