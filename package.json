@@ -1,6 +1,6 @@
 {
   "name": "claudine",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "main": "dist/index.js",
   "bin": {
     "claudine": "./dist/cli.js"
@@ -29,7 +29,13 @@
     "prepublishOnly": "npm run build",
     "postinstall": "npm run build"
   },
-  "keywords": ["mcp", "claude", "claude-code", "automation", "task-delegation"],
+  "keywords": [
+    "mcp",
+    "claude",
+    "claude-code",
+    "automation",
+    "task-delegation"
+  ],
   "author": "dean0x",
   "license": "MIT",
   "description": "MCP server for delegating tasks to Claude Code",

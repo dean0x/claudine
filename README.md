@@ -46,27 +46,64 @@ npm run build
 
 ### Configuration
 
-Add Claudine to your Claude Code MCP configuration:
+#### Quick Setup
 
-1. Find your Claude Code MCP config file:
-   - macOS/Linux: `~/.config/claude/mcp_servers.json`
-   - Windows: `%USERPROFILE%\.config\claude\mcp_servers.json`
+Get the configuration for your platform:
+```bash
+claudine mcp config
+```
 
-2. Add Claudine to the `mcpServers` section:
+#### For Claude Code
+
+Add to `.mcp.json` in your project root:
 
 ```json
 {
   "mcpServers": {
     "claudine": {
-      "command": "node",
-      "args": ["/absolute/path/to/claudine/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "claudine", "mcp", "start"],
       "env": {}
     }
   }
 }
 ```
 
-3. The MCP server will be available in your next Claude Code session
+#### For Claude Desktop
+
+Add to your Claude Desktop configuration file:
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "claudine": {
+      "command": "npx",
+      "args": ["-y", "claudine", "mcp", "start"],
+      "env": {}
+    }
+  }
+}
+```
+
+#### For Global Installation
+
+If you installed Claudine globally with `npm install -g claudine`:
+
+```json
+{
+  "mcpServers": {
+    "claudine": {
+      "command": "claudine",
+      "args": ["mcp", "start"],
+      "env": {}
+    }
+  }
+}
+```
+
+After adding the configuration, restart Claude Code or Claude Desktop to connect to Claudine.
 
 ## Usage
 
@@ -78,6 +115,9 @@ claudine mcp start
 
 # Test the server in mock mode
 claudine mcp test
+
+# Show MCP configuration
+claudine mcp config
 
 # Show help
 claudine help

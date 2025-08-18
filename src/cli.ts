@@ -21,13 +21,53 @@ Usage:
 Commands:
   mcp start      Start the MCP server
   mcp test       Test the server in mock mode
+  mcp config     Show MCP configuration for Claude
   help           Show this help message
 
 Examples:
-  claudine mcp start    # Start the MCP server
-  claudine mcp test     # Test that it works
+  claudine mcp start     # Start the MCP server
+  claudine mcp test      # Test that it works
+  claudine mcp config    # Get configuration JSON
   
 Repository: https://github.com/dean0x/claudine
+`);
+}
+
+function showConfig() {
+  const config = {
+    mcpServers: {
+      claudine: {
+        command: "npx",
+        args: ["-y", "claudine", "mcp", "start"],
+        env: {}
+      }
+    }
+  };
+
+  console.log(`
+📋 MCP Configuration for Claudine
+
+Add this to your MCP configuration file:
+
+${JSON.stringify(config, null, 2)}
+
+Configuration file locations:
+- Claude Code: .mcp.json (in project root)
+- Claude Desktop (macOS): ~/Library/Application Support/Claude/claude_desktop_config.json
+- Claude Desktop (Windows): %APPDATA%\\Claude\\claude_desktop_config.json
+
+For global installation, use:
+{
+  "mcpServers": {
+    "claudine": {
+      "command": "claudine",
+      "args": ["mcp", "start"],
+      "env": {}
+    }
+  }
+}
+
+Learn more: https://github.com/dean0x/claudine#configuration
 `);
 }
 
@@ -62,9 +102,12 @@ if (mainCommand === 'mcp') {
       process.exit(0);
     }, 3000);
     
+  } else if (subCommand === 'config') {
+    showConfig();
+    
   } else {
     console.error(`❌ Unknown MCP subcommand: ${subCommand || '(none)'}`);
-    console.log('Valid subcommands: start, test');
+    console.log('Valid subcommands: start, test, config');
     process.exit(1);
   }
   
