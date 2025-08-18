@@ -60,9 +60,21 @@ jobs:
     - name: Build
       run: npm run build
     
-    # Uncomment when ready to auto-publish to npm
-    # - name: Publish to npm
-    #   run: npm publish --access public
-    #   env:
-    #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-    #   if: contains(github.event.head_commit.message, '[release]')
+    - name: Check if version changed
+      id: version
+      run: |
+        PUBLISHED_VERSION=$(npm view claudine version 2>/dev/null || echo "0.0.0")
+        PACKAGE_VERSION=$(node -p "require('./package.json').version")
+        echo "published=$PUBLISHED_VERSION" >> $GITHUB_OUTPUT
+        echo "package=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+        if [ "$PUBLISHED_VERSION" != "$PACKAGE_VERSION" ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Publish to npm
+      if: steps.version.outputs.changed == 'true' || contains(github.event.head_commit.message, '[release]')
+      run: npm publish --access public
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
