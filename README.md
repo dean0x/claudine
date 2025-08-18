@@ -1,6 +1,6 @@
 # Claudine - MCP Server for Claude Code Task Delegation
 
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
+[![npm version](https://img.shields.io/npm/v/claudine.svg)](https://www.npmjs.com/package/claudine)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Node](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)
 [![CI](https://github.com/dean0x/claudine/actions/workflows/ci.yml/badge.svg)](https://github.com/dean0x/claudine/actions/workflows/ci.yml)
@@ -26,6 +26,12 @@ Claudine is an MCP (Model Context Protocol) server that enables Claude Code to d
 
 ### Installation
 
+#### Option 1: Install from npm (Recommended)
+```bash
+npm install -g claudine
+```
+
+#### Option 2: Install from source
 ```bash
 # Clone the repository
 git clone https://github.com/dean0x/claudine.git
@@ -36,9 +42,6 @@ npm install
 
 # Build the project
 npm run build
-
-# Or install globally via npm (once published)
-npm install -g claudine
 ```
 
 ### Configuration
