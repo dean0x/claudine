@@ -1,4 +1,4 @@
-# Claudine - MCP Server for Claude Code Task Delegation
+# Claudine - Claude Code Background Task Delegation MCP Server
 
 [![npm version](https://img.shields.io/npm/v/claudine.svg)](https://www.npmjs.com/package/claudine)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -6,7 +6,7 @@
 [![CI](https://github.com/dean0x/claudine/actions/workflows/ci.yml/badge.svg)](https://github.com/dean0x/claudine/actions/workflows/ci.yml)
 ![MCP](https://img.shields.io/badge/MCP-Compatible-purple)
 
-Claudine is an MCP (Model Context Protocol) server that enables Claude Code to delegate tasks to background Claude Code instances, allowing for parallel task execution without context switching.
+Claudine is an MCP server that enables Claude Code to delegate tasks to background Claude Code instances, allowing for parallel task execution without context switching.
 
 ## Features
 
@@ -62,26 +62,7 @@ Add to `.mcp.json` in your project root:
   "mcpServers": {
     "claudine": {
       "command": "npx",
-      "args": ["-y", "claudine", "mcp", "start"],
-      "env": {}
-    }
-  }
-}
-```
-
-#### For Claude Desktop
-
-Add to your Claude Desktop configuration file:
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "claudine": {
-      "command": "npx",
-      "args": ["-y", "claudine", "mcp", "start"],
-      "env": {}
+      "args": ["-y", "claudine", "mcp", "start"]
     }
   }
 }
@@ -96,8 +77,7 @@ If you installed Claudine globally with `npm install -g claudine`:
   "mcpServers": {
     "claudine": {
       "command": "claudine",
-      "args": ["mcp", "start"],
-      "env": {}
+      "args": ["mcp", "start"]
     }
   }
 }
@@ -281,8 +261,6 @@ MIT License - see LICENSE file for details
 ## Support
 
 - Report issues: [GitHub Issues](https://github.com/dean0x/claudine/issues)
-- Documentation: [docs/](./docs/)
-- Discord: Coming soon
 
 ## Acknowledgments
 

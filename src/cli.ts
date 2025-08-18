@@ -38,8 +38,7 @@ function showConfig() {
     mcpServers: {
       claudine: {
         command: "npx",
-        args: ["-y", "claudine", "mcp", "start"],
-        env: {}
+        args: ["-y", "claudine", "mcp", "start"]
       }
     }
   };
@@ -61,8 +60,7 @@ For global installation, use:
   "mcpServers": {
     "claudine": {
       "command": "claudine",
-      "args": ["mcp", "start"],
-      "env": {}
+      "args": ["mcp", "start"]
     }
   }
 }
