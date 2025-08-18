@@ -68,6 +68,34 @@ Add to `.mcp.json` in your project root:
 }
 ```
 
+#### For Local Development
+
+When developing or testing Claudine locally, use the built files directly:
+
+```json
+{
+  "mcpServers": {
+    "claudine": {
+      "command": "node",
+      "args": ["/path/to/claudine/dist/index.js"]
+    }
+  }
+}
+```
+
+Replace `/path/to/claudine` with your actual path. You can also use relative paths if the config file is in a stable location:
+
+```json
+{
+  "mcpServers": {
+    "claudine": {
+      "command": "node",
+      "args": ["../claudine/dist/index.js"]
+    }
+  }
+}
+```
+
 #### For Global Installation
 
 If you installed Claudine globally with `npm install -g claudine`:

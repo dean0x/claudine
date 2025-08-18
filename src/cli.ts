@@ -55,6 +55,16 @@ Configuration file locations:
 - Claude Desktop (macOS): ~/Library/Application Support/Claude/claude_desktop_config.json
 - Claude Desktop (Windows): %APPDATA%\\Claude\\claude_desktop_config.json
 
+For local development, use:
+{
+  "mcpServers": {
+    "claudine": {
+      "command": "node",
+      "args": ["/path/to/claudine/dist/index.js"]
+    }
+  }
+}
+
 For global installation, use:
 {
   "mcpServers": {
