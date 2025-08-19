@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Claudine is an MCP (Model Context Protocol) server that acts as a sidekick to Claude, enabling task delegation to background Claude Code instances. It provides sophisticated task management capabilities including priority-based execution (P0, P1, P2) and dependency ordering.
+Claudine is an MCP (Model Context Protocol) server designed for dedicated servers that acts as a sidekick to Claude, enabling task delegation to background Claude Code instances. It features automatic scaling based on system resources, with no artificial worker limits - spawning as many Claude Code instances as the server can handle.
 
 ## Core Architecture
 
@@ -15,17 +15,25 @@ Claudine is an MCP (Model Context Protocol) server that acts as a sidekick to Cl
 
 ### Key Components
 
-1. **Task Manager**
-   - Handles task prioritization (P0 = critical, P1 = high, P2 = normal)
-   - Manages task dependencies and execution order
-   - Maintains task state and execution history
+1. **Autoscaling Manager**
+   - Monitors system CPU and memory in real-time
+   - Spawns new workers when resources are available
+   - No artificial worker limits - uses all available resources
+   - Maintains 20% CPU headroom and 1GB RAM for system stability
 
-2. **Claude Code Instance Manager**
-   - Delegates tasks to background Claude Code instances
-   - Routes tasks to appropriate instances
+2. **Task Queue**
+   - FIFO queue for pending tasks
+   - Processes tasks as soon as resources become available
+   - No queue size limits (only limited by memory)
+   - Priority support (P0 = critical, P1 = high, P2 = normal)
+
+3. **Claude Code Instance Manager**
+   - Spawns background Claude Code instances dynamically
+   - Each instance runs with --dangerously-skip-permissions
    - Monitors instance health and resource usage
+   - Automatic cleanup on completion or failure
 
-3. **MCP Protocol Handler**
+4. **MCP Protocol Handler**
    - Implements MCP server specification
    - Handles tool registration and invocation (DelegateTask, TaskStatus, etc.)
    - Manages communication between Claude and background instances
@@ -138,8 +146,11 @@ claudine list --format table
 
 ## Important Considerations
 
-1. **Resource Management**: Monitor and limit the number of concurrent Claude Code instances
-2. **Error Handling**: Implement robust error handling for failed tasks and instance crashes
-3. **Queue Persistence**: Consider implementing persistent task queue for reliability
-4. **Security**: Validate all task inputs and implement appropriate sandboxing
-5. **Logging**: Implement comprehensive logging for debugging and monitoring
+1. **Dedicated Server Focus**: Claudine is designed for dedicated servers with ample resources, not constrained cloud environments
+2. **Autoscaling by Default**: No configuration needed - automatically uses all available system resources
+3. **Resource Management**: Maintains 20% CPU headroom and 1GB RAM reserve for system stability
+4. **Error Handling**: Implement robust error handling for failed tasks and instance crashes
+5. **Queue Persistence**: Implement persistent task queue for reliability (Phase 2)
+6. **Security**: Validate all task inputs and implement appropriate sandboxing
+7. **Logging**: Comprehensive logging for debugging and monitoring
+8. **No Worker Limits**: Unlike traditional approaches, we spawn as many workers as the system can handle
