@@ -21,8 +21,7 @@ import {
   TaskStatus,
   canCancel
 } from '../core/domain.js';
-import { Result, ok, err, flatMap, map } from '../core/result.js';
-import { pipe } from '../core/pipe.js';
+import { Result, ok, err } from '../core/result.js';
 import { taskNotFound, ClaudineError, ErrorCode } from '../core/errors.js';
 
 export class TaskManagerService implements TaskManager {

@@ -9,8 +9,6 @@ import {
   ResourceMonitor,
   Logger,
 } from '../core/interfaces.js';
-import { pipe, tap } from '../core/pipe.js';
-import { Result, isOk } from '../core/result.js';
 
 export class AutoscalingManager {
   private running = false;

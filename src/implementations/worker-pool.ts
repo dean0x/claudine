@@ -4,10 +4,11 @@
  */
 
 import { ChildProcess } from 'child_process';
-import { WorkerPool, ProcessSpawner, ResourceMonitor, Logger } from '../core/interfaces.js';
+import { WorkerPool, ProcessSpawner, ResourceMonitor, Logger, OutputCapture } from '../core/interfaces.js';
 import { Worker, WorkerId, Task, TaskId } from '../core/domain.js';
 import { Result, ok, err, tryCatchAsync } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { ProcessConnector } from '../services/process-connector.js';
 
 interface WorkerState extends Worker {
   process: ChildProcess;
@@ -17,12 +18,21 @@ interface WorkerState extends Worker {
 export class AutoscalingWorkerPool implements WorkerPool {
   private readonly workers = new Map<WorkerId, WorkerState>();
   private readonly taskToWorker = new Map<TaskId, WorkerId>();
+  private readonly processConnector: ProcessConnector;
+  private onTaskComplete?: (taskId: TaskId, exitCode: number) => void;
 
   constructor(
     private readonly spawner: ProcessSpawner,
     private readonly monitor: ResourceMonitor,
-    private readonly logger: Logger
-  ) {}
+    private readonly logger: Logger,
+    outputCapture: OutputCapture
+  ) {
+    this.processConnector = new ProcessConnector(outputCapture, logger);
+  }
+
+  setTaskCompleteHandler(handler: (taskId: TaskId, exitCode: number) => void): void {
+    this.onTaskComplete = handler;
+  }
 
   async spawn(task: Task): Promise<Result<Worker>> {
     // Check if we can spawn based on resources
@@ -70,6 +80,19 @@ export class AutoscalingWorkerPool implements WorkerPool {
     // Store worker
     this.workers.set(workerId, worker);
     this.taskToWorker.set(task.id, workerId);
+
+    // Connect process output to OutputCapture
+    this.processConnector.connect(
+      childProcess,
+      task.id,
+      (exitCode) => {
+        // Handle task completion
+        this.onWorkerComplete(task.id, exitCode || 0);
+        if (this.onTaskComplete) {
+          this.onTaskComplete(task.id, exitCode || 0);
+        }
+      }
+    );
 
     // Log
     this.logger.info('Worker spawned', {
@@ -179,7 +202,7 @@ export class AutoscalingWorkerPool implements WorkerPool {
   }
 
   // Called when a worker completes
-  onWorkerComplete(taskId: TaskId): void {
+  private onWorkerComplete(taskId: TaskId, exitCode: number): void {
     const workerId = this.taskToWorker.get(taskId);
     if (!workerId) return;
 
