@@ -2,7 +2,7 @@
 
 **Date**: 2025-08-18  
 **Decision**: Full Refactor (Option 1)  
-**Checkpoint Commit**: [Will be updated after commit]
+**Checkpoint Commit**: `a952c21af25fa4d4e843cd47065c6f624f9884b4`
 
 ## Decision Context
 
