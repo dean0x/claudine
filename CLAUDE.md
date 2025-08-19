@@ -144,13 +144,61 @@ claudine logs task-abc123 --follow
 claudine list --format table
 ```
 
+## Engineering Principles
+
+**IMPORTANT**: Follow these principles strictly when implementing features:
+
+1. **Always use Result types** - Never throw errors in business logic
+2. **Inject dependencies** - Makes testing trivial
+3. **Compose with pipes** - Readable, maintainable chains
+4. **Immutable by default** - No mutations, return new objects
+5. **Type everything** - No any types, explicit returns
+6. **Test behaviors, not implementation** - Focus on integration tests
+7. **Resource cleanup** - Always use try/finally or "using" pattern
+8. **Structured logging** - JSON logs with context
+9. **Validate at boundaries** - Parse, don't validate (Zod schemas)
+10. **Performance matters** - Measure, benchmark, optimize
+
+### Code Example (Good)
+```typescript
+// Result type instead of throwing
+type Result<T, E = Error> = { ok: true; value: T } | { ok: false; error: E };
+
+// Dependency injection
+class TaskManager {
+  constructor(
+    private readonly processSpawner: ProcessSpawner,
+    private readonly resourceMonitor: ResourceMonitor,
+    private readonly logger: Logger
+  ) {}
+}
+
+// Composable functions with pipes
+const processTask = pipe(
+  validateInput,
+  checkResources,
+  spawnWorker,
+  captureOutput,
+  handleResult
+);
+
+// Immutable updates
+const updateTask = (task: Task, update: Partial<Task>): Task => ({
+  ...task,
+  ...update,
+  updatedAt: Date.now()
+});
+```
+
 ## Important Considerations
 
 1. **Dedicated Server Focus**: Claudine is designed for dedicated servers with ample resources, not constrained cloud environments
 2. **Autoscaling by Default**: No configuration needed - automatically uses all available system resources
 3. **Resource Management**: Maintains 20% CPU headroom and 1GB RAM reserve for system stability
-4. **Error Handling**: Implement robust error handling for failed tasks and instance crashes
+4. **Error Handling**: Use Result types, never throw in business logic
 5. **Queue Persistence**: Implement persistent task queue for reliability (Phase 2)
-6. **Security**: Validate all task inputs and implement appropriate sandboxing
-7. **Logging**: Comprehensive logging for debugging and monitoring
+6. **Security**: Validate all task inputs at boundaries using Zod
+7. **Logging**: Structured JSON logging with context
 8. **No Worker Limits**: Unlike traditional approaches, we spawn as many workers as the system can handle
+9. **Testing**: Focus on integration tests that verify behaviors
+10. **Performance**: Measure and optimize critical paths
