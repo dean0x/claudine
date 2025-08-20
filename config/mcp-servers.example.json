@@ -13,8 +13,7 @@
       "args": ["tsx", "/absolute/path/to/claudine/src/index.ts"],
       "env": {
         "NODE_ENV": "development",
-        "LOG_LEVEL": "debug",
-        "MOCK_MODE": "false"
+        "LOG_LEVEL": "debug"
       }
     }
   }

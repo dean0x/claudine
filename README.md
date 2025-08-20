@@ -6,14 +6,17 @@
 [![CI](https://github.com/dean0x/claudine/actions/workflows/ci.yml/badge.svg)](https://github.com/dean0x/claudine/actions/workflows/ci.yml)
 ![MCP](https://img.shields.io/badge/MCP-Compatible-purple)
 
-Claudine is an MCP server that enables Claude Code to delegate tasks to background Claude Code instances, allowing for parallel task execution without context switching.
+Claudine is an MCP server designed for **dedicated servers** that enables Claude Code to delegate tasks to background Claude Code instances, with automatic scaling based on available system resources.
 
 ## Features
 
-- **DelegateTask**: Spawn background Claude Code instances with specific prompts
-- **TaskStatus**: Check the status of running or completed tasks
-- **TaskLogs**: Retrieve execution logs from delegated tasks  
-- **CancelTask**: Cancel running tasks with optional reason
+- **Autoscaling**: Automatically spawns workers based on available CPU and memory
+- **DelegateTask**: Process tasks in parallel with no artificial limits
+- **Queue Management**: Tasks queue when resources are busy, process when available
+- **TaskStatus**: Real-time status of all running and queued tasks
+- **TaskLogs**: Stream or retrieve execution logs from any task
+- **CancelTask**: Cancel tasks with automatic resource cleanup
+- **Zero Configuration**: Works optimally out of the box on dedicated servers
 - **Auto-permissions**: Uses `--dangerously-skip-permissions` flag for autonomous file operations
 
 ## Quick Start
@@ -23,6 +26,19 @@ Claudine is an MCP server that enables Claude Code to delegate tasks to backgrou
 - Node.js 20.0.0+ 
 - npm 10.0.0+
 - Claude Code CLI installed (`claude` command available)
+
+### System Requirements
+
+**Minimum** (for development/testing):
+- 8+ CPU cores
+- 16GB RAM
+- 100GB SSD
+
+**Recommended** (for production):
+- 32+ CPU cores
+- 64GB+ RAM
+- 500GB+ NVMe SSD
+- Dedicated Linux server (Ubuntu 22.04+)
 
 ### Installation
 
@@ -121,8 +137,8 @@ After adding the configuration, restart Claude Code or Claude Desktop to connect
 # Start the MCP server manually
 claudine mcp start
 
-# Test the server in mock mode
-claudine mcp test
+# Start the MCP server
+claudine mcp start
 
 # Show MCP configuration
 claudine mcp config
@@ -185,14 +201,9 @@ npm run clean
 
 ### Testing
 
-For testing without Claude CLI installed, use mock mode:
-
 ```bash
-# Test with mock processes
-npm run test:mock
-
-# Test cancellation
-npm run test:cancel
+# Run tests
+npm test
 
 # Run comprehensive tests
 npm run test:comprehensive
@@ -224,28 +235,37 @@ claudine/
 
 ## Architecture
 
-Claudine implements the MCP protocol to communicate with Claude Code:
+### Dedicated Server Design
+
+Claudine is optimized for **dedicated servers** with ample resources, not constrained environments:
+
+- **Autoscaling Workers**: Spawns as many Claude Code instances as your system can handle
+- **Dynamic Resource Monitoring**: Continuously checks CPU and memory availability
+- **Queue-Based Load Management**: Processes tasks from queue as resources become available
+- **Zero Configuration**: No worker limits or tuning required
+
+### Core Components
 
 1. **MCP Server**: Handles JSON-RPC requests from Claude Code
-2. **Process Manager**: Spawns and manages background Claude Code instances
-3. **Output Capture**: Buffers and stores process output (10MB limit)
-4. **Task Registry**: Tracks task state and history (last 10 tasks)
+2. **Autoscaling Manager**: Dynamically adjusts worker count based on system resources
+3. **Task Queue**: Manages pending tasks when all workers are busy
+4. **Process Manager**: Spawns and manages background Claude Code instances
+5. **Output Capture**: Buffers and stores process output (10MB limit per task)
+6. **Task Registry**: Tracks all task states and history
 
 ### Task Lifecycle
 
-1. **Queued**: Task created but not started (future feature)
+1. **Queued**: Task waiting for available resources
 2. **Running**: Claude Code process actively executing
 3. **Completed**: Task finished successfully (exit code 0)
 4. **Failed**: Task failed with error
 5. **Cancelled**: Task manually cancelled by user
 
-## Limitations (MVP)
+## Current Limitations
 
-- One task at a time (no queue or concurrency yet)
-- Tasks don't persist across server restarts
+- Tasks don't persist across server restarts (coming in v0.2.0)
 - 30-minute timeout per task
 - 10MB output buffer limit per task
-- No git worktree isolation
 
 ## Troubleshooting
 
@@ -265,18 +285,18 @@ node --version  # Should be v20.0.0+
 
 ### Tasks fail immediately
 
-Enable mock mode for testing:
+Run in development mode:
 ```bash
-MOCK_MODE=true npm run dev
+npm run dev
 ```
 
 ## Roadmap
 
-- [ ] Phase 1: MVP (Current)
-- [ ] Phase 2: Task queue and concurrency
-- [ ] Phase 3: Priority levels and dependencies
-- [ ] Phase 4: Persistence and recovery
-- [ ] Phase 5: Advanced orchestration
+- [x] Phase 1: MVP with autoscaling (Current - v0.2.0)
+- [ ] Phase 2: Persistence and recovery
+- [ ] Phase 3: Priority levels and dependencies  
+- [ ] Phase 4: Distributed processing (multi-server)
+- [ ] Phase 5: Advanced orchestration and monitoring
 
 ## Contributing
 
