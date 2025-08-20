@@ -137,8 +137,8 @@ After adding the configuration, restart Claude Code or Claude Desktop to connect
 # Start the MCP server manually
 claudine mcp start
 
-# Test the server in mock mode
-claudine mcp test
+# Start the MCP server
+claudine mcp start
 
 # Show MCP configuration
 claudine mcp config
@@ -201,14 +201,9 @@ npm run clean
 
 ### Testing
 
-For testing without Claude CLI installed, use mock mode:
-
 ```bash
-# Test with mock processes
-npm run test:mock
-
-# Test cancellation
-npm run test:cancel
+# Run tests
+npm test
 
 # Run comprehensive tests
 npm run test:comprehensive
@@ -290,9 +285,9 @@ node --version  # Should be v20.0.0+
 
 ### Tasks fail immediately
 
-Enable mock mode for testing:
+Run in development mode:
 ```bash
-MOCK_MODE=true npm run dev
+npm run dev
 ```
 
 ## Roadmap

@@ -28,7 +28,12 @@ export class SystemResourceMonitor implements ResourceMonitor {
         const cpuUsage = await this.getCpuUsage();
         const totalMemory = os.totalmem();
         const freeMemory = os.freemem();
-        const loadAverage = os.loadavg() as readonly [number, number, number];
+        const loadAvgArray = os.loadavg();
+        const loadAverage: readonly [number, number, number] = [
+          loadAvgArray[0],
+          loadAvgArray[1],
+          loadAvgArray[2]
+        ];
 
         return {
           cpuUsage,

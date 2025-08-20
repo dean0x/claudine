@@ -286,23 +286,24 @@ export class MCPAdapter {
             ],
           };
         } else {
-          // Single task
+          // Single task - TypeScript needs help with type narrowing
+          const task = data as Exclude<typeof data, readonly any[]>;
           return {
             content: [
               {
                 type: 'text',
                 text: JSON.stringify({
                   success: true,
-                  taskId: data.id,
-                  status: data.status,
-                  prompt: data.prompt.substring(0, 100) + '...',
-                  startTime: data.startedAt,
-                  endTime: data.completedAt,
-                  duration: data.completedAt && data.startedAt
-                    ? data.completedAt - data.startedAt
+                  taskId: task.id,
+                  status: task.status,
+                  prompt: task.prompt.substring(0, 100) + '...',
+                  startTime: task.startedAt,
+                  endTime: task.completedAt,
+                  duration: task.completedAt && task.startedAt
+                    ? task.completedAt - task.startedAt
                     : undefined,
-                  exitCode: data.exitCode,
-                  workingDirectory: data.workingDirectory,
+                  exitCode: task.exitCode,
+                  workingDirectory: task.workingDirectory,
                 }),
               },
             ],

@@ -27,7 +27,6 @@ const getConfig = (): Config => ({
   taskTimeout: parseInt(process.env.TASK_TIMEOUT || '1800000'), // 30 minutes
   cpuThreshold: parseInt(process.env.CPU_THRESHOLD || '80'), // 80%
   memoryReserve: parseInt(process.env.MEMORY_RESERVE || '1000000000'), // 1GB
-  mockMode: process.env.MOCK_MODE === 'true',
   logLevel: (process.env.LOG_LEVEL as any) || 'info',
 });
 
@@ -69,7 +68,7 @@ export async function bootstrap() {
   container.registerSingleton('taskQueue', () => new PriorityTaskQueue());
   
   container.registerSingleton('processSpawner', () => 
-    new ClaudeProcessSpawner('claude', config.mockMode)
+    new ClaudeProcessSpawner('claude')
   );
 
   container.registerSingleton('resourceMonitor', () => 
@@ -172,49 +171,3 @@ export async function bootstrap() {
   return container;
 }
 
-/**
- * Create a test container with mock implementations
- */
-export async function bootstrapTest() {
-  const container = new Container();
-
-  // Use test implementations
-  const { TestLogger } = await import('./implementations/logger.js');
-  const { TestProcessSpawner } = await import('./implementations/process-spawner.js');
-  const { TestResourceMonitor } = await import('./implementations/resource-monitor.js');
-  const { TestWorkerPool } = await import('./implementations/worker-pool.js');
-  const { TestOutputCapture } = await import('./implementations/output-capture.js');
-  const { FIFOTaskQueue } = await import('./implementations/task-queue.js');
-
-  container.registerValue('config', getConfig());
-  container.registerSingleton('logger', () => new TestLogger());
-  container.registerSingleton('taskQueue', () => new FIFOTaskQueue());
-  container.registerSingleton('processSpawner', () => new TestProcessSpawner());
-  container.registerSingleton('resourceMonitor', () => new TestResourceMonitor());
-  container.registerSingleton('outputCapture', () => new TestOutputCapture());
-  container.registerSingleton('workerPool', () => new TestWorkerPool());
-
-  // TaskManager with test dependencies
-  container.registerSingleton('taskManager', () => {
-    const queueResult = container.get('taskQueue');
-    const workersResult = container.get('workerPool');
-    const outputResult = container.get('outputCapture');
-    const monitorResult = container.get('resourceMonitor');
-    const loggerResult = container.get('logger');
-
-    if (!queueResult.ok || !workersResult.ok || !outputResult.ok || 
-        !monitorResult.ok || !loggerResult.ok) {
-      throw new Error('Failed to resolve test dependencies');
-    }
-
-    return new TaskManagerService(
-      queueResult.value as any,
-      workersResult.value as any,
-      outputResult.value as any,
-      monitorResult.value as any,
-      loggerResult.value as any
-    );
-  });
-
-  return container;
-}

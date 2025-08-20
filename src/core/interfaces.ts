@@ -96,7 +96,6 @@ export interface Config {
   readonly taskTimeout: number;
   readonly cpuThreshold: number;
   readonly memoryReserve: number;
-  readonly mockMode: boolean;
   readonly logLevel: 'debug' | 'info' | 'warn' | 'error';
 }
 

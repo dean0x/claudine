@@ -115,8 +115,8 @@ Use the MCP Inspector or Claude Code to test the server:
 # Start the MCP server
 claudine mcp start
 
-# Test the server in mock mode
-claudine mcp test
+# Start the MCP server
+claudine mcp start
 ```
 
 ### Phase 2 - Direct Task Commands (Future)
