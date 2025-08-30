@@ -229,9 +229,6 @@ claudine/
 ├── tests/
 │   ├── unit/                 # Unit tests
 │   └── integration/          # Integration tests
-├── scripts/
-│   ├── install.sh            # Installation script
-│   └── validate.sh           # Validation script
 ├── .docs/                    # Internal documentation
 └── README.md
 ```
