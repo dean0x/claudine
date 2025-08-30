@@ -10,6 +10,7 @@ Claudine is an MCP server designed for **dedicated servers** that enables Claude
 
 ## Features
 
+- **Task Persistence**: SQLite-based storage with automatic recovery on startup
 - **Autoscaling**: Automatically spawns workers based on available CPU and memory
 - **DelegateTask**: Process tasks in parallel with no artificial limits
 - **Queue Management**: Tasks queue when resources are busy, process when available
@@ -17,7 +18,7 @@ Claudine is an MCP server designed for **dedicated servers** that enables Claude
 - **TaskLogs**: Stream or retrieve execution logs from any task
 - **CancelTask**: Cancel tasks with automatic resource cleanup
 - **Zero Configuration**: Works optimally out of the box on dedicated servers
-- **Auto-permissions**: Uses `--dangerously-skip-permissions` flag for autonomous file operations
+- **Non-interactive Mode**: Uses `--print` flag for automated Claude CLI execution
 
 ## Quick Start
 
@@ -93,7 +94,7 @@ When developing or testing Claudine locally, use the built files directly:
   "mcpServers": {
     "claudine": {
       "command": "node",
-      "args": ["/path/to/claudine/dist/index.js"]
+      "args": ["/path/to/claudine/dist/cli.js", "mcp", "start"]
     }
   }
 }
@@ -106,7 +107,7 @@ Replace `/path/to/claudine` with your actual path. You can also use relative pat
   "mcpServers": {
     "claudine": {
       "command": "node",
-      "args": ["../claudine/dist/index.js"]
+      "args": ["../claudine/dist/cli.js", "mcp", "start"]
     }
   }
 }
@@ -134,11 +135,11 @@ After adding the configuration, restart Claude Code or Claude Desktop to connect
 ### CLI Commands
 
 ```bash
-# Start the MCP server manually
-claudine mcp start
-
 # Start the MCP server
 claudine mcp start
+
+# Test the server in mock mode
+claudine mcp test
 
 # Show MCP configuration
 claudine mcp config
@@ -217,19 +218,21 @@ npm run validate
 ```
 claudine/
 ├── src/
-│   ├── index.ts        # Entry point
-│   ├── server.ts       # MCP server implementation
-│   └── types.ts        # TypeScript type definitions
-├── dist/               # Compiled JavaScript
+│   ├── index.ts              # Entry point
+│   ├── cli.ts                # CLI interface
+│   ├── bootstrap.ts          # Dependency injection
+│   ├── core/                 # Core interfaces and types
+│   ├── implementations/      # Service implementations
+│   ├── services/             # Business logic
+│   └── adapters/             # MCP adapter
+├── dist/                     # Compiled JavaScript
 ├── tests/
-│   ├── unit/           # Unit tests
-│   └── manual/         # Manual test scripts
+│   ├── unit/                 # Unit tests
+│   └── integration/          # Integration tests
 ├── scripts/
-│   ├── install.sh      # Installation script
-│   └── validate.sh     # Validation script
-├── examples/           # Usage examples
-├── docs/               # Documentation
-├── logs/               # Execution logs
+│   ├── install.sh            # Installation script
+│   └── validate.sh           # Validation script
+├── .docs/                    # Internal documentation
 └── README.md
 ```
 
@@ -248,10 +251,11 @@ Claudine is optimized for **dedicated servers** with ample resources, not constr
 
 1. **MCP Server**: Handles JSON-RPC requests from Claude Code
 2. **Autoscaling Manager**: Dynamically adjusts worker count based on system resources
-3. **Task Queue**: Manages pending tasks when all workers are busy
+3. **Task Queue**: Priority-based queue for pending tasks
 4. **Process Manager**: Spawns and manages background Claude Code instances
-5. **Output Capture**: Buffers and stores process output (10MB limit per task)
-6. **Task Registry**: Tracks all task states and history
+5. **Output Capture**: Buffers and stores process output (10MB limit, overflow to files)
+6. **Task Persistence**: SQLite database for task history and recovery
+7. **Recovery Manager**: Restores queued tasks after crashes
 
 ### Task Lifecycle
 
@@ -263,9 +267,9 @@ Claudine is optimized for **dedicated servers** with ample resources, not constr
 
 ## Current Limitations
 
-- Tasks don't persist across server restarts (coming in v0.2.0)
-- 30-minute timeout per task
-- 10MB output buffer limit per task
+- 30-minute timeout per task (configurable via TASK_TIMEOUT env var)
+- 10MB output buffer limit per task (larger outputs saved to files)
+- No distributed execution across multiple machines (planned for v0.5.0)
 
 ## Troubleshooting
 
