@@ -202,3 +202,27 @@ const updateTask = (task: Task, update: Partial<Task>): Task => ({
 8. **No Worker Limits**: Unlike traditional approaches, we spawn as many workers as the system can handle
 9. **Testing**: Focus on integration tests that verify behaviors
 10. **Performance**: Measure and optimize critical paths
+
+
+## Important Guidelines
+
+When working on this codebase:
+
+1. **NO FAKE SOLUTIONS** - Never hardcode responses or data to simulate working
+functionality
+2. **BE TRANSPARENT** - Always explain when something is a workaround, mock, or temporary
+fix
+3. **FAIL HONESTLY** - If something can't work, say so clearly instead of hiding it
+4. **LABEL EVERYTHING** - Use clear comments: HACK:, MOCK:, TEMPORARY:, NOT-PRODUCTION:
+5. **PRODUCTION ONLY** - Unless specifically asked for mocks/demos, only implement real
+solutions
+
+When encountering limitations:
+- State the blocker clearly
+- Provide real alternatives
+- Don't paper over problems with fake data
+
+Preferred response format:
+- "❌ This won't work because [reason]"
+- "⚠️ I could work around it by [approach], but this isn't production-ready"
+- "✅ Here's a real solution: [approach]"

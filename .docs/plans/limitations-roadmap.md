@@ -22,6 +22,8 @@ Based on the README and codebase analysis, here are the key limitations that nee
 #### Implementation Details:
 - **Database:** SQLite with `better-sqlite3` for simplicity and performance
 - **Architecture:** Repository pattern for clean separation
+- **Enabled by Default:** No configuration needed
+- **Smart Defaults:** Auto-selects appropriate system directory
 - **Components:**
   ```typescript
   interface TaskRepository {
@@ -230,26 +232,26 @@ interface SystemMetrics {
 }
 ```
 
-## Migration Strategy
+## Implementation Strategy
 
-### Step 1: Add Persistence (Non-Breaking)
+### Step 1: Add Persistence (Primary Storage)
 1. Add SQLite dependency
 2. Create repository implementations
-3. Add persistence alongside memory storage
-4. Test with parallel writes
-5. Switch to SQLite as primary
+3. Replace in-memory storage with SQLite
+4. Implement startup recovery
+5. Test thoroughly with database as primary storage
 
-### Step 2: Enable Timeout (Opt-In)
+### Step 2: Add Timeout Enforcement
 1. Add timeout configuration
-2. Default to no timeout (backward compatible)
+2. Implement timeout handling in WorkerPool
 3. Add per-task timeout option
-4. Enable default timeout in v0.3.0
+4. Test timeout scenarios
 
-### Step 3: Gradual Feature Rollout
-1. Ship each feature behind feature flag
-2. Test in production with early adopters
-3. Gather metrics and feedback
-4. Enable by default when stable
+### Step 3: Feature Rollout
+1. Ship each feature when complete
+2. No feature flags needed (pristine project)
+3. Gather feedback from early users
+4. Iterate based on real-world usage
 
 ## Timeline Estimate
 
@@ -312,8 +314,8 @@ interface SystemMetrics {
 ### Risk: SQLite Performance
 **Mitigation:** Use WAL mode, prepared statements, connection pooling
 
-### Risk: Backward Compatibility
-**Mitigation:** Feature flags, gradual rollout, clear migration guides
+### Risk: Database Corruption
+**Mitigation:** Regular backups, WAL mode, integrity checks
 
 ### Risk: Complexity Growth
 **Mitigation:** Keep SOLID principles, maintain test coverage, modular design

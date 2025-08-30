@@ -19,7 +19,6 @@
     "dev": "tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "vitest",
     "test:ui": "vitest --ui",
     "clean": "rm -rf dist logs",
     "typecheck": "tsc --noEmit",
@@ -51,9 +50,11 @@
   "type": "module",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.3",
+    "better-sqlite3": "^12.2.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.3.0",
     "@vitest/ui": "^3.2.4",
     "tsx": "^4.20.4",

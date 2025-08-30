@@ -80,6 +80,9 @@ export class AutoscalingWorkerPool implements WorkerPool {
     // Store worker
     this.workers.set(workerId, worker);
     this.taskToWorker.set(task.id, workerId);
+    
+    // Increment worker count
+    this.monitor.incrementWorkerCount();
 
     // Connect process output to OutputCapture
     this.processConnector.connect(
@@ -217,6 +220,9 @@ export class AutoscalingWorkerPool implements WorkerPool {
 
     this.workers.delete(workerId);
     this.taskToWorker.delete(taskId);
+    
+    // Decrement worker count
+    this.monitor.decrementWorkerCount();
   }
 }
 

@@ -169,7 +169,7 @@ export class TaskManagerService implements TaskManager {
   /**
    * Try to process next task if resources available
    */
-  private async tryProcessNext(): Promise<void> {
+  async tryProcessNext(): Promise<void> {
     // Check if we can spawn a worker
     const canSpawnResult = await this.monitor.canSpawnWorker();
     

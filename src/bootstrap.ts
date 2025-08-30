@@ -137,18 +137,29 @@ export async function bootstrap() {
     const workersResult = container.get('workerPool');
     const monitorResult = container.get('resourceMonitor');
     const loggerResult = container.get('logger');
+    const taskManagerResult = container.get('taskManager');
 
     if (!queueResult.ok || !workersResult.ok || !monitorResult.ok || !loggerResult.ok) {
       throw new Error('Failed to resolve dependencies for AutoscalingManager');
     }
 
-    return new AutoscalingManager(
+    const autoscaler = new AutoscalingManager(
       queueResult.value as any,
       workersResult.value as any,
       monitorResult.value as any,
       (loggerResult.value as Logger).child({ module: 'Autoscaler' }),
       1000 // Check every second
     );
+    
+    // Wire up scale event to task manager
+    if (taskManagerResult.ok) {
+      const taskManager = taskManagerResult.value as any;
+      autoscaler.setOnScaleUp(() => {
+        taskManager.tryProcessNext();
+      });
+    }
+    
+    return autoscaler;
   });
 
   // Register MCP adapter

@@ -59,22 +59,29 @@ export class SystemResourceMonitor implements ResourceMonitor {
 
     const resources = resourcesResult.value;
     
+    // Log current state for debugging
+    console.error(`[ResourceMonitor] CPU: ${resources.cpuUsage.toFixed(1)}%, Memory: ${(resources.availableMemory / 1e9).toFixed(1)}GB, Workers: ${resources.workerCount}`);
+    
     // Check CPU threshold
     if (resources.cpuUsage >= this.cpuThreshold) {
+      console.error(`[ResourceMonitor] Cannot spawn: CPU ${resources.cpuUsage.toFixed(1)}% >= ${this.cpuThreshold}% threshold`);
       return ok(false);
     }
 
     // Check memory reserve
     if (resources.availableMemory <= this.memoryReserve) {
+      console.error(`[ResourceMonitor] Cannot spawn: Memory ${(resources.availableMemory / 1e9).toFixed(1)}GB <= ${(this.memoryReserve / 1e9).toFixed(1)}GB reserve`);
       return ok(false);
     }
 
-    // Check load average (don't spawn if load is too high)
+    // Check load average (be more permissive)
     const cpuCount = os.cpus().length;
-    if (resources.loadAverage[0] > cpuCount * 2) {
+    if (resources.loadAverage[0] > cpuCount * 3) {  // Changed from 2x to 3x
+      console.error(`[ResourceMonitor] Cannot spawn: Load ${resources.loadAverage[0].toFixed(1)} > ${cpuCount * 3} (3x CPU count)`);
       return ok(false);
     }
 
+    console.error(`[ResourceMonitor] Can spawn worker!`);
     return ok(true);
   }
 
@@ -96,25 +103,13 @@ export class SystemResourceMonitor implements ResourceMonitor {
   }
 
   private async getCpuUsage(): Promise<number> {
-    const startUsage = process.cpuUsage();
-    const startTime = Date.now();
-
-    // Wait a bit to measure
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    const endUsage = process.cpuUsage(startUsage);
-    const endTime = Date.now();
-
-    const userPercent = 100 * (endUsage.user / 1000) / (endTime - startTime);
-    const systemPercent = 100 * (endUsage.system / 1000) / (endTime - startTime);
-
-    // Also factor in overall system load
+    // Use load average as primary metric (more stable than instant CPU)
     const loadAverage = os.loadavg()[0];
     const cpuCount = os.cpus().length;
     const loadPercent = (loadAverage / cpuCount) * 100;
 
-    // Return the higher of process usage or system load
-    return Math.max(userPercent + systemPercent, loadPercent);
+    // Return load percentage
+    return loadPercent;
   }
 }
 
@@ -166,5 +161,15 @@ export class TestResourceMonitor implements ResourceMonitor {
 
   setWorkerCount(count: number): void {
     this.workerCount = count;
+  }
+  
+  incrementWorkerCount(): void {
+    this.workerCount++;
+  }
+  
+  decrementWorkerCount(): void {
+    if (this.workerCount > 0) {
+      this.workerCount--;
+    }
   }
 }

@@ -1,7 +1,7 @@
 ## Implementation Plan: Phase 1 - Task Persistence
 
 ### Overview
-Add SQLite-based persistence to ensure tasks survive server restarts and enable crash recovery. This will be implemented alongside the existing in-memory storage for backward compatibility, with a gradual migration path.
+Add SQLite-based persistence to ensure tasks survive server restarts and enable crash recovery. Persistence is enabled by default with automatic platform-appropriate data directory selection. Since this is a pristine project, we'll implement persistence as the primary storage mechanism from the start.
 
 ### Step-by-Step Implementation Plan
 
@@ -31,10 +31,10 @@ Create `src/implementations/output-repository.ts`:
 
 #### 5. **Update TaskManager for Persistence** (45 mins)
 Modify `src/services/task-manager.ts`:
-- Add optional `TaskRepository` dependency
+- Add required `TaskRepository` dependency
 - Persist tasks on creation, update, and status changes
 - Keep in-memory cache for performance
-- Add `persistTask()` and `loadTask()` methods
+- Replace in-memory Map with database-backed operations
 
 #### 6. **Add Recovery Logic** (45 mins)
 Create `src/services/recovery-manager.ts`:
@@ -43,12 +43,12 @@ Create `src/services/recovery-manager.ts`:
 - Mark RUNNING tasks as FAILED (crashed)
 - Restore output buffers
 
-#### 7. **Update Bootstrap** (30 mins)
+#### 7. **Update Bootstrap** (20 mins)
 Modify `src/bootstrap.ts`:
 - Register database and repositories
-- Add persistence configuration flag
+- Initialize database on startup
 - Initialize recovery on startup
-- Add graceful shutdown to persist state
+- Add graceful shutdown for clean state
 
 #### 8. **Add Tests** (1 hour)
 Create test files:
@@ -56,15 +56,20 @@ Create test files:
 - `tests/unit/recovery-manager.test.ts`
 - `tests/integration/persistence.test.ts`
 
-#### 9. **Update Configuration** (15 mins)
-- Add persistence settings to Config interface
-- Environment variables: `PERSISTENCE_ENABLED`, `DB_PATH`
-- Default to in-memory for backward compatibility
+#### 9. **Update Configuration** (10 mins)
+- Database path auto-determined based on platform:
+  - Linux/Mac: `~/.claudine/claudine.db`
+  - Windows: `%APPDATA%/claudine/claudine.db`
+- Optional `CLAUDINE_DATA_DIR` env var for override
+- Configure SQLite settings (WAL mode, etc.)
 
-#### 10. **Documentation** (30 mins)
-- Update README with persistence feature
-- Add migration guide
-- Document configuration options
+#### 10. **Documentation** (20 mins)
+- Update README with persistence feature details
+- Document automatic database location:
+  - Linux/Mac: `~/.claudine/`
+  - Windows: `%APPDATA%\claudine\`
+- Add troubleshooting section for database issues
+- Note that persistence is enabled by default (no configuration needed)
 
 ### File Structure
 ```
@@ -117,16 +122,31 @@ CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
 CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
 ```
 
+#### Data Directory Logic
+```typescript
+function getDataDirectory(): string {
+  // Allow override via environment variable
+  if (process.env.CLAUDINE_DATA_DIR) {
+    return process.env.CLAUDINE_DATA_DIR;
+  }
+  
+  // Platform-specific defaults
+  const homeDir = os.homedir();
+  
+  if (process.platform === 'win32') {
+    // Windows: %APPDATA%/claudine
+    return path.join(process.env.APPDATA || path.join(homeDir, 'AppData', 'Roaming'), 'claudine');
+  } else {
+    // Linux/Mac: ~/.claudine
+    return path.join(homeDir, '.claudine');
+  }
+}
+```
+
 #### Key Classes
 1. **SQLiteTaskRepository**: Implements CRUD operations with Result types
 2. **RecoveryManager**: Handles startup recovery and crash resilience
-3. **PersistentTaskManager**: Extends TaskManagerService with persistence
-
-### Migration Strategy
-1. **Phase 1a**: Ship with persistence disabled by default
-2. **Phase 1b**: Enable for testing with opt-in flag
-3. **Phase 1c**: Enable by default with opt-out flag
-4. **Phase 1d**: Remove in-memory only mode
+3. **Enhanced TaskManagerService**: Now with built-in persistence
 
 ### Testing Strategy
 - Unit tests for repository operations
@@ -138,15 +158,15 @@ CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
 - ✅ Tasks persist across server restarts
 - ✅ No data loss on unexpected shutdown
 - ✅ Recovery completes in < 5 seconds with 1000 tasks
-- ✅ Backward compatible with existing deployments
+- ✅ Database operations are performant (< 10ms for single operations)
 - ✅ No performance degradation for normal operations
 
 ### Risk Mitigation
 - Use WAL mode for better concurrency
-- Implement connection pooling if needed
+- Implement proper transaction handling
 - Add retry logic for database operations
-- Graceful fallback to in-memory if DB fails
+- Handle database corruption gracefully
 
-### Estimated Time: 6-7 hours total
+### Estimated Time: 4-5 hours total (reduced due to no migration needs)
 
 Ready to proceed with implementation?

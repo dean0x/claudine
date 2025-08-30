@@ -41,6 +41,8 @@ export interface ResourceMonitor {
     readonly maxCpuPercent: number;
     readonly minMemoryBytes: number;
   };
+  incrementWorkerCount(): void;
+  decrementWorkerCount(): void;
 }
 
 /**
