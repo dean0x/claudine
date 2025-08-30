@@ -9,7 +9,8 @@ import {
   WorkerPool, 
   OutputCapture, 
   Logger,
-  ResourceMonitor
+  ResourceMonitor,
+  TaskRepository
 } from '../core/interfaces.js';
 import { 
   Task, 
@@ -32,15 +33,25 @@ export class TaskManagerService implements TaskManager {
     private readonly workers: WorkerPool,
     private readonly output: OutputCapture,
     private readonly monitor: ResourceMonitor,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    private readonly repository?: TaskRepository
   ) {}
 
   async delegate(request: DelegateRequest): Promise<Result<Task>> {
     // Create task using pure function
     const task = createTask(request);
     
-    // Store task
+    // Store task in memory
     this.tasks.set(task.id, task);
+    
+    // Persist to database if repository available
+    if (this.repository) {
+      const saveResult = await this.repository.save(task);
+      if (!saveResult.ok) {
+        this.logger.error('Failed to persist task', saveResult.error);
+        // Continue anyway - in-memory will work
+      }
+    }
     
     // Log
     this.logger.info('Task delegated', {
@@ -118,6 +129,11 @@ export class TaskManagerService implements TaskManager {
       
       this.tasks.set(taskId, updatedTask);
       
+      // Persist update
+      if (this.repository) {
+        await this.repository.save(updatedTask);
+      }
+      
       this.logger.info('Task cancelled from queue', {
         taskId,
         reason,
@@ -151,6 +167,11 @@ export class TaskManagerService implements TaskManager {
       });
       
       this.tasks.set(taskId, updatedTask);
+      
+      // Persist update
+      if (this.repository) {
+        await this.repository.save(updatedTask);
+      }
       
       this.logger.info('Running task cancelled', {
         taskId,
