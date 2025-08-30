@@ -44,6 +44,7 @@ async function main() {
     const mcpAdapter = mcpAdapterResult.value;
     autoscaler = autoscalerResult.value;
 
+    // All logs go to stderr to keep stdout clean for MCP protocol
     logger.info('Starting Claudine MCP Server v0.2.0');
 
     // Start autoscaling

@@ -1,3 +1,12 @@
+# 🚀 Claudine v0.2.0 - Latest Release
+
+See [RELEASE_NOTES_v0.2.0.md](./RELEASE_NOTES_v0.2.0.md) for the latest release notes.
+
+## Previous Releases
+- [v0.1.0](./RELEASE_NOTES_v0.1.0.md) - Initial Release
+
+---
+
 # 🚀 Claudine v0.1.0 - Initial Release
 
 ## Introducing Claudine: Your MCP Sidekick for Claude Code

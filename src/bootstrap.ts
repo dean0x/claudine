@@ -66,6 +66,7 @@ export async function bootstrap() {
   }
   const logger = loggerResult.value;
 
+  // All logs go to stderr to keep stdout clean for MCP protocol
   logger.info('Bootstrapping Claudine', { config });
 
   // Register database

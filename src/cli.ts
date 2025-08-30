@@ -84,7 +84,15 @@ if (mainCommand === 'mcp') {
     // For MCP, we must NOT print to stdout - just start the server
     // MCP uses stdio for communication
     const indexPath = path.join(__dirname, 'index.js');
-    import(indexPath);
+    import(indexPath).then((module) => {
+      // Call the main function if available
+      if (module.main) {
+        return module.main();
+      }
+    }).catch((error) => {
+      console.error('Failed to start MCP server:', error);
+      process.exit(1);
+    });
     
   } else if (subCommand === 'test') {
     console.log('🧪 Testing Claudine MCP Server...\n');

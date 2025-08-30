@@ -204,6 +204,71 @@ const updateTask = (task: Task, update: Partial<Task>): Task => ({
 10. **Performance**: Measure and optimize critical paths
 
 
+## Release Process
+
+### Pre-release Checklist
+1. **Clean up workspace**
+   - Remove test files (*.txt, test_*.py, etc.)
+   - Ensure no temporary files are committed
+
+2. **Update version**
+   ```bash
+   # Update version in package.json
+   npm version patch  # for bug fixes (0.1.1 -> 0.1.2)
+   npm version minor  # for new features (0.1.1 -> 0.2.0)
+   npm version major  # for breaking changes (0.1.1 -> 1.0.0)
+   ```
+
+3. **Create/Update RELEASE_NOTES.md**
+   - Document new features, bug fixes, breaking changes
+   - Include migration instructions if needed
+
+4. **Test everything**
+   ```bash
+   npm run build
+   npm test
+   ```
+
+### Release Steps
+
+1. **Create Pull Request**
+   ```bash
+   # Commit all changes
+   git add .
+   git commit -m "chore: prepare v0.2.0 release"
+   
+   # Push branch
+   git push origin feature/your-branch
+   
+   # Create PR via GitHub CLI
+   gh pr create --title "Release v0.2.0" --body "Release notes..."
+   ```
+
+2. **After PR is merged**
+   ```bash
+   # Switch to main
+   git checkout main
+   git pull
+   
+   # Create and push tag
+   git tag v0.2.0
+   git push origin v0.2.0
+   
+   # Publish to npm
+   npm publish
+   ```
+
+3. **Create GitHub Release**
+   - Go to GitHub releases page
+   - Create release from tag
+   - Copy RELEASE_NOTES.md content
+   - Publish release
+
+### NPM Publishing Requirements
+- Must be logged in: `npm login`
+- Must have publish permissions for 'claudine' package
+- Ensure all files in `files` array exist in package.json
+
 ## Important Guidelines
 
 When working on this codebase:
