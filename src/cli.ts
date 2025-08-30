@@ -81,18 +81,10 @@ Learn more: https://github.com/dean0x/claudine#configuration
 
 if (mainCommand === 'mcp') {
   if (subCommand === 'start') {
-    console.log('🚀 Starting Claudine MCP Server...\n');
-    
-    // Run the MCP server
+    // For MCP, we must NOT print to stdout - just start the server
+    // MCP uses stdio for communication
     const indexPath = path.join(__dirname, 'index.js');
-    const mcp = spawn('node', [indexPath], {
-      stdio: 'inherit'
-    });
-    
-    mcp.on('error', (error) => {
-      console.error('❌ Failed to start server:', error);
-      process.exit(1);
-    });
+    import(indexPath);
     
   } else if (subCommand === 'test') {
     console.log('🧪 Testing Claudine MCP Server...\n');
