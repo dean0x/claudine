@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "claudine": {
+      "command": "node",
+      "args": ["/workspace/claudine/dist/cli.js", "mcp", "start"]
+    }
+  }
+}

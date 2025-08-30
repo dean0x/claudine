@@ -32,7 +32,7 @@ export class StructuredLogger implements Logger {
     context: Record<string, unknown> = {},
     level: LogLevel = LogLevel.INFO,
     private readonly output: (entry: LogEntry) => void = (entry) => 
-      console.log(JSON.stringify(entry))
+      console.error(JSON.stringify(entry))  // Use stderr for MCP compatibility
   ) {
     this.context = { ...context };
     this.level = level;
@@ -109,19 +109,22 @@ export class ConsoleLogger implements Logger {
   debug(message: string, context?: Record<string, unknown>): void {
     const color = this.useColors ? '\x1b[36m' : ''; // Cyan
     const reset = this.useColors ? '\x1b[0m' : '';
-    console.log(`${color}${this.prefix} DEBUG:${reset} ${message}`, context || '');
+    // Use stderr for all logs to avoid interfering with MCP communication on stdout
+    console.error(`${color}${this.prefix} DEBUG:${reset} ${message}`, context || '');
   }
 
   info(message: string, context?: Record<string, unknown>): void {
     const color = this.useColors ? '\x1b[32m' : ''; // Green
     const reset = this.useColors ? '\x1b[0m' : '';
-    console.log(`${color}${this.prefix} INFO:${reset} ${message}`, context || '');
+    // Use stderr for all logs to avoid interfering with MCP communication on stdout
+    console.error(`${color}${this.prefix} INFO:${reset} ${message}`, context || '');
   }
 
   warn(message: string, context?: Record<string, unknown>): void {
     const color = this.useColors ? '\x1b[33m' : ''; // Yellow
     const reset = this.useColors ? '\x1b[0m' : '';
-    console.warn(`${color}${this.prefix} WARN:${reset} ${message}`, context || '');
+    // Use stderr for all logs to avoid interfering with MCP communication on stdout
+    console.error(`${color}${this.prefix} WARN:${reset} ${message}`, context || '');
   }
 
   error(message: string, error?: Error, context?: Record<string, unknown>): void {
