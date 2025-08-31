@@ -11,14 +11,10 @@ describe('SQLiteOutputRepository', () => {
   let database: Database;
   let repository: SQLiteOutputRepository;
   let taskRepository: SQLiteTaskRepository;
-  const testDbPath = path.join(os.tmpdir(), 'claudine-test', 'output-test.db');
-  const testDataDir = path.dirname(testDbPath);
+  // Use in-memory database for tests to avoid CI file permission issues
+  const testDbPath = ':memory:';
 
   beforeEach(async () => {
-    if (fs.existsSync(testDataDir)) {
-      fs.rmSync(testDataDir, { recursive: true });
-    }
-    
     database = new Database(testDbPath);
     repository = new SQLiteOutputRepository(database);
     taskRepository = new SQLiteTaskRepository(database);
@@ -40,9 +36,6 @@ describe('SQLiteOutputRepository', () => {
       database?.close();
     } catch (error) {
       // Database might already be closed or failed to initialize
-    }
-    if (fs.existsSync(testDataDir)) {
-      fs.rmSync(testDataDir, { recursive: true, force: true });
     }
   });
 

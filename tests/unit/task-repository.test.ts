@@ -9,15 +9,10 @@ import { createTask, TaskId, Priority, TaskStatus, updateTask } from '../../src/
 describe('SQLiteTaskRepository', () => {
   let database: Database;
   let repository: SQLiteTaskRepository;
-  const testDbPath = path.join(os.tmpdir(), 'claudine-test', 'repo-test.db');
-  const testDataDir = path.dirname(testDbPath);
+  // Use in-memory database for tests to avoid CI file permission issues
+  const testDbPath = ':memory:';
 
   beforeEach(() => {
-    // Clean up before each test
-    if (fs.existsSync(testDataDir)) {
-      fs.rmSync(testDataDir, { recursive: true });
-    }
-    
     database = new Database(testDbPath);
     repository = new SQLiteTaskRepository(database);
   });
@@ -27,9 +22,6 @@ describe('SQLiteTaskRepository', () => {
       database?.close();
     } catch (error) {
       // Database might already be closed or failed to initialize
-    }
-    if (fs.existsSync(testDataDir)) {
-      fs.rmSync(testDataDir, { recursive: true, force: true });
     }
   });
 
