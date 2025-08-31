@@ -14,6 +14,7 @@ export class AutoscalingManager {
   private running = false;
   private checkInterval: NodeJS.Timeout | null = null;
   private readonly checkIntervalMs: number;
+  private onScaleUpCallback?: () => void;
 
   constructor(
     private readonly queue: TaskQueue,
@@ -154,10 +155,18 @@ export class AutoscalingManager {
    * This would typically emit an event that TaskManager listens to
    */
   private onScaleUp(): void {
-    // In a real implementation, this would emit an event
-    // that the TaskManager listens to
-    // For now, just log
     this.logger.debug('Scale up event emitted');
+    // Call the callback if set
+    if (this.onScaleUpCallback) {
+      this.onScaleUpCallback();
+    }
+  }
+  
+  /**
+   * Set callback for scale up events
+   */
+  setOnScaleUp(callback: () => void): void {
+    this.onScaleUpCallback = callback;
   }
 
   /**

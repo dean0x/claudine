@@ -13,10 +13,14 @@ import { SystemResourceMonitor } from './implementations/resource-monitor.js';
 import { AutoscalingWorkerPool } from './implementations/worker-pool.js';
 import { BufferedOutputCapture } from './implementations/output-capture.js';
 import { StructuredLogger, ConsoleLogger, LogLevel } from './implementations/logger.js';
+import { Database } from './implementations/database.js';
+import { SQLiteTaskRepository } from './implementations/task-repository.js';
+import { SQLiteOutputRepository } from './implementations/output-repository.js';
 
 // Services
 import { TaskManagerService } from './services/task-manager.js';
 import { AutoscalingManager } from './services/autoscaling-manager.js';
+import { RecoveryManager } from './services/recovery-manager.js';
 
 // Adapter
 import { MCPAdapter } from './adapters/mcp-adapter.js';
@@ -62,7 +66,24 @@ export async function bootstrap() {
   }
   const logger = loggerResult.value;
 
+  // All logs go to stderr to keep stdout clean for MCP protocol
   logger.info('Bootstrapping Claudine', { config });
+
+  // Register database
+  container.registerSingleton('database', () => new Database());
+  
+  // Register repositories
+  container.registerSingleton('taskRepository', () => {
+    const dbResult = container.get<Database>('database');
+    if (!dbResult.ok) throw new Error('Failed to get database');
+    return new SQLiteTaskRepository(dbResult.value);
+  });
+  
+  container.registerSingleton('outputRepository', () => {
+    const dbResult = container.get<Database>('database');
+    if (!dbResult.ok) throw new Error('Failed to get database');
+    return new SQLiteOutputRepository(dbResult.value);
+  });
 
   // Register core services
   container.registerSingleton('taskQueue', () => new PriorityTaskQueue());
@@ -106,6 +127,7 @@ export async function bootstrap() {
     const outputResult = container.get('outputCapture');
     const monitorResult = container.get('resourceMonitor');
     const loggerResult = container.get('logger');
+    const repositoryResult = container.get('taskRepository');
 
     if (!queueResult.ok || !workersResult.ok || !outputResult.ok || 
         !monitorResult.ok || !loggerResult.ok) {
@@ -117,7 +139,8 @@ export async function bootstrap() {
       workersResult.value as any,
       outputResult.value as any,
       monitorResult.value as any,
-      (loggerResult.value as Logger).child({ module: 'TaskManager' })
+      (loggerResult.value as Logger).child({ module: 'TaskManager' }),
+      repositoryResult.ok ? repositoryResult.value as any : undefined
     );
 
     // Wire up task completion handler
@@ -137,18 +160,29 @@ export async function bootstrap() {
     const workersResult = container.get('workerPool');
     const monitorResult = container.get('resourceMonitor');
     const loggerResult = container.get('logger');
+    const taskManagerResult = container.get('taskManager');
 
     if (!queueResult.ok || !workersResult.ok || !monitorResult.ok || !loggerResult.ok) {
       throw new Error('Failed to resolve dependencies for AutoscalingManager');
     }
 
-    return new AutoscalingManager(
+    const autoscaler = new AutoscalingManager(
       queueResult.value as any,
       workersResult.value as any,
       monitorResult.value as any,
       (loggerResult.value as Logger).child({ module: 'Autoscaler' }),
       1000 // Check every second
     );
+    
+    // Wire up scale event to task manager
+    if (taskManagerResult.ok) {
+      const taskManager = taskManagerResult.value as any;
+      autoscaler.setOnScaleUp(() => {
+        taskManager.tryProcessNext();
+      });
+    }
+    
+    return autoscaler;
   });
 
   // Register MCP adapter
@@ -165,6 +199,34 @@ export async function bootstrap() {
       (loggerResult.value as Logger).child({ module: 'MCP' })
     );
   });
+
+  // Register recovery manager
+  container.registerSingleton('recoveryManager', () => {
+    const repositoryResult = container.get('taskRepository');
+    const queueResult = container.get('taskQueue');
+    const loggerResult = container.get('logger');
+    
+    if (!repositoryResult.ok || !queueResult.ok || !loggerResult.ok) {
+      throw new Error('Failed to resolve dependencies for RecoveryManager');
+    }
+    
+    return new RecoveryManager(
+      repositoryResult.value as any,
+      queueResult.value as any,
+      (loggerResult.value as Logger).child({ module: 'Recovery' })
+    );
+  });
+  
+  // Run recovery on startup
+  const recoveryResult = container.get('recoveryManager');
+  if (recoveryResult.ok) {
+    const recovery = recoveryResult.value as RecoveryManager;
+    recovery.recover().then(result => {
+      if (!result.ok) {
+        logger.error('Recovery failed', result.error);
+      }
+    });
+  }
 
   logger.info('Bootstrap complete');
 

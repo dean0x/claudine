@@ -16,13 +16,14 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
     claudeCommand = 'claude'
   ) {
     this.claudeCommand = claudeCommand;
-    this.baseArgs = Object.freeze(['--no-interaction', '--dangerously-skip-permissions']);
+    this.baseArgs = Object.freeze(['--print', '--dangerously-skip-permissions']);
   }
 
   spawn(prompt: string, workingDirectory: string): Result<{ process: ChildProcess; pid: number }> {
     return tryCatch(
       () => {
-        const args = [...this.baseArgs];
+        // With --print flag, prompt is passed as argument, not via stdin
+        const args = [...this.baseArgs, prompt];
         const child = spawn(this.claudeCommand, args, {
           cwd: workingDirectory,
           env: { ...process.env },
@@ -33,8 +34,7 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
           throw new Error('Failed to get process PID');
         }
 
-        // Send the prompt to stdin
-        child.stdin?.write(prompt);
+        // Close stdin since we're not using it
         child.stdin?.end();
 
         return { process: child, pid: child.pid };

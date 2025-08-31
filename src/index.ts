@@ -5,6 +5,7 @@
  */
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import pkg from '../package.json' with { type: 'json' };
 import { bootstrap } from './bootstrap.js';
 import { AutoscalingManager } from './services/autoscaling-manager.js';
 import { MCPAdapter } from './adapters/mcp-adapter.js';
@@ -44,7 +45,8 @@ async function main() {
     const mcpAdapter = mcpAdapterResult.value;
     autoscaler = autoscalerResult.value;
 
-    logger.info('Starting Claudine MCP Server v0.2.0');
+    // All logs go to stderr to keep stdout clean for MCP protocol
+    logger.info(`Starting Claudine MCP Server v${pkg.version}`);
 
     // Start autoscaling
     autoscaler.start();
