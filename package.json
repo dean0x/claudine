@@ -22,7 +22,6 @@
     "test:ui": "vitest --ui",
     "clean": "rm -rf dist logs",
     "typecheck": "tsc --noEmit",
-    "validate": "./scripts/validate.sh",
     "prepublishOnly": "npm run build",
     "postinstall": "npm run build"
   },

@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { TaskManager, Logger } from '../core/interfaces.js';
 import { DelegateRequest, Priority, TaskId } from '../core/domain.js';
 import { match } from '../core/result.js';
+import pkg from '../../package.json' with { type: 'json' };
 
 // Zod schemas for MCP protocol validation
 const DelegateTaskSchema = z.object({
@@ -41,7 +42,7 @@ export class MCPAdapter {
     this.server = new Server(
       {
         name: 'claudine',
-        version: '0.2.0', // Bumped for new architecture
+        version: pkg.version,
       },
       {
         capabilities: {
