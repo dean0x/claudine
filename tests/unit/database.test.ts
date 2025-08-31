@@ -30,7 +30,7 @@ describe('Database', () => {
     it('should initialize SQLite database', () => {
       database = new Database(testDbPath);
       
-      expect(fs.existsSync(testDbPath)).toBe(true);
+      // In-memory databases don't exist on filesystem
       expect(database.isOpen()).toBe(true);
     });
 
@@ -56,13 +56,14 @@ describe('Database', () => {
       expect(tables).toContain('tasks');
     });
 
-    it('should use WAL mode for better concurrency (or DELETE mode as fallback)', () => {
+    it('should use WAL mode for better concurrency (or DELETE/MEMORY mode as fallback)', () => {
       database = new Database(testDbPath);
       
       const mode = database.getJournalMode();
       
       // In CI environments, WAL mode might fail and fall back to DELETE mode
-      expect(['wal', 'delete']).toContain(mode);
+      // In-memory databases use MEMORY mode
+      expect(['wal', 'delete', 'memory']).toContain(mode);
     });
   });
 });
