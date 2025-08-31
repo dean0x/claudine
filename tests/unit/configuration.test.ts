@@ -117,3 +117,23 @@ describe('ConfigurationSchema', () => {
     }
   });
 });
+
+describe('loadConfiguration', () => {
+  it('should load default configuration when no environment variables or config file', () => {
+    // Mock process.env to be empty for this test
+    const originalEnv = process.env;
+    process.env = {};
+
+    try {
+      const config = loadConfiguration();
+      
+      expect(config.timeout).toBe(1800000); // 30 minutes default
+      expect(config.maxOutputBuffer).toBe(10485760); // 10MB default
+      expect(config.cpuThreshold).toBe(80); // 80% default
+      expect(config.memoryReserve).toBe(1073741824); // 1GB default
+      expect(config.logLevel).toBe('info'); // info default
+    } finally {
+      process.env = originalEnv;
+    }
+  });
+});

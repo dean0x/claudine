@@ -10,7 +10,16 @@ export const ConfigurationSchema = z.object({
 
 export type Configuration = z.infer<typeof ConfigurationSchema>;
 
+const DEFAULT_CONFIG: Configuration = {
+  timeout: 1800000, // 30 minutes
+  maxOutputBuffer: 10485760, // 10MB
+  cpuThreshold: 80, // 80%
+  memoryReserve: 1073741824, // 1GB
+  logLevel: 'info'
+};
+
 export function loadConfiguration(): Configuration {
-  // TODO: Implement configuration loading
-  throw new Error('Not implemented');
+  // For now, just return defaults
+  // TODO: Add environment variable and config file loading
+  return { ...DEFAULT_CONFIG };
 }
