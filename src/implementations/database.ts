@@ -25,7 +25,14 @@ export class Database {
     this.db = new SQLite(this.dbPath);
     
     // Configure for better performance and concurrency
-    this.db.pragma('journal_mode = WAL');
+    // Fall back to DELETE mode in test environments where WAL might fail
+    try {
+      this.db.pragma('journal_mode = WAL');
+    } catch (error) {
+      // WAL mode failed (common in CI environments), use DELETE mode
+      console.error('WAL mode failed, falling back to DELETE mode:', error);
+      this.db.pragma('journal_mode = DELETE');
+    }
     this.db.pragma('synchronous = NORMAL');
     
     // Create tables if they don't exist

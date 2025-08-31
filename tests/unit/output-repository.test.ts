@@ -36,9 +36,13 @@ describe('SQLiteOutputRepository', () => {
   });
 
   afterEach(() => {
-    database.close();
+    try {
+      database?.close();
+    } catch (error) {
+      // Database might already be closed or failed to initialize
+    }
     if (fs.existsSync(testDataDir)) {
-      fs.rmSync(testDataDir, { recursive: true });
+      fs.rmSync(testDataDir, { recursive: true, force: true });
     }
   });
 
