@@ -262,10 +262,38 @@ Claudine is optimized for **dedicated servers** with ample resources, not constr
 4. **Failed**: Task failed with error
 5. **Cancelled**: Task manually cancelled by user
 
+## Configuration
+
+### Environment Variables
+
+- `TASK_TIMEOUT`: Task timeout in milliseconds (default: 1800000 = 30 minutes, range: 1000-86400000)
+- `MAX_OUTPUT_BUFFER`: Output buffer size in bytes (default: 10485760 = 10MB, range: 1024-1073741824)  
+- `CPU_THRESHOLD`: CPU usage threshold percentage (default: 80, range: 1-100)
+- `MEMORY_RESERVE`: Memory reserve in bytes (default: 1073741824 = 1GB, range: 0+)
+- `LOG_LEVEL`: Logging level (default: 'info', options: 'debug', 'info', 'warn', 'error')
+
+### Per-Task Configuration
+
+You can override timeout and buffer limits for individual tasks via MCP parameters:
+
+```javascript
+// Example: Long-running task with larger buffer
+await claudine.DelegateTask({
+  prompt: "analyze large dataset and generate report", 
+  timeout: 7200000,        // 2 hours
+  maxOutputBuffer: 104857600  // 100MB
+});
+
+// Example: Quick task with minimal resources  
+await claudine.DelegateTask({
+  prompt: "run eslint on current file",
+  timeout: 30000,          // 30 seconds
+  maxOutputBuffer: 1048576    // 1MB
+});
+```
+
 ## Current Limitations
 
-- 30-minute timeout per task (configurable via TASK_TIMEOUT env var)
-- 10MB output buffer limit per task (larger outputs saved to files)
 - No distributed execution across multiple machines (planned for v0.5.0)
 
 ## Troubleshooting
