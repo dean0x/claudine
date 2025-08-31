@@ -24,15 +24,19 @@ import { RecoveryManager } from './services/recovery-manager.js';
 
 // Adapter
 import { MCPAdapter } from './adapters/mcp-adapter.js';
+import { loadConfiguration } from './core/configuration.js';
 
-// Environment configuration
-const getConfig = (): Config => ({
-  maxOutputBuffer: parseInt(process.env.MAX_OUTPUT_BUFFER || '10485760'), // 10MB
-  taskTimeout: parseInt(process.env.TASK_TIMEOUT || '1800000'), // 30 minutes
-  cpuThreshold: parseInt(process.env.CPU_THRESHOLD || '80'), // 80%
-  memoryReserve: parseInt(process.env.MEMORY_RESERVE || '1000000000'), // 1GB
-  logLevel: (process.env.LOG_LEVEL as any) || 'info',
-});
+// Convert new configuration format to existing Config interface
+const getConfig = (): Config => {
+  const config = loadConfiguration();
+  return {
+    maxOutputBuffer: config.maxOutputBuffer,
+    taskTimeout: config.timeout, // Note: renamed from timeout to taskTimeout
+    cpuThreshold: config.cpuThreshold,
+    memoryReserve: config.memoryReserve,
+    logLevel: config.logLevel
+  };
+};
 
 /**
  * Bootstrap the application with all dependencies
