@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ConfigurationSchema, loadConfiguration, type Configuration } from '../../src/core/configuration.js';
+import { ConfigurationSchema, loadConfiguration, type Configuration, type TaskConfiguration } from '../../src/core/configuration.js';
 
 describe('ConfigurationSchema', () => {
   it('should validate valid configuration', () => {
@@ -182,5 +182,26 @@ describe('loadConfiguration', () => {
     } finally {
       process.env = originalEnv;
     }
+  });
+});
+
+describe('TaskConfiguration', () => {
+  it('should validate partial task configuration', () => {
+    const taskConfig: TaskConfiguration = {
+      timeout: 3600000 // 1 hour
+    };
+
+    expect(taskConfig.timeout).toBe(3600000);
+    expect(taskConfig.maxOutputBuffer).toBeUndefined();
+  });
+
+  it('should validate full task configuration', () => {
+    const taskConfig: TaskConfiguration = {
+      timeout: 3600000, // 1 hour
+      maxOutputBuffer: 20971520 // 20MB
+    };
+
+    expect(taskConfig.timeout).toBe(3600000);
+    expect(taskConfig.maxOutputBuffer).toBe(20971520);
   });
 });

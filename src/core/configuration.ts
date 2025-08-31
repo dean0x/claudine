@@ -10,6 +10,12 @@ export const ConfigurationSchema = z.object({
 
 export type Configuration = z.infer<typeof ConfigurationSchema>;
 
+// Per-task configuration (partial override)
+export interface TaskConfiguration {
+  readonly timeout?: number;
+  readonly maxOutputBuffer?: number;
+}
+
 const DEFAULT_CONFIG: Configuration = {
   timeout: 1800000, // 30 minutes
   maxOutputBuffer: 10485760, // 10MB

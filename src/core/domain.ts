@@ -66,6 +66,8 @@ export interface DelegateRequest {
   readonly priority?: Priority;
   readonly workingDirectory?: string;
   readonly useWorktree?: boolean;
+  readonly timeout?: number;
+  readonly maxOutputBuffer?: number;
 }
 
 export interface TaskUpdate {
