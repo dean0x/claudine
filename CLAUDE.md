@@ -231,6 +231,9 @@ const updateTask = (task: Task, update: Partial<Task>): Task => ({
 
 ### Release Steps
 
+**Choose ONE approach:**
+
+#### Option A: Automated Publishing (Recommended)
 1. **Create Pull Request**
    ```bash
    # Commit all changes
@@ -250,19 +253,40 @@ const updateTask = (task: Task, update: Partial<Task>): Task => ({
    git checkout main
    git pull
    
-   # Create and push tag
+   # Update version and create tag
+   npm version minor --no-git-tag-version  # or patch/major
+   git add package.json package-lock.json
+   git commit -m "chore: bump version to v0.2.0"
    git tag v0.2.0
+   git push origin main
    git push origin v0.2.0
-   
-   # Publish to npm
-   npm publish
    ```
 
-3. **Create GitHub Release**
-   - Go to GitHub releases page
-   - Create release from tag
-   - Copy RELEASE_NOTES.md content
-   - Publish release
+3. **Create GitHub Release** (triggers automatic npm publish)
+   ```bash
+   # Create release with GitHub CLI
+   gh release create v0.2.0 --title "🚀 Claudine v0.2.0 - Title" --notes-file RELEASE_NOTES_v0.2.0.md
+   ```
+   
+   The GitHub Actions workflow will automatically:
+   - Build and test the code
+   - Publish to npm with public access
+   - Update release notes with npm install instructions
+
+#### Option B: Manual Publishing
+1. **After PR is merged**
+   ```bash
+   git checkout main && git pull
+   npm version minor --no-git-tag-version
+   git add package.json package-lock.json
+   git commit -m "chore: bump version to v0.2.0"
+   git tag v0.2.0
+   git push origin main && git push origin v0.2.0
+   npm publish  # Manual publish first
+   gh release create v0.2.0 --title "🚀 Claudine v0.2.0 - Title" --notes-file RELEASE_NOTES_v0.2.0.md
+   ```
+
+**Note**: Don't mix approaches - the GitHub Actions workflow will fail if you manually publish first, then create a release (as it tries to publish the same version again).
 
 ### NPM Publishing Requirements
 - Must be logged in: `npm login`
