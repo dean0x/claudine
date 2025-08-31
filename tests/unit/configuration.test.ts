@@ -136,4 +136,51 @@ describe('loadConfiguration', () => {
       process.env = originalEnv;
     }
   });
+
+  it('should load configuration from environment variables', () => {
+    const originalEnv = process.env;
+    process.env = {
+      TASK_TIMEOUT: '3600000', // 1 hour
+      MAX_OUTPUT_BUFFER: '20971520', // 20MB
+      CPU_THRESHOLD: '90', // 90%
+      MEMORY_RESERVE: '2147483648', // 2GB
+      LOG_LEVEL: 'debug'
+    };
+
+    try {
+      const config = loadConfiguration();
+      
+      expect(config.timeout).toBe(3600000); // 1 hour
+      expect(config.maxOutputBuffer).toBe(20971520); // 20MB
+      expect(config.cpuThreshold).toBe(90); // 90%
+      expect(config.memoryReserve).toBe(2147483648); // 2GB
+      expect(config.logLevel).toBe('debug'); // debug
+    } finally {
+      process.env = originalEnv;
+    }
+  });
+
+  it('should fallback to defaults for invalid environment values', () => {
+    const originalEnv = process.env;
+    process.env = {
+      TASK_TIMEOUT: 'invalid',
+      MAX_OUTPUT_BUFFER: 'not-a-number',
+      CPU_THRESHOLD: '200', // Above max
+      MEMORY_RESERVE: '-100', // Below min
+      LOG_LEVEL: 'invalid-level'
+    };
+
+    try {
+      const config = loadConfiguration();
+      
+      // Should fallback to defaults for invalid values
+      expect(config.timeout).toBe(1800000); // Default 30 minutes
+      expect(config.maxOutputBuffer).toBe(10485760); // Default 10MB
+      expect(config.cpuThreshold).toBe(80); // Default 80%
+      expect(config.memoryReserve).toBe(1073741824); // Default 1GB
+      expect(config.logLevel).toBe('info'); // Default info
+    } finally {
+      process.env = originalEnv;
+    }
+  });
 });
