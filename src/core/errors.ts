@@ -8,6 +8,7 @@ export enum ErrorCode {
   TASK_NOT_FOUND = 'TASK_NOT_FOUND',
   TASK_ALREADY_RUNNING = 'TASK_ALREADY_RUNNING',
   TASK_CANNOT_CANCEL = 'TASK_CANNOT_CANCEL',
+  TASK_TIMEOUT = 'TASK_TIMEOUT',
   
   // Resource errors
   INSUFFICIENT_RESOURCES = 'INSUFFICIENT_RESOURCES',
@@ -72,6 +73,13 @@ export const taskAlreadyRunning = (taskId: string): ClaudineError =>
     ErrorCode.TASK_ALREADY_RUNNING,
     `Task ${taskId} is already running`,
     { taskId }
+  );
+
+export const taskTimeout = (taskId: string, timeoutMs: number): ClaudineError =>
+  new ClaudineError(
+    ErrorCode.TASK_TIMEOUT,
+    `Task ${taskId} timed out after ${timeoutMs}ms`,
+    { taskId, timeoutMs }
   );
 
 export const insufficientResources = (

@@ -66,4 +66,19 @@ describe('Database', () => {
       expect(['wal', 'delete', 'memory']).toContain(mode);
     });
   });
+
+  describe('Schema with timeout and buffer fields', () => {
+    it('should have timeout and max_output_buffer columns in tasks table', () => {
+      database = new Database(testDbPath);
+      
+      const tableInfo = database.getDatabase().prepare(`
+        PRAGMA table_info(tasks)
+      `).all();
+      
+      const columnNames = tableInfo.map((col: any) => col.name);
+      
+      expect(columnNames).toContain('timeout');
+      expect(columnNames).toContain('max_output_buffer');
+    });
+  });
 });

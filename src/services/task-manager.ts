@@ -288,6 +288,42 @@ export class TaskManagerService implements TaskManager {
       duration: updatedTask.completedAt! - updatedTask.startedAt!,
     });
 
+    // Persist update if repository available
+    if (this.repository) {
+      const saveResult = await this.repository.save(updatedTask);
+      if (!saveResult.ok) {
+        this.logger.error('Failed to persist completed task', saveResult.error);
+      }
+    }
+
+    // Try to process next task
+    await this.tryProcessNext();
+  }
+
+  async onTaskTimeout(taskId: TaskId, error: ClaudineError): Promise<void> {
+    const task = this.tasks.get(taskId);
+    
+    if (!task) {
+      return;
+    }
+
+    const updatedTask = updateTask(task, {
+      status: TaskStatus.FAILED,
+      completedAt: Date.now(),
+    });
+    
+    this.tasks.set(taskId, updatedTask);
+
+    this.logger.error(`Task ${taskId} timed out after ${error.context?.timeoutMs || 'unknown'}ms`);
+
+    // Persist update if repository available
+    if (this.repository) {
+      const saveResult = await this.repository.save(updatedTask);
+      if (!saveResult.ok) {
+        this.logger.error('Failed to persist timed out task', saveResult.error);
+      }
+    }
+
     // Try to process next task
     await this.tryProcessNext();
   }

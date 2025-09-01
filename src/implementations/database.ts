@@ -68,6 +68,8 @@ export class Database {
         priority TEXT NOT NULL,
         working_directory TEXT,
         use_worktree INTEGER DEFAULT 0,
+        timeout INTEGER,
+        max_output_buffer INTEGER,
         created_at INTEGER NOT NULL,
         started_at INTEGER,
         completed_at INTEGER,

@@ -7,7 +7,7 @@ import { ChildProcess } from 'child_process';
 import { WorkerPool, ProcessSpawner, ResourceMonitor, Logger, OutputCapture } from '../core/interfaces.js';
 import { Worker, WorkerId, Task, TaskId } from '../core/domain.js';
 import { Result, ok, err, tryCatchAsync } from '../core/result.js';
-import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { ClaudineError, ErrorCode, taskTimeout } from '../core/errors.js';
 import { ProcessConnector } from '../services/process-connector.js';
 
 interface WorkerState extends Worker {
@@ -18,8 +18,10 @@ interface WorkerState extends Worker {
 export class AutoscalingWorkerPool implements WorkerPool {
   private readonly workers = new Map<WorkerId, WorkerState>();
   private readonly taskToWorker = new Map<TaskId, WorkerId>();
+  private readonly timers = new Map<TaskId, NodeJS.Timeout>();
   private readonly processConnector: ProcessConnector;
   private onTaskComplete?: (taskId: TaskId, exitCode: number) => void;
+  private onTaskTimeout?: (taskId: TaskId, error: ClaudineError) => void;
 
   constructor(
     private readonly spawner: ProcessSpawner,
@@ -32,6 +34,10 @@ export class AutoscalingWorkerPool implements WorkerPool {
 
   setTaskCompleteHandler(handler: (taskId: TaskId, exitCode: number) => void): void {
     this.onTaskComplete = handler;
+  }
+
+  setTaskTimeoutHandler(handler: (taskId: TaskId, error: ClaudineError) => void): void {
+    this.onTaskTimeout = handler;
   }
 
   async spawn(task: Task): Promise<Result<Worker>> {
@@ -97,6 +103,15 @@ export class AutoscalingWorkerPool implements WorkerPool {
       }
     );
 
+    // Set timeout timer if task has timeout
+    if (task.timeout) {
+      const timer = setTimeout(() => {
+        this.handleTimeout(task.id, task.timeout!);
+      }, task.timeout);
+      
+      this.timers.set(task.id, timer);
+    }
+
     // Log
     this.logger.info('Worker spawned', {
       workerId,
@@ -130,6 +145,7 @@ export class AutoscalingWorkerPool implements WorkerPool {
     }
 
     // Clean up
+    this.clearTimer(worker.taskId);
     this.workers.delete(workerId);
     this.taskToWorker.delete(worker.taskId);
 
@@ -212,6 +228,9 @@ export class AutoscalingWorkerPool implements WorkerPool {
     const worker = this.workers.get(workerId);
     if (!worker) return;
 
+    // Clear timeout timer
+    this.clearTimer(taskId);
+
     this.logger.info('Worker completed', {
       workerId,
       taskId,
@@ -223,6 +242,40 @@ export class AutoscalingWorkerPool implements WorkerPool {
     
     // Decrement worker count
     this.monitor.decrementWorkerCount();
+  }
+
+  // Timer management methods
+  hasTimer(taskId: TaskId): boolean {
+    return this.timers.has(taskId);
+  }
+
+  private clearTimer(taskId: TaskId): void {
+    const timer = this.timers.get(taskId);
+    if (timer) {
+      clearTimeout(timer);
+      this.timers.delete(taskId);
+    }
+  }
+
+  private handleTimeout(taskId: TaskId, timeoutMs: number): void {
+    this.logger.error(`Task ${taskId} timed out after ${timeoutMs}ms`);
+    
+    // Create timeout error
+    const error = taskTimeout(taskId, timeoutMs);
+    
+    // Clear timer from map
+    this.timers.delete(taskId);
+    
+    // Kill the worker
+    const workerId = this.taskToWorker.get(taskId);
+    if (workerId) {
+      this.kill(workerId);
+    }
+    
+    // Call timeout handler
+    if (this.onTaskTimeout) {
+      this.onTaskTimeout(taskId, error);
+    }
   }
 }
 

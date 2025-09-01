@@ -155,6 +155,13 @@ export async function bootstrap() {
       });
     }
 
+    // Wire up task timeout handler
+    if (workerPool.setTaskTimeoutHandler) {
+      workerPool.setTaskTimeoutHandler((taskId: string, error: any) => {
+        taskManager.onTaskTimeout(taskId as any, error);
+      });
+    }
+
     return taskManager;
   });
 
