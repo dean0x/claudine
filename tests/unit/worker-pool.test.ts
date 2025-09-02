@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AutoscalingWorkerPool } from '../../src/implementations/worker-pool.js';
-import { createTask, TaskId } from '../../src/core/domain.js';
-import { ok, err } from '../../src/core/result.js';
-import { taskTimeout, ErrorCode } from '../../src/core/errors.js';
+import { TaskId } from '../../src/core/domain.js';
+import { taskTimeout } from '../../src/core/errors.js';
 import type { ProcessSpawner, ResourceMonitor, Logger, OutputCapture } from '../../src/core/interfaces.js';
+import { TaskFactory, MockFactory, TEST_CONSTANTS, AssertionHelpers, MockVerification } from '../helpers/test-factories.js';
 
 describe('AutoscalingWorkerPool Timer Management', () => {
   let workerPool: AutoscalingWorkerPool;
@@ -14,34 +14,10 @@ describe('AutoscalingWorkerPool Timer Management', () => {
   let onTaskTimeout: vi.Mock;
 
   beforeEach(() => {
-    const mockProcess = {
-      pid: 1234,
-      on: vi.fn(),
-      stdout: { on: vi.fn() },
-      stderr: { on: vi.fn() }
-    };
-
-    mockSpawner = {
-      spawn: vi.fn().mockReturnValue(ok({ 
-        process: mockProcess,
-        pid: 1234 
-      })),
-      kill: vi.fn().mockReturnValue(ok(undefined))
-    } as ProcessSpawner;
-
-    mockMonitor = {
-      canSpawnWorker: vi.fn().mockResolvedValue(ok(true)),
-      incrementWorkerCount: vi.fn(),
-      decrementWorkerCount: vi.fn()
-    } as any;
-
-    mockLogger = {
-      info: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn()
-    } as any;
-
-    mockOutputCapture = {} as OutputCapture;
+    mockSpawner = MockFactory.processSpawner();
+    mockMonitor = MockFactory.resourceMonitor(true);
+    mockLogger = MockFactory.logger();
+    mockOutputCapture = MockFactory.outputCapture();
 
     onTaskTimeout = vi.fn();
 
@@ -57,82 +33,68 @@ describe('AutoscalingWorkerPool Timer Management', () => {
 
   describe('timeout management', () => {
     it('should set timer when task has timeout configured', async () => {
-      const task = createTask({
-        prompt: 'test task',
-        timeout: 5000 // 5 seconds
-      });
+      const task = TaskFactory.withTimeout(TEST_CONSTANTS.FIVE_SECONDS_MS);
 
       const result = await workerPool.spawn(task);
       
-      expect(result.ok).toBe(true);
+      AssertionHelpers.expectSuccessResult(result);
       expect(workerPool.hasTimer(task.id)).toBe(true);
     });
 
     it('should not set timer when task has no timeout', async () => {
-      const task = createTask({
-        prompt: 'test task'
-        // no timeout specified
-      });
+      const task = TaskFactory.basic(); // No timeout specified
 
       const result = await workerPool.spawn(task);
       
-      expect(result.ok).toBe(true);
+      AssertionHelpers.expectSuccessResult(result);
       expect(workerPool.hasTimer(task.id)).toBe(false);
     });
 
     it('should call timeout handler when timer expires', async () => {
       vi.useFakeTimers();
 
-      const task = createTask({
-        prompt: 'test task',
-        timeout: 1000 // 1 second
-      });
+      const task = TaskFactory.withTimeout(TEST_CONSTANTS.ONE_SECOND_MS);
 
       await workerPool.spawn(task);
       
       // Fast-forward time past timeout
-      vi.advanceTimersByTime(1100);
+      vi.advanceTimersByTime(TEST_CONSTANTS.ONE_SECOND_MS + TEST_CONSTANTS.TIMEOUT_BUFFER_MS);
       
-      expect(onTaskTimeout).toHaveBeenCalledWith(
+      MockVerification.expectCalledOnceWith(
+        onTaskTimeout,
         task.id,
-        taskTimeout(task.id, 1000)
+        taskTimeout(task.id, TEST_CONSTANTS.ONE_SECOND_MS)
       );
 
       vi.useRealTimers();
     });
 
     it('should clear timer when worker completes naturally', async () => {
-      const task = createTask({
-        prompt: 'test task',
-        timeout: 5000
-      });
+      const task = TaskFactory.withTimeout(TEST_CONSTANTS.FIVE_SECONDS_MS);
 
       const spawnResult = await workerPool.spawn(task);
-      expect(spawnResult.ok).toBe(true);
+      const worker = AssertionHelpers.expectSuccessResult(spawnResult);
       
-      const worker = spawnResult.value;
       expect(workerPool.hasTimer(task.id)).toBe(true);
 
       // Simulate natural completion
-      await workerPool.kill(worker.id);
+      const killResult = await workerPool.kill(worker.id);
+      AssertionHelpers.expectSuccessResult(killResult);
       
       expect(workerPool.hasTimer(task.id)).toBe(false);
     });
 
     it('should clear timer when worker is manually killed', async () => {
-      const task = createTask({
-        prompt: 'test task',
-        timeout: 5000
-      });
+      const task = TaskFactory.withTimeout(TEST_CONSTANTS.FIVE_SECONDS_MS);
 
       const spawnResult = await workerPool.spawn(task);
-      expect(spawnResult.ok).toBe(true);
+      const worker = AssertionHelpers.expectSuccessResult(spawnResult);
       
-      const worker = spawnResult.value;
       expect(workerPool.hasTimer(task.id)).toBe(true);
 
       // Kill worker manually
-      await workerPool.kill(worker.id);
+      const killResult = await workerPool.kill(worker.id);
+      AssertionHelpers.expectSuccessResult(killResult);
       
       expect(workerPool.hasTimer(task.id)).toBe(false);
     });

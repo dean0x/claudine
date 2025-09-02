@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { ConfigurationSchema, loadConfiguration, type Configuration, type TaskConfiguration } from '../../src/core/configuration.js';
+import { TEST_CONSTANTS } from '../helpers/test-factories.js';
 
 describe('ConfigurationSchema', () => {
   it('should validate valid configuration', () => {
     const validConfig = {
-      timeout: 1800000,
-      maxOutputBuffer: 10485760,
+      timeout: TEST_CONSTANTS.THIRTY_MINUTES_MS,
+      maxOutputBuffer: TEST_CONSTANTS.TEN_MB,
       cpuThreshold: 80,
-      memoryReserve: 1073741824,
+      memoryReserve: TEST_CONSTANTS.ONE_GB,
       logLevel: 'info' as const
     };
 
@@ -15,20 +16,20 @@ describe('ConfigurationSchema', () => {
     expect(result.success).toBe(true);
     
     if (result.success) {
-      expect(result.data.timeout).toBe(1800000);
-      expect(result.data.maxOutputBuffer).toBe(10485760);
+      expect(result.data.timeout).toBe(TEST_CONSTANTS.THIRTY_MINUTES_MS);
+      expect(result.data.maxOutputBuffer).toBe(TEST_CONSTANTS.TEN_MB);
       expect(result.data.cpuThreshold).toBe(80);
-      expect(result.data.memoryReserve).toBe(1073741824);
+      expect(result.data.memoryReserve).toBe(TEST_CONSTANTS.ONE_GB);
       expect(result.data.logLevel).toBe('info');
     }
   });
 
   it('should reject timeout below minimum', () => {
     const invalidConfig = {
-      timeout: 500, // Below 1 second minimum
-      maxOutputBuffer: 10485760,
+      timeout: TEST_CONSTANTS.FIVE_HUNDRED_BYTES, // Below 1 second minimum
+      maxOutputBuffer: TEST_CONSTANTS.TEN_MB,
       cpuThreshold: 80,
-      memoryReserve: 1073741824,
+      memoryReserve: TEST_CONSTANTS.ONE_GB,
       logLevel: 'info' as const
     };
 

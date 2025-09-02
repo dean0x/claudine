@@ -2,7 +2,7 @@
   "mcpServers": {
     "claudine": {
       "command": "node",
-      "args": ["/absolute/path/to/claudine/dist/index.js"],
+      "args": ["/absolute/path/to/claudine/dist/cli.js", "mcp", "start"],
       "env": {
         "NODE_ENV": "production",
         "LOG_LEVEL": "info"
@@ -10,10 +10,17 @@
     },
     "claudine-dev": {
       "command": "npx",
-      "args": ["tsx", "/absolute/path/to/claudine/src/index.ts"],
+      "args": ["tsx", "/absolute/path/to/claudine/src/cli.ts", "mcp", "start"],
       "env": {
         "NODE_ENV": "development",
         "LOG_LEVEL": "debug"
+      }
+    },
+    "claudine-global": {
+      "command": "claudine",
+      "args": ["mcp", "start"],
+      "env": {
+        "LOG_LEVEL": "info"
       }
     }
   }

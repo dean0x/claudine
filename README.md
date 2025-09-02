@@ -10,15 +10,23 @@ Claudine is an MCP server designed for **dedicated servers** that enables Claude
 
 ## Features
 
+✅ **Currently Available in v0.2.0**:
 - **Task Persistence**: SQLite-based storage with automatic recovery on startup
-- **Autoscaling**: Automatically spawns workers based on available CPU and memory
-- **DelegateTask**: Process tasks in parallel with no artificial limits
-- **Queue Management**: Tasks queue when resources are busy, process when available
+- **Autoscaling**: Automatically spawns workers based on available CPU and memory  
+- **Priority Levels**: P0 (Critical), P1 (High), P2 (Normal) task prioritization
+- **Git Worktree Support**: Optional task isolation in separate worktrees
+- **Resource Management**: Dynamic worker scaling with CPU/memory monitoring
+- **Output Capture**: Buffered output with file overflow (configurable limits)
+- **Recovery System**: Automatic task recovery after crashes
+- **Configuration**: Environment variables and per-task overrides
+
+📋 **MCP Tools**:
+- **DelegateTask**: Submit tasks to background Claude Code instances
 - **TaskStatus**: Real-time status of all running and queued tasks
 - **TaskLogs**: Stream or retrieve execution logs from any task
 - **CancelTask**: Cancel tasks with automatic resource cleanup
-- **Zero Configuration**: Works optimally out of the box on dedicated servers
-- **Non-interactive Mode**: Uses `--print` flag for automated Claude CLI execution
+
+See [FEATURES.md](./FEATURES.md) for complete feature documentation.
 
 ## Quick Start
 
@@ -294,7 +302,11 @@ await claudine.DelegateTask({
 
 ## Current Limitations
 
-- No distributed execution across multiple machines (planned for v0.5.0)
+- No task dependency resolution (planned for v0.3.0)  
+- No distributed execution across multiple machines (planned for v0.4.0)
+- No web dashboard (monitoring via logs only)
+
+For complete feature list, see [FEATURES.md](./FEATURES.md).
 
 ## Troubleshooting
 
@@ -321,11 +333,12 @@ npm run dev
 
 ## Roadmap
 
-- [x] Phase 1: MVP with autoscaling (Current - v0.2.0)
-- [ ] Phase 2: Persistence and recovery
-- [ ] Phase 3: Priority levels and dependencies  
-- [ ] Phase 4: Distributed processing (multi-server)
-- [ ] Phase 5: Advanced orchestration and monitoring
+- [x] **v0.2.0**: Autoscaling and persistence (Current - Released Sep 2025)
+- [ ] **v0.3.0**: Task dependency resolution (Q4 2025)
+- [ ] **v0.4.0**: Distributed processing (Q1 2026)
+- [ ] **v0.5.0**: Advanced orchestration and monitoring (Q2 2026)
+
+See [ROADMAP.md](./ROADMAP.md) for detailed feature plans and timelines.
 
 ## Contributing
 

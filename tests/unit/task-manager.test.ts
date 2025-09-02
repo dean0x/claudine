@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TaskManagerService } from '../../src/services/task-manager.js';
-import { createTask, TaskId, TaskStatus, Priority } from '../../src/core/domain.js';
-import { ok, err } from '../../src/core/result.js';
-import { taskTimeout, ErrorCode } from '../../src/core/errors.js';
+import { TaskStatus } from '../../src/core/domain.js';
+import { taskTimeout } from '../../src/core/errors.js';
 import type { TaskQueue, WorkerPool, OutputCapture, ResourceMonitor, Logger, TaskRepository } from '../../src/core/interfaces.js';
+import { TaskFactory, MockFactory, TEST_CONSTANTS, AssertionHelpers, MockVerification } from '../helpers/test-factories.js';
 
 describe('TaskManagerService Timeout Handling', () => {
   let taskManager: TaskManagerService;
@@ -15,48 +15,12 @@ describe('TaskManagerService Timeout Handling', () => {
   let mockRepository: TaskRepository;
 
   beforeEach(() => {
-    mockQueue = {
-      enqueue: vi.fn().mockReturnValue(ok(undefined)),
-      dequeue: vi.fn().mockReturnValue(ok(null)),
-      remove: vi.fn().mockReturnValue(ok(undefined)),
-      peek: vi.fn().mockReturnValue(ok(null)),
-      size: vi.fn().mockReturnValue(0),
-      isEmpty: vi.fn().mockReturnValue(true),
-      clear: vi.fn().mockReturnValue(ok(undefined))
-    } as TaskQueue;
-
-    mockWorkers = {
-      spawn: vi.fn().mockResolvedValue(ok({ id: 'worker-1' } as any)),
-      kill: vi.fn().mockResolvedValue(ok(undefined)),
-      killAll: vi.fn().mockResolvedValue(ok(undefined)),
-      getWorker: vi.fn().mockReturnValue(ok(null)),
-      getWorkers: vi.fn().mockReturnValue(ok([])),
-      getWorkerCount: vi.fn().mockReturnValue(0),
-      getWorkerForTask: vi.fn().mockReturnValue(ok(null))
-    } as WorkerPool;
-
-    mockOutput = {
-      getOutput: vi.fn().mockReturnValue(ok({ stdout: '', stderr: '', totalSize: 0 }))
-    } as OutputCapture;
-
-    mockMonitor = {
-      canSpawnWorker: vi.fn().mockResolvedValue(ok(true))
-    } as any;
-
-    mockLogger = {
-      info: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-      child: vi.fn().mockReturnThis()
-    } as any;
-
-    mockRepository = {
-      save: vi.fn().mockResolvedValue(ok(undefined)),
-      findById: vi.fn().mockResolvedValue(ok(null)),
-      findByStatus: vi.fn().mockResolvedValue(ok([])),
-      update: vi.fn().mockResolvedValue(ok(undefined)),
-      delete: vi.fn().mockResolvedValue(ok(undefined))
-    } as TaskRepository;
+    mockQueue = MockFactory.taskQueue();
+    mockWorkers = MockFactory.workerPool();
+    mockOutput = MockFactory.outputCapture();
+    mockMonitor = MockFactory.resourceMonitor(true);
+    mockLogger = MockFactory.logger();
+    mockRepository = MockFactory.taskRepository();
 
     taskManager = new TaskManagerService(
       mockQueue,
@@ -77,72 +41,63 @@ describe('TaskManagerService Timeout Handling', () => {
       // Delegate task first
       const delegateResult = await taskManager.delegate({
         prompt: 'test task',
-        timeout: 5000
+        timeout: TEST_CONSTANTS.FIVE_SECONDS_MS
       });
       
-      expect(delegateResult.ok).toBe(true);
-      if (!delegateResult.ok) return;
-      
-      const task = delegateResult.value;
+      const task = AssertionHelpers.expectSuccessResult(delegateResult);
 
       // Simulate timeout
-      const timeoutError = taskTimeout(task.id, 5000);
+      const timeoutError = taskTimeout(task.id, TEST_CONSTANTS.FIVE_SECONDS_MS);
       await taskManager.onTaskTimeout(task.id, timeoutError);
 
       // Check task status
       const statusResult = await taskManager.getStatus(task.id);
-      expect(statusResult.ok).toBe(true);
+      const updatedTask = AssertionHelpers.expectSuccessResult(statusResult);
       
-      if (statusResult.ok) {
-        const updatedTask = statusResult.value as any;
-        expect(updatedTask.status).toBe(TaskStatus.FAILED);
-        expect(updatedTask.completedAt).toBeDefined();
-      }
+      AssertionHelpers.expectTaskWithStatus(updatedTask, TaskStatus.FAILED);
+      expect(updatedTask.completedAt).toBeGreaterThanOrEqual(task.createdAt);
     });
 
     it('should persist timeout task updates to repository', async () => {
-      // Delegate task first
+      // Delegate task first  
       const delegateResult = await taskManager.delegate({
         prompt: 'test task',
-        timeout: 5000
+        timeout: TEST_CONSTANTS.FIVE_SECONDS_MS
       });
       
-      expect(delegateResult.ok).toBe(true);
-      if (!delegateResult.ok) return;
-      
-      const task = delegateResult.value;
+      const task = AssertionHelpers.expectSuccessResult(delegateResult);
 
       // Simulate timeout
-      const timeoutError = taskTimeout(task.id, 5000);
+      const timeoutError = taskTimeout(task.id, TEST_CONSTANTS.FIVE_SECONDS_MS);
       await taskManager.onTaskTimeout(task.id, timeoutError);
 
-      // Verify repository save was called
-      expect(mockRepository.save).toHaveBeenCalled();
-      const savedTask = vi.mocked(mockRepository.save).mock.calls.find(call => 
-        call[0].status === TaskStatus.FAILED
-      );
-      expect(savedTask).toBeDefined();
+      // Verify repository save was called with correct data
+      expect(mockRepository.save).toHaveBeenCalledTimes(2); // Initial save + timeout update
+      
+      MockVerification.expectRepositorySave(mockRepository, {
+        id: task.id,
+        status: TaskStatus.FAILED,
+        completedAt: expect.any(Number)
+      });
     });
 
     it('should log timeout events', async () => {
       // Delegate task first
       const delegateResult = await taskManager.delegate({
         prompt: 'test task',
-        timeout: 5000
+        timeout: TEST_CONSTANTS.FIVE_SECONDS_MS
       });
       
-      expect(delegateResult.ok).toBe(true);
-      if (!delegateResult.ok) return;
-      
-      const task = delegateResult.value;
+      const task = AssertionHelpers.expectSuccessResult(delegateResult);
 
       // Simulate timeout
-      const timeoutError = taskTimeout(task.id, 5000);
+      const timeoutError = taskTimeout(task.id, TEST_CONSTANTS.FIVE_SECONDS_MS);
       await taskManager.onTaskTimeout(task.id, timeoutError);
 
-      // Verify error logging
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        `Task ${task.id} timed out after 5000ms`
+      // Verify error logging with exact message format
+      MockVerification.expectCalledOnceWith(
+        mockLogger.error,
+        `Task ${task.id} timed out after ${TEST_CONSTANTS.FIVE_SECONDS_MS}ms`
       );
     });
   });

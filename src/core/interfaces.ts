@@ -16,6 +16,7 @@ export interface TaskQueue {
   peek(): Result<Task | null>;
   remove(taskId: TaskId): Result<void>;
   getAll(): Result<readonly Task[]>;
+  contains(taskId: TaskId): boolean;
   size(): number;
   clear(): Result<void>;
 }
@@ -77,6 +78,7 @@ export interface TaskRepository {
   findAll(): Promise<Result<readonly Task[]>>;
   findByStatus(status: string): Promise<Result<readonly Task[]>>;
   delete(taskId: TaskId): Promise<Result<void>>;
+  cleanupOldTasks(olderThanMs: number): Promise<Result<number>>;
 }
 
 /**

@@ -17,6 +17,7 @@ export class SQLiteTaskRepository implements TaskRepository {
   private readonly findAllStmt: SQLite.Statement;
   private readonly findByStatusStmt: SQLite.Statement;
   private readonly deleteStmt: SQLite.Statement;
+  private readonly cleanupOldTasksStmt: SQLite.Statement;
 
   constructor(database: Database) {
     this.db = database.getDatabase();
@@ -46,6 +47,12 @@ export class SQLiteTaskRepository implements TaskRepository {
 
     this.deleteStmt = this.db.prepare(`
       DELETE FROM tasks WHERE id = ?
+    `);
+
+    this.cleanupOldTasksStmt = this.db.prepare(`
+      DELETE FROM tasks 
+      WHERE status IN ('completed', 'failed', 'cancelled') 
+      AND completed_at < ?
     `);
   }
 
@@ -155,6 +162,20 @@ export class SQLiteTaskRepository implements TaskRepository {
         ErrorCode.SYSTEM_ERROR,
         `Failed to delete task: ${error}`,
         { taskId }
+      )
+    );
+  }
+
+  async cleanupOldTasks(olderThanMs: number): Promise<Result<number>> {
+    return tryCatchAsync(
+      async () => {
+        const cutoffTime = Date.now() - olderThanMs;
+        const result = this.cleanupOldTasksStmt.run(cutoffTime);
+        return result.changes || 0;
+      },
+      (error) => new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Failed to cleanup old tasks: ${error}`
       )
     );
   }

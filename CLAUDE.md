@@ -11,7 +11,7 @@ Claudine is an MCP (Model Context Protocol) server designed for dedicated server
 ### MCP Server Implementation
 - Claudine operates as an MCP server that Claude can connect to via the Model Context Protocol
 - Enables Claude to delegate tasks to background Claude Code instances for parallel task execution
-- Implements task queue management with priority levels and dependency resolution
+- Implements task queue management with priority levels
 
 ### Key Components
 
@@ -83,7 +83,7 @@ npm run dev
 When implementing MCP tools for Claudine, follow these patterns:
 
 1. **Tool Registration**: All tools use PascalCase naming (DelegateTask, TaskStatus, etc.)
-2. **Task Delegation**: DelegateTask accepts specifications with priority and dependencies
+2. **Task Delegation**: DelegateTask accepts specifications with priority levels
 3. **Status Monitoring**: TaskStatus and ListTasks provide task status and health info
 4. **Result Retrieval**: TaskLogs and TaskMetrics fetch results from tasks
 
@@ -92,12 +92,12 @@ When implementing MCP tools for Claudine, follow these patterns:
 Tasks submitted to Claudine should follow this structure:
 ```json
 {
-  "id": "unique-task-id",
+  "prompt": "claude-code command or instruction",
   "priority": "P0|P1|P2",
-  "dependencies": ["task-id-1", "task-id-2"],
-  "command": "claude-code command or instruction",
-  "context": {},
-  "timeout": 300000
+  "timeout": 300000,
+  "maxOutputBuffer": 10485760,
+  "workingDirectory": "/path/to/work/in",
+  "useWorktree": false
 }
 ```
 
@@ -196,12 +196,22 @@ const updateTask = (task: Task, update: Partial<Task>): Task => ({
 2. **Autoscaling by Default**: No configuration needed - automatically uses all available system resources
 3. **Resource Management**: Maintains 20% CPU headroom and 1GB RAM reserve for system stability
 4. **Error Handling**: Use Result types, never throw in business logic
-5. **Queue Persistence**: Implement persistent task queue for reliability (Phase 2)
+5. **Queue Persistence**: ✅ **IMPLEMENTED** - SQLite-based persistent task queue with recovery
 6. **Security**: Validate all task inputs at boundaries using Zod
 7. **Logging**: Structured JSON logging with context
 8. **No Worker Limits**: Unlike traditional approaches, we spawn as many workers as the system can handle
 9. **Testing**: Focus on integration tests that verify behaviors
 10. **Performance**: Measure and optimize critical paths
+
+## Current Architecture (v0.2.0)
+
+### Implemented Components
+- **Task Persistence**: SQLite database with WAL mode
+- **Autoscaling Manager**: Dynamic worker pool based on system resources
+- **Recovery Manager**: Restores interrupted tasks on startup
+- **Configuration System**: Environment-based configuration with validation
+- **Output Management**: Buffered capture with file overflow
+- **Resource Monitoring**: Real-time CPU/memory tracking
 
 
 ## Release Process

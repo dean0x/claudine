@@ -5,6 +5,7 @@ import os from 'os';
 import { Database } from '../../src/implementations/database.js';
 import { SQLiteTaskRepository } from '../../src/implementations/task-repository.js';
 import { createTask, TaskId, Priority, TaskStatus, updateTask } from '../../src/core/domain.js';
+import { TaskFactory, AssertionHelpers } from '../helpers/test-factories.js';
 
 describe('SQLiteTaskRepository', () => {
   let database: Database;
@@ -27,78 +28,63 @@ describe('SQLiteTaskRepository', () => {
 
   describe('retrieve operations', () => {
     it('should find task by ID', async () => {
-      const task = createTask({
-        prompt: 'Find me',
-        priority: Priority.P1
-      });
+      const task = TaskFactory.basic({ prompt: 'Find me', priority: Priority.P1 });
 
-      await repository.save(task);
+      const saveResult = await repository.save(task);
+      AssertionHelpers.expectSuccessResult(saveResult);
 
       const result = await repository.findById(task.id);
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value).toBeTruthy();
-        expect(result.value?.id).toBe(task.id);
-        expect(result.value?.prompt).toBe('Find me');
-      }
+      const foundTask = AssertionHelpers.expectSuccessResult(result);
+      
+      expect(foundTask).toBeTruthy();
+      expect(foundTask?.id).toBe(task.id);
+      expect(foundTask?.prompt).toBe('Find me');
     });
 
     it('should return null for non-existent task', async () => {
       const result = await repository.findById(TaskId('non-existent'));
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value).toBeNull();
-      }
+      
+      const foundTask = AssertionHelpers.expectSuccessResult(result);
+      expect(foundTask).toBeNull();
     });
 
     it('should find all tasks', async () => {
-      const task1 = createTask({ prompt: 'Task 1', priority: Priority.P2 });
-      const task2 = createTask({ prompt: 'Task 2', priority: Priority.P1 });
-      const task3 = createTask({ prompt: 'Task 3', priority: Priority.P0 });
+      const task1 = TaskFactory.basic({ prompt: 'Task 1', priority: Priority.P2 });
+      const task2 = TaskFactory.basic({ prompt: 'Task 2', priority: Priority.P1 });
+      const task3 = TaskFactory.highPriority();
 
-      await repository.save(task1);
-      await repository.save(task2);
-      await repository.save(task3);
+      AssertionHelpers.expectSuccessResult(await repository.save(task1));
+      AssertionHelpers.expectSuccessResult(await repository.save(task2));
+      AssertionHelpers.expectSuccessResult(await repository.save(task3));
 
       const result = await repository.findAll();
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value).toHaveLength(3);
-        const prompts = result.value.map(t => t.prompt);
-        expect(prompts).toContain('Task 1');
-        expect(prompts).toContain('Task 2');
-        expect(prompts).toContain('Task 3');
-      }
+      const tasks = AssertionHelpers.expectSuccessResult(result);
+      
+      expect(tasks).toHaveLength(3);
+      const prompts = tasks.map(t => t.prompt);
+      expect(prompts).toContain('Task 1');
+      expect(prompts).toContain('Task 2');
+      expect(prompts).toContain('urgent task');
     });
 
     it('should find tasks by status', async () => {
-      const task1 = createTask({ prompt: 'Queued 1', priority: Priority.P2 });
-      const task2 = createTask({ prompt: 'Queued 2', priority: Priority.P1 });
-      const task3 = updateTask(
-        createTask({ prompt: 'Running', priority: Priority.P0 }),
-        { status: TaskStatus.RUNNING }
-      );
+      const task1 = TaskFactory.basic({ prompt: 'Queued 1', priority: Priority.P2 });
+      const task2 = TaskFactory.basic({ prompt: 'Queued 2', priority: Priority.P1 });
+      const task3 = TaskFactory.running();
 
-      await repository.save(task1);
-      await repository.save(task2);
-      await repository.save(task3);
+      AssertionHelpers.expectSuccessResult(await repository.save(task1));
+      AssertionHelpers.expectSuccessResult(await repository.save(task2));
+      AssertionHelpers.expectSuccessResult(await repository.save(task3));
 
       const queuedResult = await repository.findByStatus(TaskStatus.QUEUED);
       const runningResult = await repository.findByStatus(TaskStatus.RUNNING);
 
-      expect(queuedResult.ok).toBe(true);
-      expect(runningResult.ok).toBe(true);
+      const queuedTasks = AssertionHelpers.expectSuccessResult(queuedResult);
+      const runningTasks = AssertionHelpers.expectSuccessResult(runningResult);
       
-      if (queuedResult.ok) {
-        expect(queuedResult.value).toHaveLength(2);
-      }
-      if (runningResult.ok) {
-        expect(runningResult.value).toHaveLength(1);
-        expect(runningResult.value[0].prompt).toBe('Running');
-      }
+      expect(queuedTasks).toHaveLength(2);
+      expect(runningTasks).toHaveLength(1);
+      AssertionHelpers.expectTaskWithStatus(runningTasks[0], TaskStatus.RUNNING);
     });
   });
 
