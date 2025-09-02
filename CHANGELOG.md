@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Duplicate Prevention**: Added `contains()` method to TaskQueue to prevent duplicate task processing
 - **Database Recovery**: Improved RecoveryManager to only restore QUEUED/RUNNING tasks, not all tasks
 - **Cleanup Logic**: Added automatic cleanup of old completed tasks (7 day retention) on startup
+- **Output Buffer Logic**: Fixed bug where zero buffer size configurations were ignored due to falsy value handling
 
 ### 📚 Documentation Overhaul  
 - **FEATURES.md**: New comprehensive documentation of all implemented features

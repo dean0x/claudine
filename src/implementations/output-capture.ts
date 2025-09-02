@@ -43,7 +43,7 @@ export class BufferedOutputCapture implements OutputCapture {
     
     // Get the applicable buffer limit (per-task or global)
     const taskConfig = this.taskConfigs.get(taskId);
-    const bufferLimit = taskConfig?.maxOutputBuffer || this.maxBufferSize;
+    const bufferLimit = taskConfig?.maxOutputBuffer !== undefined ? taskConfig.maxOutputBuffer : this.maxBufferSize;
     
     // Check if adding this would exceed the limit
     if (buffer.totalSize + dataSize > bufferLimit) {
