@@ -33,17 +33,11 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
         const child = spawn(this.claudeCommand, args, {
           cwd: workingDirectory,
           env: { ...process.env },
-          stdio: ['pipe', 'pipe', 'pipe'],
+          stdio: ['ignore', 'pipe', 'pipe'],
         });
 
         if (!child.pid) {
           throw new Error('Failed to get process PID');
-        }
-
-        // Provide empty JSON to stdin and close it
-        if (child.stdin) {
-          child.stdin.write('{}');
-          child.stdin.end();
         }
 
         return { process: child, pid: child.pid };
