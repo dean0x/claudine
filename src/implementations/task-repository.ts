@@ -72,7 +72,7 @@ export class SQLiteTaskRepository implements TaskRepository {
           completedAt: task.completedAt || null,
           workerId: task.workerId || null,
           exitCode: task.exitCode ?? null,
-          dependencies: null // TODO: Implement dependencies in phase 4
+          dependencies: null // Phase 4: Task dependencies not yet implemented
         };
 
         this.saveStmt.run(dbTask);
@@ -110,7 +110,7 @@ export class SQLiteTaskRepository implements TaskRepository {
   async findById(taskId: TaskId): Promise<Result<Task | null>> {
     return tryCatchAsync(
       async () => {
-        const row = this.findByIdStmt.get(taskId) as any;
+        const row = this.findByIdStmt.get(taskId) as Record<string, any> | undefined;
         
         if (!row) {
           return null;
@@ -129,7 +129,7 @@ export class SQLiteTaskRepository implements TaskRepository {
   async findAll(): Promise<Result<readonly Task[]>> {
     return tryCatchAsync(
       async () => {
-        const rows = this.findAllStmt.all() as any[];
+        const rows = this.findAllStmt.all() as Record<string, any>[];
         return rows.map(row => this.rowToTask(row));
       },
       (error) => new ClaudineError(
@@ -142,7 +142,7 @@ export class SQLiteTaskRepository implements TaskRepository {
   async findByStatus(status: string): Promise<Result<readonly Task[]>> {
     return tryCatchAsync(
       async () => {
-        const rows = this.findByStatusStmt.all(status) as any[];
+        const rows = this.findByStatusStmt.all(status) as Record<string, any>[];
         return rows.map(row => this.rowToTask(row));
       },
       (error) => new ClaudineError(
@@ -180,6 +180,24 @@ export class SQLiteTaskRepository implements TaskRepository {
     );
   }
 
+  async transaction<T>(fn: (repo: TaskRepository) => Promise<Result<T>>): Promise<Result<T>> {
+    try {
+      const transactionFn = this.db.transaction(async () => {
+        // Create a transaction-wrapped repository
+        const txRepo = new TransactionTaskRepository(this);
+        return await fn(txRepo);
+      });
+      
+      // Execute the transaction and return the result
+      return await transactionFn();
+    } catch (error) {
+      return err(new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Transaction failed: ${error}`
+      ));
+    }
+  }
+
   private rowToTask(row: any): Task {
     return {
       id: row.id as TaskId,
@@ -194,5 +212,46 @@ export class SQLiteTaskRepository implements TaskRepository {
       workerId: row.worker_id ? row.worker_id as WorkerId : undefined,
       exitCode: row.exit_code ?? undefined
     };
+  }
+}
+
+/**
+ * Transaction-wrapped repository that delegates to the main repository
+ * All operations run within the same SQLite transaction
+ */
+class TransactionTaskRepository implements TaskRepository {
+  constructor(private readonly mainRepo: SQLiteTaskRepository) {}
+
+  async save(task: Task): Promise<Result<void>> {
+    return this.mainRepo.save(task);
+  }
+
+  async update(taskId: TaskId, update: Partial<Task>): Promise<Result<void>> {
+    return this.mainRepo.update(taskId, update);
+  }
+
+  async findById(taskId: TaskId): Promise<Result<Task | null>> {
+    return this.mainRepo.findById(taskId);
+  }
+
+  async findAll(): Promise<Result<readonly Task[]>> {
+    return this.mainRepo.findAll();
+  }
+
+  async findByStatus(status: string): Promise<Result<readonly Task[]>> {
+    return this.mainRepo.findByStatus(status);
+  }
+
+  async delete(taskId: TaskId): Promise<Result<void>> {
+    return this.mainRepo.delete(taskId);
+  }
+
+  async cleanupOldTasks(olderThanMs: number): Promise<Result<number>> {
+    return this.mainRepo.cleanupOldTasks(olderThanMs);
+  }
+
+  async transaction<T>(fn: (repo: TaskRepository) => Promise<Result<T>>): Promise<Result<T>> {
+    // Nested transactions not supported - just execute the function
+    return fn(this);
   }
 }

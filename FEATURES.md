@@ -103,7 +103,7 @@ This document lists all features that are **currently implemented and working** 
 
 ### Commands
 - `claudine mcp start`: Start the MCP server
-- `claudine mcp test`: Test server in mock mode
+- `claudine mcp test`: Test server startup and validation
 - `claudine mcp config`: Show MCP configuration examples
 - `claudine help`: Show help and usage
 
@@ -123,10 +123,12 @@ This document lists all features that are **currently implemented and working** 
 - **Resource Monitor**: System resource tracking
 
 ### Design Patterns
+- **Event-Driven Architecture**: Complete event-based coordination between components
+- **Singleton EventBus**: Shared event bus across all system components
 - **Dependency Injection**: Container-based DI with Result types
 - **Result Pattern**: No exceptions in business logic
 - **Immutable Domain**: Readonly data structures
-- **Event-Driven**: Async event handling with callbacks
+- **Database-First Pattern**: Single source of truth with no memory-database divergence
 - **Composable Functions**: Pipe-based function composition
 
 ## ❌ NOT Implemented (Despite Some Documentation Claims)

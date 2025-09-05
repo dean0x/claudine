@@ -6,6 +6,7 @@ import { vi, expect } from 'vitest';
 import { createTask, Priority, TaskStatus, TaskId } from '../../src/core/domain.js';
 import type { DelegateRequest, Task } from '../../src/core/domain.js';
 import type { ProcessSpawner, ResourceMonitor, Logger, OutputCapture, TaskQueue, WorkerPool, TaskRepository } from '../../src/core/interfaces.js';
+import type { EventBus } from '../../src/core/events/event-bus.js';
 import { ok } from '../../src/core/result.js';
 
 // Test Constants
@@ -136,7 +137,9 @@ export const MockFactory = {
       pid: TEST_CONSTANTS.TEST_PID,
       on: vi.fn(),
       stdout: { on: vi.fn() },
-      stderr: { on: vi.fn() }
+      stderr: { on: vi.fn() },
+      kill: vi.fn(),
+      killed: false
     };
 
     return {
@@ -219,8 +222,19 @@ export const MockFactory = {
       update: vi.fn().mockResolvedValue(ok(undefined)),
       delete: vi.fn().mockResolvedValue(ok(undefined)),
       findAll: vi.fn().mockResolvedValue(ok([])),
-      cleanupOldTasks: vi.fn().mockResolvedValue(ok(0))
+      cleanupOldTasks: vi.fn().mockResolvedValue(ok(0)),
+      transaction: vi.fn().mockImplementation(async (fn) => await fn({} as TaskRepository))
     } as TaskRepository;
+  },
+
+  eventBus: (): EventBus => {
+    return {
+      emit: vi.fn().mockResolvedValue(ok(undefined)),
+      subscribe: vi.fn().mockReturnValue(ok(undefined)),
+      unsubscribe: vi.fn().mockReturnValue(ok(undefined)),
+      subscribeAll: vi.fn().mockReturnValue(ok(undefined)),
+      unsubscribeAll: vi.fn().mockReturnValue(ok(undefined))
+    } as EventBus;
   }
 };
 

@@ -8,6 +8,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import pkg from '../package.json' with { type: 'json' };
 import { bootstrap } from './bootstrap.js';
 import { AutoscalingManager } from './services/autoscaling-manager.js';
+import { WorkerPool } from './core/interfaces.js';
 import { MCPAdapter } from './adapters/mcp-adapter.js';
 import { Logger } from './core/interfaces.js';
 import { Container } from './core/container.js';
@@ -31,13 +32,16 @@ async function main() {
     // Bootstrap application
     container = await bootstrap();
 
-    // Get services
-    const loggerResult = container.get<Logger>('logger');
-    const mcpAdapterResult = container.get<MCPAdapter>('mcpAdapter');
-    const autoscalerResult = container.get<AutoscalingManager>('autoscalingManager');
+    // Resolve services (async factories require resolve())
+    const loggerResult = await container.resolve<Logger>('logger');
+    const mcpAdapterResult = await container.resolve<MCPAdapter>('mcpAdapter');
+    const autoscalerResult = await container.resolve<AutoscalingManager>('autoscalingManager');
 
     if (!loggerResult.ok || !mcpAdapterResult.ok || !autoscalerResult.ok) {
-      console.error('Failed to resolve required services');
+      console.error('Failed to resolve required services:');
+      if (!loggerResult.ok) console.error('  logger:', loggerResult.error.message);
+      if (!mcpAdapterResult.ok) console.error('  mcpAdapter:', mcpAdapterResult.error.message);
+      if (!autoscalerResult.ok) console.error('  autoscalingManager:', autoscalerResult.error.message);
       process.exit(1);
     }
 
@@ -71,7 +75,7 @@ async function main() {
       // Kill all workers
       const workerPoolResult = container?.get('workerPool');
       if (workerPoolResult?.ok) {
-        await (workerPoolResult.value as any).killAll();
+        await (workerPoolResult.value as WorkerPool).killAll();
       }
 
       // Close server

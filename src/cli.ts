@@ -20,7 +20,7 @@ Usage:
 
 Commands:
   mcp start      Start the MCP server
-  mcp test       Test the server in mock mode
+  mcp test       Test server startup and validation
   mcp config     Show MCP configuration for Claude
   help           Show this help message
 
@@ -97,18 +97,50 @@ if (mainCommand === 'mcp') {
   } else if (subCommand === 'test') {
     console.log('🧪 Testing Claudine MCP Server...\n');
     
-    // Run in mock mode
+    // Test real server startup and shutdown
     const indexPath = path.join(__dirname, 'index.js');
     const mcp = spawn('node', [indexPath], {
-      env: { ...process.env, MOCK_MODE: 'true' },
-      stdio: 'inherit'
+      stdio: ['pipe', 'pipe', 'pipe'] // Capture output for validation
     });
     
+    let output = '';
+    let hasError = false;
+    
+    // Capture stdout/stderr
+    mcp.stdout?.on('data', (data) => { output += data.toString(); });
+    mcp.stderr?.on('data', (data) => { output += data.toString(); });
+    
+    // Handle process events
+    mcp.on('error', (error) => {
+      console.error('❌ Failed to start server:', error.message);
+      hasError = true;
+    });
+    
+    mcp.on('exit', (code) => {
+      if (hasError) {
+        process.exit(1);
+      }
+      if (code !== 0 && code !== null) {
+        console.error('❌ Server exited with non-zero code:', code);
+        console.error('Output:', output);
+        process.exit(1);
+      }
+    });
+    
+    // Test server starts within reasonable time
     setTimeout(() => {
-      console.log('\n✅ Server started successfully in mock mode!');
-      mcp.kill();
-      process.exit(0);
-    }, 3000);
+      if (output.includes('Starting Claudine MCP Server') && !hasError) {
+        console.log('✅ Server started successfully!');
+        console.log('✅ Bootstrap completed without errors');
+        mcp.kill();
+        process.exit(0);
+      } else {
+        console.error('❌ Server failed to start properly');
+        console.error('Output:', output);
+        mcp.kill();
+        process.exit(1);
+      }
+    }, 5000);
     
   } else if (subCommand === 'config') {
     showConfig();

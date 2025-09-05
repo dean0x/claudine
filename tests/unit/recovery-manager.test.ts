@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { RecoveryManager } from '../../src/services/recovery-manager.js';
 import { TaskStatus } from '../../src/core/domain.js';
-import type { TaskRepository, TaskQueue, Logger } from '../../src/core/interfaces.js';
+import type { TaskRepository, TaskQueue, Logger, EventBus } from '../../src/core/interfaces.js';
 import { TaskFactory, MockFactory, AssertionHelpers } from '../helpers/test-factories.js';
 import { ok, err } from '../../src/core/result.js';
 
@@ -10,15 +10,18 @@ describe('RecoveryManager', () => {
   let mockRepository: TaskRepository;
   let mockQueue: TaskQueue;
   let mockLogger: Logger;
+  let mockEventBus: EventBus;
 
   beforeEach(() => {
     mockRepository = MockFactory.taskRepository();
     mockQueue = MockFactory.taskQueue();
     mockLogger = MockFactory.logger();
+    mockEventBus = MockFactory.eventBus();
 
     recoveryManager = new RecoveryManager(
       mockRepository,
       mockQueue,
+      mockEventBus,
       mockLogger
     );
   });

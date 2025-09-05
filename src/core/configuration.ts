@@ -19,8 +19,8 @@ export interface TaskConfiguration {
 const DEFAULT_CONFIG: Configuration = {
   timeout: 1800000, // 30 minutes
   maxOutputBuffer: 10485760, // 10MB
-  cpuThreshold: 80, // 80%
-  memoryReserve: 1073741824, // 1GB
+  cpuThreshold: 95, // 95% (more permissive for development)
+  memoryReserve: 100000000, // 100MB (much lower for development)
   logLevel: 'info'
 };
 

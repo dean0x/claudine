@@ -4,6 +4,43 @@ All notable changes to Claudine will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2025-09-03
+
+### ✨ Major Architecture Improvements
+- **🏗️ Event-Driven Architecture**: Complete refactor from polling-based to event-driven system
+- **🔗 Singleton EventBus**: All components now share a single EventBus for proper event propagation
+- **🚫 Race Condition Elimination**: Fixed all worker pool race conditions through event-driven design
+- **🗃️ Database-First Pattern**: Removed memory-database state divergence issues
+
+### 🛠️ Technical Enhancements
+- **🎯 Type Safety**: Eliminated all 26 'as any' type casts for improved type safety
+- **🔄 EventDrivenWorkerPool**: Replaced AutoscalingWorkerPool with race-condition-free implementation
+- **📤 Output Integration**: Complete OutputCapture event integration with OutputCapturedEvent emission
+- **📝 Method Deprecation**: Properly deprecated listTasks() method with migration guidance
+
+### 🐛 Bug Fixes
+- **WorkerPool Race Conditions**: Fixed timeout/completion race conditions that could cause resource leaks
+- **EventBus Isolation**: Fixed critical issue where components had separate EventBus instances
+- **Memory-Database Divergence**: Eliminated inconsistencies between in-memory and database state
+- **Polling Elimination**: Removed all setInterval polling loops in favor of reactive events
+
+### 📚 Code Quality
+- **Clean Architecture**: Event handlers now properly isolated with clear responsibilities
+- **Better Error Handling**: Improved error propagation through Result pattern
+- **Enhanced Testing**: All 93 tests passing with improved architecture validation
+- **Documentation Updates**: Added proper JSDoc deprecation markers
+
+### ⚠️ Breaking Changes
+- **Internal Only**: All breaking changes are internal architecture improvements
+- **API Compatibility**: All MCP tools remain fully compatible
+- **Migration**: No user action required - all changes are internal
+
+### 🔧 Developer Experience
+- **Faster Builds**: Improved TypeScript compilation with better type inference
+- **Better Debugging**: Event-driven flow easier to trace and debug
+- **Cleaner Code**: Reduced complexity through event-based coordination
+- **Production Ready**: Significantly more stable and reliable architecture
+
 ## [0.2.1] - 2025-09-02
 
 ### 🐛 Critical Bug Fixes

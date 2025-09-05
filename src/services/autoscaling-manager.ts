@@ -1,6 +1,6 @@
 /**
- * Autoscaling manager
- * Continuously monitors resources and spawns workers as needed
+ * Event-driven autoscaling manager
+ * Responds to system events and emits scaling decisions
  */
 
 import {
@@ -8,26 +8,49 @@ import {
   WorkerPool,
   ResourceMonitor,
   Logger,
+  EventBus
 } from '../core/interfaces.js';
+import { Result, ok, err } from '../core/result.js';
+import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { BaseEventHandler } from '../core/events/handlers.js';
 
-export class AutoscalingManager {
+export class AutoscalingManager extends BaseEventHandler {
   private running = false;
-  private checkInterval: NodeJS.Timeout | null = null;
-  private readonly checkIntervalMs: number;
-  private onScaleUpCallback?: () => void;
 
   constructor(
     private readonly queue: TaskQueue,
     private readonly workers: WorkerPool,
     private readonly monitor: ResourceMonitor,
-    private readonly logger: Logger,
-    checkIntervalMs = 1000 // Check every second by default
+    private readonly eventBus: EventBus,
+    logger: Logger
   ) {
-    this.checkIntervalMs = checkIntervalMs;
+    super(logger, 'AutoscalingManager');
   }
 
   /**
-   * Start the autoscaling loop
+   * Set up event subscriptions
+   */
+  async setup(): Promise<Result<void>> {
+    // Subscribe to events that trigger scaling decisions
+    // NOTE: We don't subscribe to TaskQueued - that's WorkerHandler's responsibility
+    const subscriptions = [
+      this.eventBus.subscribe('WorkerKilled', this.handleWorkerKilled.bind(this)),
+      this.eventBus.subscribe('SystemResourcesUpdated', this.handleResourcesUpdated.bind(this)),
+    ];
+
+    // Check if any subscription failed
+    for (const result of subscriptions) {
+      if (!result.ok) {
+        return result;
+      }
+    }
+
+    this.logger.info('Event-driven AutoscalingManager initialized');
+    return ok(undefined);
+  }
+
+  /**
+   * Start the autoscaling manager
    */
   start(): void {
     if (this.running) {
@@ -36,17 +59,11 @@ export class AutoscalingManager {
     }
 
     this.running = true;
-    this.logger.info('Autoscaling started', {
-      checkInterval: this.checkIntervalMs,
-      thresholds: this.monitor.getThresholds(),
-    });
-
-    // Start the check loop
-    this.scheduleCheck();
+    this.logger.info('Event-driven autoscaling started');
   }
 
   /**
-   * Stop the autoscaling loop
+   * Stop the autoscaling manager
    */
   stop(): void {
     if (!this.running) {
@@ -54,36 +71,68 @@ export class AutoscalingManager {
     }
 
     this.running = false;
-    
-    if (this.checkInterval) {
-      clearTimeout(this.checkInterval);
-      this.checkInterval = null;
-    }
-
-    this.logger.info('Autoscaling stopped');
+    this.logger.info('Event-driven autoscaling stopped');
   }
 
+
   /**
-   * Perform one autoscaling check
+   * Handle worker killed events - check if we need to scale up for remaining queue
    */
-  private async check(): Promise<void> {
+  private async handleWorkerKilled(event: any): Promise<void> {
     if (!this.running) {
       return;
     }
 
+    this.logger.debug('Worker killed, checking for scaling opportunity', {
+      workerId: event.workerId,
+      taskId: event.taskId,
+      eventId: event.eventId
+    });
+
+    // Small delay to let the queue handler process any completed tasks
+    setTimeout(() => this.checkScaling(), 100);
+  }
+
+  /**
+   * Handle system resource updates - check if resources now allow scaling
+   */
+  private async handleResourcesUpdated(event: any): Promise<void> {
+    if (!this.running) {
+      return;
+    }
+
+    // Only check scaling if resources look favorable
+    const { cpuPercent, memoryUsed } = event;
+    if (cpuPercent < 70) { // Good CPU availability
+      this.logger.debug('Resources favorable for scaling', {
+        cpuPercent,
+        memoryUsed,
+        eventId: event.eventId
+      });
+
+      await this.checkScaling();
+    }
+  }
+
+  /**
+   * Core scaling decision logic
+   */
+  private async checkScaling(): Promise<void> {
     try {
       // Get current state
       const queueSize = this.queue.size();
       const workerCount = this.workers.getWorkerCount();
 
-      // Log current state
-      this.logger.debug('Autoscaling check', {
-        queueSize,
-        workerCount,
-      });
+      this.logger.debug('Scaling check', { queueSize, workerCount });
 
       // If queue is empty, nothing to do
       if (queueSize === 0) {
+        return;
+      }
+
+      // If we already have enough workers, don't over-provision
+      if (workerCount >= queueSize) {
+        this.logger.debug('Sufficient workers for queue size', { workerCount, queueSize });
         return;
       }
 
@@ -91,82 +140,57 @@ export class AutoscalingManager {
       const canSpawnResult = await this.monitor.canSpawnWorker();
       
       if (!canSpawnResult.ok) {
-        this.logger.error('Failed to check resources', canSpawnResult.error);
+        this.logger.error('Failed to check resources for scaling', canSpawnResult.error);
         return;
       }
 
       if (!canSpawnResult.value) {
-        // Can't spawn, log why
-        const resourcesResult = await this.monitor.getResources();
-        
-        if (resourcesResult.ok) {
-          const resources = resourcesResult.value;
-          this.logger.debug('Cannot spawn worker - insufficient resources', {
-            cpuUsage: resources.cpuUsage,
-            availableMemory: resources.availableMemory,
-            workerCount: resources.workerCount,
-          });
-        }
-        
+        // Can't spawn, log resource status
+        await this.logResourceConstraints();
         return;
       }
 
-      // We can spawn! Get next task
+      // Get next task to spawn worker for
       const peekResult = this.queue.peek();
       
       if (!peekResult.ok || !peekResult.value) {
+        this.logger.debug('No task available in queue for scaling');
         return;
       }
 
-      // Log that we're scaling up
-      this.logger.info('Scaling up', {
+      const task = peekResult.value;
+
+      // Log that we would scale but WorkerHandler handles actual spawning
+      this.logger.info('Scaling opportunity detected', {
         queueSize,
         currentWorkers: workerCount,
-        newWorkers: workerCount + 1,
+        taskId: task.id,
+        reason: 'Resources available, WorkerHandler should spawn worker'
       });
 
-      // Emit event (for TaskManager to handle actual spawning)
-      this.onScaleUp();
-
     } catch (error) {
-      this.logger.error('Autoscaling check failed', error as Error);
-    } finally {
-      // Schedule next check
-      this.scheduleCheck();
+      this.logger.error('Scaling check failed', error as Error);
     }
   }
 
   /**
-   * Schedule the next check
+   * Log why we can't scale up
    */
-  private scheduleCheck(): void {
-    if (!this.running) {
-      return;
+  private async logResourceConstraints(): Promise<void> {
+    const resourcesResult = await this.monitor.getResources();
+    
+    if (resourcesResult.ok) {
+      const resources = resourcesResult.value;
+      const thresholds = this.monitor.getThresholds();
+      
+      this.logger.debug('Cannot scale - resource constraints', {
+        cpuUsage: resources.cpuUsage,
+        cpuThreshold: thresholds.maxCpuPercent,
+        availableMemory: resources.availableMemory,
+        memoryReserve: thresholds.minMemoryBytes,
+        workerCount: resources.workerCount,
+      });
     }
-
-    this.checkInterval = setTimeout(
-      () => this.check(),
-      this.checkIntervalMs
-    );
-  }
-
-  /**
-   * Called when we need to scale up
-   * This would typically emit an event that TaskManager listens to
-   */
-  private onScaleUp(): void {
-    this.logger.debug('Scale up event emitted');
-    // Call the callback if set
-    if (this.onScaleUpCallback) {
-      this.onScaleUpCallback();
-    }
-  }
-  
-  /**
-   * Set callback for scale up events
-   */
-  setOnScaleUp(callback: () => void): void {
-    this.onScaleUpCallback = callback;
   }
 
   /**

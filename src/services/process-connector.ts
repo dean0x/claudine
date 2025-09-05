@@ -21,6 +21,16 @@ export class ProcessConnector {
     taskId: TaskId,
     onExit: (code: number | null) => void
   ): void {
+    let exitHandled = false;
+    
+    const safeOnExit = (code?: number | null) => {
+      if (exitHandled) {
+        this.logger.debug('Multiple onExit calls prevented', { taskId, code });
+        return;
+      }
+      exitHandled = true;
+      onExit(code || null);
+    };
     // Capture stdout
     if (process.stdout) {
       process.stdout.on('data', (data: Buffer) => {
@@ -48,7 +58,7 @@ export class ProcessConnector {
     // Handle process exit
     process.on('exit', (code) => {
       this.logger.debug('Process exited', { taskId, code });
-      onExit(code);
+      safeOnExit(code);
     });
 
     // Handle process error
@@ -64,7 +74,7 @@ export class ProcessConnector {
         this.logger.error('Failed to capture error', result.error, { taskId });
       }
       
-      onExit(1);
+      safeOnExit(1);
     });
   }
 }

@@ -3,7 +3,7 @@
  * Manages stdout/stderr for tasks with size limits
  */
 
-import { OutputCapture } from '../core/interfaces.js';
+import { OutputCapture, EventBus } from '../core/interfaces.js';
 import { TaskId, TaskOutput } from '../core/domain.js';
 import { Result, ok, err } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
@@ -22,9 +22,11 @@ export class BufferedOutputCapture implements OutputCapture {
   private readonly buffers = new Map<TaskId, OutputBuffer>();
   private readonly taskConfigs = new Map<TaskId, TaskConfig>();
   private readonly maxBufferSize: number;
+  private readonly eventBus?: EventBus;
 
-  constructor(maxBufferSize = 10 * 1024 * 1024) { // 10MB default
+  constructor(maxBufferSize = 10 * 1024 * 1024, eventBus?: EventBus) { // 10MB default
     this.maxBufferSize = maxBufferSize;
+    this.eventBus = eventBus;
   }
 
   capture(taskId: TaskId, type: 'stdout' | 'stderr', data: string): Result<void> {
@@ -62,6 +64,18 @@ export class BufferedOutputCapture implements OutputCapture {
     }
     
     buffer.totalSize += dataSize;
+
+    // Emit OutputCaptured event if eventBus is available
+    if (this.eventBus) {
+      this.eventBus.emit('OutputCaptured', {
+        taskId,
+        outputType: type,
+        data
+      }).catch(() => {
+        // Log error but don't fail the capture operation
+        // EventBus errors shouldn't break output capture
+      });
+    }
     
     return ok(undefined);
   }

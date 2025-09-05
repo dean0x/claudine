@@ -359,7 +359,7 @@ export class MCPAdapter {
 
     const { taskId, tail } = parseResult.data;
 
-    const result = this.taskManager.getLogs(TaskId(taskId), tail);
+    const result = await this.taskManager.getLogs(TaskId(taskId), tail);
 
     return match(result, {
       ok: (output) => ({

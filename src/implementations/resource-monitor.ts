@@ -4,7 +4,7 @@
  */
 
 import os from 'os';
-import { ResourceMonitor } from '../core/interfaces.js';
+import { ResourceMonitor, EventBus, Logger } from '../core/interfaces.js';
 import { SystemResources } from '../core/domain.js';
 import { Result, ok, err, tryCatchAsync } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
@@ -13,10 +13,15 @@ export class SystemResourceMonitor implements ResourceMonitor {
   private readonly cpuThreshold: number;
   private readonly memoryReserve: number;
   private workerCount = 0;
+  private monitoringInterval: NodeJS.Timeout | null = null;
+  private isMonitoring = false;
 
   constructor(
     cpuThreshold = 80, // Max 80% CPU usage
-    memoryReserve = 1_000_000_000 // Keep 1GB free
+    memoryReserve = 1_000_000_000, // Keep 1GB free
+    private readonly eventBus?: EventBus,
+    private readonly logger?: Logger,
+    private readonly monitoringIntervalMs = 5000 // Emit events every 5 seconds
   ) {
     this.cpuThreshold = cpuThreshold;
     this.memoryReserve = memoryReserve;
@@ -99,6 +104,98 @@ export class SystemResourceMonitor implements ResourceMonitor {
   decrementWorkerCount(): void {
     if (this.workerCount > 0) {
       this.workerCount--;
+    }
+  }
+
+  /**
+   * Start periodic resource monitoring and event publishing
+   */
+  startMonitoring(): void {
+    if (this.isMonitoring || !this.eventBus) {
+      return;
+    }
+
+    this.isMonitoring = true;
+    this.logger?.info('Starting resource monitoring', {
+      intervalMs: this.monitoringIntervalMs,
+      cpuThreshold: this.cpuThreshold,
+      memoryReserve: this.memoryReserve
+    });
+
+    this.scheduleResourceCheck();
+  }
+
+  /**
+   * Stop periodic resource monitoring
+   */
+  stopMonitoring(): void {
+    if (!this.isMonitoring) {
+      return;
+    }
+
+    this.isMonitoring = false;
+    
+    if (this.monitoringInterval) {
+      clearTimeout(this.monitoringInterval);
+      this.monitoringInterval = null;
+    }
+
+    this.logger?.info('Stopped resource monitoring');
+  }
+
+  /**
+   * Schedule the next resource check
+   */
+  private scheduleResourceCheck(): void {
+    if (!this.isMonitoring) {
+      return;
+    }
+
+    this.monitoringInterval = setTimeout(
+      () => this.performResourceCheck(),
+      this.monitoringIntervalMs
+    );
+  }
+
+  /**
+   * Perform a resource check and emit events
+   */
+  private async performResourceCheck(): Promise<void> {
+    if (!this.isMonitoring || !this.eventBus) {
+      return;
+    }
+
+    try {
+      const resourcesResult = await this.getResources();
+      
+      if (resourcesResult.ok) {
+        const resources = resourcesResult.value;
+        
+        // Emit SystemResourcesUpdated event
+        const eventResult = await this.eventBus.emit('SystemResourcesUpdated', {
+          cpuPercent: resources.cpuUsage,
+          memoryUsed: resources.totalMemory - resources.availableMemory,
+          workerCount: resources.workerCount
+        });
+
+        if (!eventResult.ok) {
+          this.logger?.error('Failed to emit SystemResourcesUpdated event', eventResult.error);
+        } else {
+          this.logger?.debug('Resource status published', {
+            cpuPercent: resources.cpuUsage,
+            memoryUsed: resources.totalMemory - resources.availableMemory,
+            workerCount: resources.workerCount
+          });
+        }
+      } else {
+        this.logger?.error('Failed to get system resources for monitoring', resourcesResult.error);
+      }
+
+    } catch (error) {
+      this.logger?.error('Resource monitoring check failed', error as Error);
+    } finally {
+      // Schedule next check
+      this.scheduleResourceCheck();
     }
   }
 

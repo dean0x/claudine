@@ -146,7 +146,7 @@ After adding the configuration, restart Claude Code or Claude Desktop to connect
 # Start the MCP server
 claudine mcp start
 
-# Test the server in mock mode
+# Test server startup and validation
 claudine mcp test
 
 # Show MCP configuration

@@ -116,7 +116,7 @@ export class SQLiteOutputRepository implements OutputRepository {
   async get(taskId: TaskId): Promise<Result<TaskOutput | null>> {
     return tryCatchAsync(
       async () => {
-        const row = this.getStmt.get(taskId) as any;
+        const row = this.getStmt.get(taskId) as Record<string, any> | undefined;
         
         if (!row) {
           return null;
@@ -147,7 +147,7 @@ export class SQLiteOutputRepository implements OutputRepository {
     return tryCatchAsync(
       async () => {
         // Get the row to check for file
-        const row = this.getStmt.get(taskId) as any;
+        const row = this.getStmt.get(taskId) as Record<string, any> | undefined;
         
         if (row?.file_path) {
           // Delete the file

@@ -16,7 +16,7 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
     claudeCommand = 'claude'
   ) {
     this.claudeCommand = claudeCommand;
-    this.baseArgs = Object.freeze(['--print', '--dangerously-skip-permissions']);
+    this.baseArgs = Object.freeze(['--print', '--dangerously-skip-permissions', '--output-format', 'json']);
   }
 
   spawn(prompt: string, workingDirectory: string): Result<{ process: ChildProcess; pid: number }> {

@@ -239,64 +239,73 @@ const updateTask = (task: Task, update: Partial<Task>): Task => ({
    npm test
    ```
 
-### Release Steps
+### Release Steps (CI/CD Only)
 
-**Choose ONE approach:**
+**IMPORTANT**: Only use automated CI/CD releases to prevent versioning errors.
 
-#### Option A: Automated Publishing (Recommended)
 1. **Create Pull Request**
    ```bash
    # Commit all changes
    git add .
-   git commit -m "chore: prepare v0.2.0 release"
+   git commit -m "chore: prepare v0.2.1 release"
    
    # Push branch
    git push origin feature/your-branch
    
    # Create PR via GitHub CLI
-   gh pr create --title "Release v0.2.0" --body "Release notes..."
+   gh pr create --title "Release v0.2.1" --body "Release notes..."
    ```
 
-2. **After PR is merged**
+2. **After PR is merged to main**
    ```bash
-   # Switch to main
+   # Switch to main branch
    git checkout main
-   git pull
+   git pull origin main
    
-   # Update version and create tag
-   npm version minor --no-git-tag-version  # or patch/major
-   git add package.json package-lock.json
-   git commit -m "chore: bump version to v0.2.0"
-   git tag v0.2.0
-   git push origin main
-   git push origin v0.2.0
+   # Use npm version to bump AND create git tag automatically
+   npm version minor  # Creates commit + tag automatically
+   
+   # Push both commit and tag
+   git push origin main --follow-tags
    ```
 
 3. **Create GitHub Release** (triggers automatic npm publish)
    ```bash
-   # Create release with GitHub CLI
-   gh release create v0.2.0 --title "🚀 Claudine v0.2.0 - Title" --notes-file RELEASE_NOTES_v0.2.0.md
+   # Create release - this triggers GitHub Actions CI/CD
+   gh release create v0.2.1 \
+     --title "🚀 Claudine v0.2.1 - Event-Driven Architecture" \
+     --notes-file CHANGELOG.md \
+     --generate-notes
    ```
    
-   The GitHub Actions workflow will automatically:
+   **GitHub Actions will automatically:**
    - Build and test the code
-   - Publish to npm with public access
-   - Update release notes with npm install instructions
+   - Publish to npm with public access  
+   - Verify git tag matches package.json version
+   - Fail if any step is incorrect
 
-#### Option B: Manual Publishing
-1. **After PR is merged**
+### Release Safeguards
+
+To prevent versioning issues like missing tags:
+
+1. **Always use `npm version`** - creates both version bump AND git tag
+2. **Always use `--follow-tags`** - ensures tags are pushed with commits
+3. **Never manual publish** - CI/CD handles npm publishing
+4. **Verify before release**:
    ```bash
-   git checkout main && git pull
-   npm version minor --no-git-tag-version
-   git add package.json package-lock.json
-   git commit -m "chore: bump version to v0.2.0"
-   git tag v0.2.0
-   git push origin main && git push origin v0.2.0
-   npm publish  # Manual publish first
-   gh release create v0.2.0 --title "🚀 Claudine v0.2.0 - Title" --notes-file RELEASE_NOTES_v0.2.0.md
+   git log --oneline -1  # Check latest commit
+   git tag --points-at HEAD  # Verify tag exists on current commit
+   git push --dry-run --follow-tags  # Verify what will be pushed
+   npm run build && npm test  # Final validation
    ```
 
-**Note**: Don't mix approaches - the GitHub Actions workflow will fail if you manually publish first, then create a release (as it tries to publish the same version again).
+5. **Post-release verification**:
+   ```bash
+   # After GitHub release is created, verify everything matches:
+   npm view claudine versions --json  # Check npm registry
+   git tag --list | tail -5  # Check git tags
+   gh release list --limit 5  # Check GitHub releases
+   ```
 
 ### NPM Publishing Requirements
 - Must be logged in: `npm login`

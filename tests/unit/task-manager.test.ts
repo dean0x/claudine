@@ -1,103 +1,182 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TaskManagerService } from '../../src/services/task-manager.js';
 import { TaskStatus } from '../../src/core/domain.js';
-import { taskTimeout } from '../../src/core/errors.js';
-import type { TaskQueue, WorkerPool, OutputCapture, ResourceMonitor, Logger, TaskRepository } from '../../src/core/interfaces.js';
-import { TaskFactory, MockFactory, TEST_CONSTANTS, AssertionHelpers, MockVerification } from '../helpers/test-factories.js';
+import { NullEventBus } from '../../src/core/events/event-bus.js';
+import type { Logger, TaskRepository } from '../../src/core/interfaces.js';
+import { TaskFactory, MockFactory, TEST_CONSTANTS, AssertionHelpers } from '../helpers/test-factories.js';
 
-describe('TaskManagerService Timeout Handling', () => {
+describe('TaskManagerService Event-Driven Architecture', () => {
   let taskManager: TaskManagerService;
-  let mockQueue: TaskQueue;
-  let mockWorkers: WorkerPool;
-  let mockOutput: OutputCapture;
-  let mockMonitor: ResourceMonitor;
+  let mockEventBus: NullEventBus;
   let mockLogger: Logger;
   let mockRepository: TaskRepository;
 
   beforeEach(() => {
-    mockQueue = MockFactory.taskQueue();
-    mockWorkers = MockFactory.workerPool();
-    mockOutput = MockFactory.outputCapture();
-    mockMonitor = MockFactory.resourceMonitor(true);
+    mockEventBus = new NullEventBus();
     mockLogger = MockFactory.logger();
     mockRepository = MockFactory.taskRepository();
 
+    // Fix the logger mock to have proper methods
+    Object.assign(mockLogger, {
+      info: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
+      child: vi.fn(() => mockLogger)
+    });
+
     taskManager = new TaskManagerService(
-      mockQueue,
-      mockWorkers,
-      mockOutput,
-      mockMonitor,
-      mockLogger,
-      mockRepository
+      mockEventBus,
+      mockRepository,
+      mockLogger
     );
   });
 
-  describe('timeout handling', () => {
-    it('should have onTaskTimeout method', () => {
-      expect(typeof taskManager.onTaskTimeout).toBe('function');
-    });
-
-    it('should mark task as failed when timeout occurs', async () => {
-      // Delegate task first
+  describe('task delegation', () => {
+    it('should create task and emit TaskDelegated event', async () => {
       const delegateResult = await taskManager.delegate({
         prompt: 'test task',
         timeout: TEST_CONSTANTS.FIVE_SECONDS_MS
       });
       
       const task = AssertionHelpers.expectSuccessResult(delegateResult);
-
-      // Simulate timeout
-      const timeoutError = taskTimeout(task.id, TEST_CONSTANTS.FIVE_SECONDS_MS);
-      await taskManager.onTaskTimeout(task.id, timeoutError);
-
-      // Check task status
-      const statusResult = await taskManager.getStatus(task.id);
-      const updatedTask = AssertionHelpers.expectSuccessResult(statusResult);
+      expect(task.prompt).toBe('test task');
+      expect(task.status).toBe(TaskStatus.QUEUED);
+      expect(task.timeout).toBe(TEST_CONSTANTS.FIVE_SECONDS_MS);
       
-      AssertionHelpers.expectTaskWithStatus(updatedTask, TaskStatus.FAILED);
-      expect(updatedTask.completedAt).toBeGreaterThanOrEqual(task.createdAt);
+      // Verify logging occurred
+      expect(mockLogger.info).toHaveBeenCalledWith('Delegating task', expect.objectContaining({
+        taskId: task.id,
+        priority: task.priority
+      }));
     });
 
-    it('should persist timeout task updates to repository', async () => {
-      // Delegate task first  
-      const delegateResult = await taskManager.delegate({
-        prompt: 'test task',
-        timeout: TEST_CONSTANTS.FIVE_SECONDS_MS
+    it('should handle event emission failures gracefully', async () => {
+      // Create a failing event bus
+      const failingEventBus = {
+        emit: vi.fn().mockResolvedValue({ ok: false, error: new Error('Event emission failed') }),
+        subscribe: vi.fn(),
+        unsubscribe: vi.fn(),
+        subscribeAll: vi.fn(),
+        unsubscribeAll: vi.fn()
+      };
+
+      const failingTaskManager = new TaskManagerService(
+        failingEventBus as any,
+        mockRepository,
+        mockLogger
+      );
+
+      const delegateResult = await failingTaskManager.delegate({
+        prompt: 'test task'
       });
       
-      const task = AssertionHelpers.expectSuccessResult(delegateResult);
+      expect(delegateResult.ok).toBe(false);
+      expect(delegateResult.error?.message).toBe('Event emission failed');
+    });
+  });
 
-      // Simulate timeout
-      const timeoutError = taskTimeout(task.id, TEST_CONSTANTS.FIVE_SECONDS_MS);
-      await taskManager.onTaskTimeout(task.id, timeoutError);
+  describe('task status retrieval', () => {
+    it('should get single task status from repository', async () => {
+      const testTask = TaskFactory.basic('test task');
+      vi.mocked(mockRepository.findById).mockResolvedValue({ ok: true, value: testTask });
 
-      // Verify repository save was called with correct data
-      expect(mockRepository.save).toHaveBeenCalledTimes(2); // Initial save + timeout update
+      const statusResult = await taskManager.getStatus(testTask.id);
       
-      MockVerification.expectRepositorySave(mockRepository, {
-        id: task.id,
-        status: TaskStatus.FAILED,
-        completedAt: expect.any(Number)
+      const task = AssertionHelpers.expectSuccessResult(statusResult);
+      expect(task).toEqual(testTask);
+      expect(mockRepository.findById).toHaveBeenCalledWith(testTask.id);
+    });
+
+    it('should handle task not found', async () => {
+      vi.mocked(mockRepository.findById).mockResolvedValue({ ok: true, value: null });
+
+      const statusResult = await taskManager.getStatus('non-existent-id');
+      
+      expect(statusResult.ok).toBe(false);
+      expect(statusResult.error?.message).toContain('Task non-existent-id not found');
+    });
+
+    it('should get all tasks when no taskId provided', async () => {
+      const tasks = [TaskFactory.basic(), TaskFactory.basic()];
+      vi.mocked(mockRepository.findAll).mockResolvedValue({ ok: true, value: tasks });
+
+      const statusResult = await taskManager.getStatus();
+      
+      const allTasks = AssertionHelpers.expectSuccessResult(statusResult) as any[];
+      expect(allTasks).toEqual(tasks);
+      expect(mockRepository.findAll).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('task logs retrieval', () => {
+    it('should emit LogsRequested event for existing task', async () => {
+      const testTask = TaskFactory.basic('test task');
+      vi.mocked(mockRepository.findById).mockResolvedValue({ ok: true, value: testTask });
+
+      const logsResult = await taskManager.getLogs(testTask.id);
+      
+      const logs = AssertionHelpers.expectSuccessResult(logsResult);
+      expect(logs).toEqual({
+        taskId: testTask.id,
+        stdout: [],
+        stderr: [],
+        totalSize: 0
       });
     });
 
-    it('should log timeout events', async () => {
-      // Delegate task first
-      const delegateResult = await taskManager.delegate({
-        prompt: 'test task',
-        timeout: TEST_CONSTANTS.FIVE_SECONDS_MS
-      });
+    it('should handle logs request for non-existent task', async () => {
+      vi.mocked(mockRepository.findById).mockResolvedValue({ ok: true, value: null });
+
+      const logsResult = await taskManager.getLogs('non-existent-id');
       
-      const task = AssertionHelpers.expectSuccessResult(delegateResult);
+      expect(logsResult.ok).toBe(false);
+      expect(logsResult.error?.message).toContain('Task non-existent-id not found');
+    });
+  });
 
-      // Simulate timeout
-      const timeoutError = taskTimeout(task.id, TEST_CONSTANTS.FIVE_SECONDS_MS);
-      await taskManager.onTaskTimeout(task.id, timeoutError);
+  describe('task cancellation', () => {
+    it('should cancel existing cancellable task', async () => {
+      const testTask = TaskFactory.running();
+      vi.mocked(mockRepository.findById).mockResolvedValue({ ok: true, value: testTask });
 
-      // Verify error logging with exact message format
-      MockVerification.expectCalledOnceWith(
-        mockLogger.error,
-        `Task ${task.id} timed out after ${TEST_CONSTANTS.FIVE_SECONDS_MS}ms`
+      const cancelResult = await taskManager.cancel(testTask.id, 'user requested');
+      
+      AssertionHelpers.expectSuccessResult(cancelResult);
+      expect(mockLogger.info).toHaveBeenCalledWith('Cancelling task', {
+        taskId: testTask.id,
+        reason: 'user requested'
+      });
+    });
+
+    it('should reject cancellation of completed task', async () => {
+      const completedTask = TaskFactory.completed();
+      vi.mocked(mockRepository.findById).mockResolvedValue({ ok: true, value: completedTask });
+
+      const cancelResult = await taskManager.cancel(completedTask.id);
+      
+      expect(cancelResult.ok).toBe(false);
+      expect(cancelResult.error?.message).toContain('cannot be cancelled in state');
+    });
+
+    it('should handle cancellation of non-existent task', async () => {
+      vi.mocked(mockRepository.findById).mockResolvedValue({ ok: true, value: null });
+
+      const cancelResult = await taskManager.cancel('non-existent-id');
+      
+      expect(cancelResult.ok).toBe(false);
+      expect(cancelResult.error?.message).toContain('Task non-existent-id not found');
+    });
+  });
+
+  describe('listTasks method', () => {
+    it('should return empty array and log warning', () => {
+      const result = taskManager.listTasks();
+      
+      const tasks = AssertionHelpers.expectSuccessResult(result);
+      expect(tasks).toEqual([]);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('listTasks() is deprecated and returns empty array')
       );
     });
   });
