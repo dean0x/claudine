@@ -40,8 +40,11 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
           throw new Error('Failed to get process PID');
         }
 
-        // Close stdin since we're not using it
-        child.stdin?.end();
+        // Provide empty JSON to stdin and close it
+        if (child.stdin) {
+          child.stdin.write('{}');
+          child.stdin.end();
+        }
 
         return { process: child, pid: child.pid };
       },
