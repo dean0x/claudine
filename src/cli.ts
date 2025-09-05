@@ -2,6 +2,7 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { bootstrap } from './bootstrap.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,18 +17,27 @@ function showHelp() {
 🤖 Claudine - MCP Server for Task Delegation
 
 Usage:
-  claudine <command> [subcommand]
+  claudine <command> [options...]
 
-Commands:
-  mcp start      Start the MCP server
-  mcp test       Test server startup and validation
-  mcp config     Show MCP configuration for Claude
-  help           Show this help message
+MCP Server Commands:
+  mcp start              Start the MCP server
+  mcp test               Test server startup and validation  
+  mcp config             Show MCP configuration for Claude
+
+Task Commands:
+  delegate <prompt>      Delegate a task to Claude Code
+  status [task-id]       Get status of task(s)
+  logs <task-id>         Get output logs for a task
+  cancel <task-id>       Cancel a running task
+  help                   Show this help message
 
 Examples:
-  claudine mcp start     # Start the MCP server
-  claudine mcp test      # Test that it works
-  claudine mcp config    # Get configuration JSON
+  claudine mcp start                           # Start MCP server
+  claudine delegate "analyze this codebase"   # Delegate task  
+  claudine status                              # List all tasks
+  claudine status abc123                       # Get specific task status
+  claudine logs abc123                         # Get task output
+  claudine cancel abc123                       # Cancel task
   
 Repository: https://github.com/dean0x/claudine
 `);
@@ -77,6 +87,153 @@ For global installation, use:
 
 Learn more: https://github.com/dean0x/claudine#configuration
 `);
+}
+
+async function delegateTask(prompt: string) {
+  try {
+    console.log('🚀 Bootstrapping Claudine...');
+    const container = await bootstrap();
+    
+    const taskManagerResult = await container.resolve('taskManager');
+    if (!taskManagerResult.ok) {
+      console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
+      process.exit(1);
+    }
+    
+    const taskManager = taskManagerResult.value as any;
+    console.log('📝 Delegating task:', prompt.substring(0, 100) + (prompt.length > 100 ? '...' : ''));
+    
+    const result = await taskManager.delegate({ prompt });
+    if (result.ok) {
+      const task = result.value;
+      console.log('✅ Task delegated successfully!');
+      console.log('📋 Task ID:', task.id);
+      console.log('🔍 Status:', task.status);
+      console.log('⏰ Check status with: claudine status', task.id);
+    } else {
+      console.error('❌ Failed to delegate task:', result.error.message);
+      process.exit(1);
+    }
+  } catch (error) {
+    console.error('❌ Error:', error);
+    process.exit(1);
+  }
+}
+
+async function getTaskStatus(taskId?: string) {
+  try {
+    console.log('🚀 Bootstrapping Claudine...');
+    const container = await bootstrap();
+    
+    const taskManagerResult = await container.resolve('taskManager');
+    if (!taskManagerResult.ok) {
+      console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
+      process.exit(1);
+    }
+    
+    const taskManager = taskManagerResult.value as any;
+    
+    if (taskId) {
+      console.log('🔍 Getting status for:', taskId);
+      const result = await taskManager.getStatus(taskId);
+      if (result.ok) {
+        const task = result.value;
+        console.log('📋 Task Details:');
+        console.log('   ID:', task.id);
+        console.log('   Status:', task.status);
+        console.log('   Priority:', task.priority);
+        if (task.startedAt) console.log('   Started:', new Date(task.startedAt).toISOString());
+        if (task.completedAt) console.log('   Completed:', new Date(task.completedAt).toISOString());
+        if (task.exitCode !== undefined) console.log('   Exit Code:', task.exitCode);
+        if (task.completedAt && task.startedAt) {
+          console.log('   Duration:', task.completedAt - task.startedAt, 'ms');
+        }
+        console.log('   Prompt:', task.prompt.substring(0, 100) + (task.prompt.length > 100 ? '...' : ''));
+      } else {
+        console.error('❌ Failed to get task status:', result.error.message);
+        process.exit(1);
+      }
+    } else {
+      console.log('📋 Getting all tasks...');
+      const result = await taskManager.listTasks();
+      if (result.ok && result.value.length > 0) {
+        console.log(`📋 Found ${result.value.length} tasks:\n`);
+        result.value.forEach((task: any) => {
+          console.log(`${task.id} - ${task.status} - ${task.prompt.substring(0, 50)}...`);
+        });
+      } else {
+        console.log('📋 No tasks found');
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error:', error);
+    process.exit(1);
+  }
+}
+
+async function getTaskLogs(taskId: string) {
+  try {
+    console.log('🚀 Bootstrapping Claudine...');
+    const container = await bootstrap();
+    
+    const taskManagerResult = await container.resolve('taskManager');
+    if (!taskManagerResult.ok) {
+      console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
+      process.exit(1);
+    }
+    
+    const taskManager = taskManagerResult.value as any;
+    console.log('📤 Getting logs for:', taskId);
+    
+    const result = await taskManager.getLogs(taskId);
+    if (result.ok) {
+      const logs = result.value;
+      if (logs.stdout && logs.stdout.length > 0) {
+        console.log('\n📤 STDOUT:');
+        logs.stdout.forEach((line: string) => console.log('  ', line));
+      }
+      if (logs.stderr && logs.stderr.length > 0) {
+        console.log('\n📤 STDERR:');
+        logs.stderr.forEach((line: string) => console.log('  ', line));
+      }
+      if ((!logs.stdout || logs.stdout.length === 0) && (!logs.stderr || logs.stderr.length === 0)) {
+        console.log('\n📤 No output captured');
+      }
+    } else {
+      console.error('❌ Failed to get task logs:', result.error.message);
+      process.exit(1);
+    }
+  } catch (error) {
+    console.error('❌ Error:', error);
+    process.exit(1);
+  }
+}
+
+async function cancelTask(taskId: string) {
+  try {
+    console.log('🚀 Bootstrapping Claudine...');
+    const container = await bootstrap();
+    
+    const taskManagerResult = await container.resolve('taskManager');
+    if (!taskManagerResult.ok) {
+      console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
+      process.exit(1);
+    }
+    
+    const taskManager = taskManagerResult.value as any;
+    console.log('🛑 Canceling task:', taskId);
+    
+    const result = await taskManager.cancel(taskId);
+    if (result.ok) {
+      console.log('✅ Task canceled successfully');
+    } else {
+      console.error('❌ Failed to cancel task:', result.error.message);
+      process.exit(1);
+    }
+  } catch (error) {
+    console.error('❌ Error:', error);
+    process.exit(1);
+  }
 }
 
 if (mainCommand === 'mcp') {
@@ -150,6 +307,37 @@ if (mainCommand === 'mcp') {
     console.log('Valid subcommands: start, test, config');
     process.exit(1);
   }
+  
+} else if (mainCommand === 'delegate') {
+  const prompt = args.slice(1).join(' ');
+  if (!prompt) {
+    console.error('❌ Usage: claudine delegate "<prompt>"');
+    console.error('Example: claudine delegate "analyze this codebase"');
+    process.exit(1);
+  }
+  await delegateTask(prompt);
+  
+} else if (mainCommand === 'status') {
+  const taskId = args[1];
+  await getTaskStatus(taskId);
+  
+} else if (mainCommand === 'logs') {
+  const taskId = args[1];
+  if (!taskId) {
+    console.error('❌ Usage: claudine logs <task-id>');
+    console.error('Example: claudine logs abc123');
+    process.exit(1);
+  }
+  await getTaskLogs(taskId);
+  
+} else if (mainCommand === 'cancel') {
+  const taskId = args[1];
+  if (!taskId) {
+    console.error('❌ Usage: claudine cancel <task-id>');
+    console.error('Example: claudine cancel abc123');
+    process.exit(1);
+  }
+  await cancelTask(taskId);
   
 } else if (mainCommand === 'help' || !mainCommand) {
   showHelp();

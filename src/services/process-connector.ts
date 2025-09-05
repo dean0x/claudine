@@ -29,7 +29,7 @@ export class ProcessConnector {
         return;
       }
       exitHandled = true;
-      onExit(code || null);
+      onExit(code ?? null); // Use nullish coalescing to preserve 0
     };
     // Capture stdout
     if (process.stdout) {
@@ -57,7 +57,8 @@ export class ProcessConnector {
 
     // Handle process exit
     process.on('exit', (code) => {
-      this.logger.debug('Process exited', { taskId, code });
+      this.logger.debug('Process exited', { taskId, code, codeType: typeof code });
+      console.error(`[ProcessConnector] Process exit: taskId=${taskId}, code=${code}, type=${typeof code}`);
       safeOnExit(code);
     });
 

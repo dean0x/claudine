@@ -92,7 +92,8 @@ export class EventDrivenWorkerPool implements WorkerPool {
       task.id,
       (exitCode) => {
         // Handle worker completion through events
-        this.handleWorkerCompletion(task.id, exitCode || 0);
+        console.error(`[WorkerPool] Received exit code: ${exitCode}, type=${typeof exitCode}`);
+        this.handleWorkerCompletion(task.id, exitCode ?? 0);
       }
     );
 
@@ -206,12 +207,17 @@ export class EventDrivenWorkerPool implements WorkerPool {
   private setupTimeoutForWorker(worker: WorkerState): void {
     const timeoutMs = worker.task.timeout;
     
-    if (!timeoutMs) {
+    console.error(`[WorkerPool] Setting up timeout for task ${worker.taskId}: ${timeoutMs}ms`);
+    
+    // CRITICAL FIX: setTimeout(fn, undefined) executes immediately!
+    if (!timeoutMs || timeoutMs <= 0) {
+      console.error(`[WorkerPool] No timeout configured for task ${worker.taskId}`);
       return; // No timeout configured
     }
 
     // Create timeout timer  
     worker.timeoutTimer = setTimeout(() => {
+      console.error(`[WorkerPool] TIMEOUT TRIGGERED for task ${worker.taskId} after ${timeoutMs}ms`);
       this.handleWorkerTimeout(worker.taskId, timeoutMs);
     }, timeoutMs);
 
