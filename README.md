@@ -1,4 +1,4 @@
-# Claudine - Claude Code Background Task Delegation MCP Server
+# Claudine - Background Task Delegation MCP Server
 
 [![npm version](https://img.shields.io/npm/v/claudine.svg)](https://www.npmjs.com/package/claudine)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -8,7 +8,13 @@
 
 ## Why Claudine Exists
 
-**The Problem**: Claude Code is incredibly powerful, but you can only run one task at a time. When you need to analyze multiple files, run tests, generate documentation, and deploy - you're stuck waiting for each task to complete sequentially.
+**The Problem**: Claude Code is incredibly powerful, but you can only run one task at a time. This creates painful bottlenecks:
+
+- **Can't work on multiple repositories simultaneously** - Switch between projects? Wait for the current task to finish first
+- **Sequential task dependency** - Want to analyze code while tests are running? Impossible - you must wait
+- **Context switching overhead** - Bouncing between unrelated tasks in the same repo means losing focus and momentum  
+- **Resource waste** - Your 32-core server sits mostly idle while a single Claude instance uses one CPU core
+- **Productivity blocking** - Simple tasks like "run lint" get queued behind complex analysis work
 
 **Our Belief**: AI should scale with your ambition, not limit it. Your server has 32 cores and 64GB RAM - why use only one Claude instance?
 

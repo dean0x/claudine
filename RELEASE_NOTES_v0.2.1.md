@@ -1,63 +1,95 @@
-# 🐛 Claudine v0.2.1 - Critical Bug Fixes & Documentation Overhaul
+# 🚀 Claudine v0.2.1 - Event-Driven Architecture & CLI Interface
+
+## Major Features
+
+### 🖥️ Direct CLI Interface
+No more MCP reconnections needed for testing! New commands:
+```bash
+claudine delegate "analyze the codebase for security issues"
+claudine status                    # Check all tasks  
+claudine status <task-id>          # Check specific task
+claudine logs <task-id>            # Get task output
+claudine cancel <task-id> "reason" # Cancel with reason
+```
+
+### 🏗️ Complete Event-Driven Architecture Overhaul
+- **EventBus Coordination**: All components now communicate through events, not direct method calls
+- **Zero Direct State Management**: TaskManager is purely event-driven
+- **Specialized Event Handlers**:
+  - `PersistenceHandler` - Database operations
+  - `QueueHandler` - Task queue management  
+  - `WorkerHandler` - Worker lifecycle
+  - `OutputHandler` - Output capture and logs
+- **Race Condition Elimination**: Event-driven design prevents worker pool races
 
 ## Critical Bug Fixes
 
-### Task Resubmission Bug Fixed 🚨
-- **Fixed**: Critical issue where tasks were resubmitted on every MCP server restart
-- **Impact**: This bug was causing Claude instances to crash due to duplicate task execution
-- **Solution**: Enhanced RecoveryManager to only restore QUEUED/RUNNING tasks, not all tasks
-- **Added**: Duplicate prevention with TaskQueue.contains() method
-- **Added**: Automatic cleanup of old completed tasks (7 day retention)
+### 🐛 Process Handling
+- **Fixed Claude CLI Hanging**: Replaced stdin JSON injection hack with proper `stdio: ['ignore', 'pipe', 'pipe']`
+- **Robust Process Spawning**: No more meaningless workarounds or stdin expectations
 
-## Documentation Overhaul 📚
+### 🐛 Exit Code Preservation
+- **Fixed Success Status Bug**: Changed `code || null` to `code ?? null` to preserve exit code 0
+- **Proper Task Completion**: Tasks now correctly complete with success status instead of failing
 
-### New Documentation Files
-- **FEATURES.md**: Complete list of all implemented features in v0.2.1
-- **ROADMAP.md**: Unified roadmap replacing multiple conflicting versions  
-- **CHANGELOG.md**: Proper version history with migration guides
+### 🐛 Event System
+- **Fixed Missing TaskQueued Events**: Tasks were stuck in queued status due to missing event emissions
+- **Singleton EventBus**: All components now share the same EventBus instance
 
-### Documentation Fixes
-- **README.md**: Updated to accurately reflect v0.2.1 capabilities
-- **CLAUDE.md**: Added current architecture section
-- **Archived**: Moved outdated/conflicting docs to `.docs/archive/`
+## Documentation Overhaul
 
-## Build & Development Improvements 🛠️
+### 📚 Golden Circle Framework
+- **README.md**: Applied Sinek's WHY → HOW → WHAT structure for better user engagement
+- **Clear Problem Statement**: Specific pain points users face with sequential Claude Code execution
+- **Compelling Vision**: Transform servers into AI powerhouses
 
-### Fixed Missing Scripts
-Added npm scripts that were documented but didn't exist:
-```bash
-npm run test:comprehensive  # Run tests with coverage
-npm run test:coverage       # Same as above  
-npm run validate           # Full validation pipeline
-```
+### 📚 Complete Documentation Update
+- **CLAUDE.md**: Rewritten to reflect event-driven architecture
+- **FEATURES.md**: Updated with v0.2.1 capabilities and event patterns
+- **CHANGELOG.md**: Consolidated and accurate version history
 
-### Configuration Fixes
-- Updated MCP configuration examples to use correct entry points
-- Fixed package.json scripts section
+## Technical Improvements
 
-## Migration Notes
+### 🔧 Architecture
+- **Event-Driven Coordination**: `TaskDelegated`, `TaskQueued`, `WorkerSpawned` events
+- **Cleaner Separation**: Each handler has clear, isolated responsibilities
+- **Better Error Handling**: Improved error propagation through Result pattern
 
-- **No Breaking Changes**: Fully backward compatible with v0.2.0
-- **Automatic Migration**: Database cleanup happens automatically on startup  
-- **Same MCP Tools**: All existing MCP tool usage continues to work
+### 🔧 Developer Experience  
+- **Faster Testing**: CLI commands eliminate MCP reconnection overhead
+- **Better Debugging**: Event flow easier to trace than direct method calls
+- **Production Ready**: Significantly more stable and reliable
+
+## Breaking Changes
+
+**None** - All changes are internal architecture improvements. MCP tools remain fully compatible.
+
+## Migration
+
+- **Automatic**: No user action required
+- **Backward Compatible**: All existing MCP tool usage continues to work
+- **CLI Addition**: New CLI commands are additive features
 
 ## Installation
 
 ```bash
-# Global installation
+# Global installation (recommended)
 npm install -g claudine@0.2.1
 
-# Or use latest
-npm install -g claudine@latest
+# Or from source
+git clone https://github.com/dean0x/claudine.git
+cd claudine
+npm install && npm run build
 ```
 
 ## What's Next
 
-See [ROADMAP.md](./ROADMAP.md) for planned features:
+See [ROADMAP.md](./ROADMAP.md):
 - **v0.3.0**: Task dependency resolution (Q4 2025)
 - **v0.4.0**: Distributed processing (Q1 2026)
 
 ---
 
-**Full Changelog**: [CHANGELOG.md](./CHANGELOG.md)  
+**Full Details**: [CHANGELOG.md](./CHANGELOG.md)  
+**Repository**: https://github.com/dean0x/claudine  
 **Issues**: [GitHub Issues](https://github.com/dean0x/claudine/issues)
