@@ -4,44 +4,52 @@ All notable changes to Claudine will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.1] - 2025-09-03
+## [0.2.1] - 2025-09-05
 
-### ✨ Major Architecture Improvements
-- **🏗️ Event-Driven Architecture**: Complete refactor from polling-based to event-driven system
-- **🔗 Singleton EventBus**: All components now share a single EventBus for proper event propagation
-- **🚫 Race Condition Elimination**: Fixed all worker pool race conditions through event-driven design
-- **🗃️ Database-First Pattern**: Removed memory-database state divergence issues
+### 🚀 Major Features
+- **🖥️ CLI Interface**: Direct task management without MCP connection
+  - `claudine delegate <prompt>`: Delegate tasks directly
+  - `claudine status [task-id]`: Check task status
+  - `claudine logs <task-id>`: Retrieve task output
+  - `claudine cancel <task-id> [reason]`: Cancel running tasks
+- **🏗️ Event-Driven Architecture**: Complete architectural overhaul
+  - EventBus-based coordination across all components
+  - Event handlers for persistence, queue, worker, and output management
+  - Zero direct state management in TaskManager
 
-### 🛠️ Technical Enhancements
-- **🎯 Type Safety**: Eliminated all 26 'as any' type casts for improved type safety
-- **🔄 EventDrivenWorkerPool**: Replaced AutoscalingWorkerPool with race-condition-free implementation
-- **📤 Output Integration**: Complete OutputCapture event integration with OutputCapturedEvent emission
-- **📝 Method Deprecation**: Properly deprecated listTasks() method with migration guidance
+### 🛠️ Technical Improvements  
+- **🔧 Process Handling**: Fixed Claude CLI stdin hanging issue
+  - Replaced stdin hack with proper `stdio: ['ignore', 'pipe', 'pipe']`
+  - Eliminated meaningless JSON injection to stdin
+  - Robust process spawning without workarounds
+- **🎯 Event System**: Comprehensive event-driven refactor
+  - `TaskDelegated`, `TaskQueued`, `WorkerSpawned` events
+  - Specialized event handlers for different concerns
+  - Singleton EventBus shared across all components
 
 ### 🐛 Bug Fixes
-- **WorkerPool Race Conditions**: Fixed timeout/completion race conditions that could cause resource leaks
-- **EventBus Isolation**: Fixed critical issue where components had separate EventBus instances
-- **Memory-Database Divergence**: Eliminated inconsistencies between in-memory and database state
-- **Polling Elimination**: Removed all setInterval polling loops in favor of reactive events
+- **Exit Code Handling**: Fixed critical bug where exit code 0 was converted to null
+  - Changed `code || null` to `code ?? null` to preserve success status
+  - Tasks now properly complete with success status
+- **Output Capture**: Resolved Claude CLI hanging on stdin expectations
+- **Event Emission**: Fixed missing TaskQueued events causing tasks to stay queued
 
-### 📚 Code Quality
-- **Clean Architecture**: Event handlers now properly isolated with clear responsibilities
-- **Better Error Handling**: Improved error propagation through Result pattern
-- **Enhanced Testing**: All 93 tests passing with improved architecture validation
-- **Documentation Updates**: Added proper JSDoc deprecation markers
+### 📚 Documentation Updates
+- **README.md**: Updated with event-driven architecture and CLI commands
+- **CLAUDE.md**: Complete rewrite reflecting current implementation
+- **FEATURES.md**: Added v0.2.1 features and event-driven patterns
 
 ### ⚠️ Breaking Changes
 - **Internal Only**: All breaking changes are internal architecture improvements
 - **API Compatibility**: All MCP tools remain fully compatible
-- **Migration**: No user action required - all changes are internal
+- **CLI Addition**: New CLI commands are additive, not breaking
 
 ### 🔧 Developer Experience
-- **Faster Builds**: Improved TypeScript compilation with better type inference
-- **Better Debugging**: Event-driven flow easier to trace and debug
-- **Cleaner Code**: Reduced complexity through event-based coordination
-- **Production Ready**: Significantly more stable and reliable architecture
+- **Better Testing**: CLI commands enable testing without MCP reconnection
+- **Cleaner Architecture**: Event-driven design eliminates race conditions
+- **Improved Reliability**: Proper process handling prevents hanging
 
-## [0.2.1] - 2025-09-02
+## [0.2.0] - 2025-09-02
 
 ### 🐛 Critical Bug Fixes
 - **Task Resubmission Bug**: Fixed critical issue where tasks were resubmitted on every MCP server restart, causing Claude instances to crash

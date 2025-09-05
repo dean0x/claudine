@@ -8,59 +8,68 @@ Claudine is an MCP (Model Context Protocol) server designed for dedicated server
 
 ## Core Architecture
 
+### Event-Driven Architecture (v0.2.1)
+
+Claudine uses a **fully event-driven architecture** with centralized EventBus coordination:
+
+```typescript
+// All components communicate through events, not direct method calls
+eventBus.emit('TaskDelegated', { task });
+eventBus.emit('TaskQueued', { taskId, task });
+eventBus.emit('WorkerSpawned', { workerId, taskId });
+```
+
 ### MCP Server Implementation
 - Claudine operates as an MCP server that Claude can connect to via the Model Context Protocol
 - Enables Claude to delegate tasks to background Claude Code instances for parallel task execution
-- Implements task queue management with priority levels
+- All operations are event-driven with no direct state management
 
 ### Key Components
 
-1. **Autoscaling Manager**
-   - Monitors system CPU and memory in real-time
-   - Spawns new workers when resources are available
-   - No artificial worker limits - uses all available resources
-   - Maintains 20% CPU headroom and 1GB RAM for system stability
+**Event-Driven Core**:
+1. **EventBus (InMemoryEventBus)** - Central coordination hub for all system events
+2. **Event Handlers** - Specialized handlers that respond to specific events:
+   - `PersistenceHandler` - Database operations
+   - `QueueHandler` - Task queue management
+   - `WorkerHandler` - Worker lifecycle management
+   - `OutputHandler` - Output capture and logs
 
-2. **Task Queue**
-   - FIFO queue for pending tasks
-   - Processes tasks as soon as resources become available
-   - No queue size limits (only limited by memory)
-   - Priority support (P0 = critical, P1 = high, P2 = normal)
+**Business Logic**:
+3. **TaskManager (TaskManagerService)** - Pure event emitter, no direct state management
+4. **Autoscaling Manager** - Event-driven worker scaling based on resources
+5. **Recovery Manager** - Restores interrupted tasks via events on startup
 
-3. **Claude Code Instance Manager**
-   - Spawns background Claude Code instances dynamically
-   - Each instance runs with --dangerously-skip-permissions
-   - Monitors instance health and resource usage
-   - Automatic cleanup on completion or failure
-
-4. **MCP Protocol Handler**
-   - Implements MCP server specification
-   - Handles tool registration and invocation (DelegateTask, TaskStatus, etc.)
-   - Manages communication between Claude and background instances
+**Infrastructure**:
+6. **Task Queue (PriorityTaskQueue)** - FIFO with priority support (P0/P1/P2)
+7. **Worker Pool (EventDrivenWorkerPool)** - Event-based worker lifecycle
+8. **Process Spawner (ClaudeProcessSpawner)** - Proper stdin handling (`stdio: ['ignore', 'pipe', 'pipe']`)
+9. **Output Capture (BufferedOutputCapture)** - Event-driven output management
+10. **Task Repository (SQLiteTaskRepository)** - Persistent task storage with recovery
+11. **MCP Adapter** - Handles JSON-RPC requests from Claude Code
 
 ## Development Setup
 
 ### Prerequisites
-- Node.js 18+ or Python 3.9+ (depending on implementation choice)
-- Claude Code CLI installed
-- MCP SDK for the chosen language
+- Node.js 20.0.0+ (TypeScript implementation)
+- Claude Code CLI installed (`claude` command available)
+- SQLite3 (for task persistence)
 
 ### Initial Setup
 ```bash
-# Install dependencies (Node.js example)
+# Install dependencies
 npm install
 
-# Or for Python
-pip install -r requirements.txt
+# Build TypeScript
+npm run build
 ```
 
 ### Running the MCP Server
 ```bash
-# Start the MCP server (adjust based on implementation)
-npm run start
+# Start the MCP server
+claudine mcp start
 
-# Or for Python
-python -m claudine.server
+# Or run built files directly
+node dist/cli.js mcp start
 ```
 
 ### Testing
@@ -76,6 +85,11 @@ npm run test:coverage
 ```bash
 # Run in development with auto-reload
 npm run dev
+
+# Direct task testing (New in v0.2.1)
+claudine delegate "echo hello world"
+claudine status
+claudine logs <task-id>
 ```
 
 ## MCP Integration
@@ -119,29 +133,28 @@ claudine mcp start
 claudine mcp start
 ```
 
-### Phase 2 - Direct Task Commands (Future)
-- `claudine delegate <task>` - Delegate a task to background Claude Code instance
-- `claudine status [task-id]` - Check task status (all tasks if no ID provided)
-- `claudine logs <task-id>` - Get task output and logs
-- `claudine cancel <task-id>` - Cancel a running task
-- `claudine list` - List all tasks with their current status
+### Direct Task Commands (Available in v0.2.1)
+- `claudine delegate <task>` - ✅ Delegate a task to background Claude Code instance
+- `claudine status [task-id]` - ✅ Check task status (all tasks if no ID provided)
+- `claudine logs <task-id>` - ✅ Get task output and logs
+- `claudine cancel <task-id> [reason]` - ✅ Cancel a running task
 
-### Future CLI Examples
+### CLI Examples (Working Now)
 ```bash
 # Delegate a simple task
 claudine delegate "analyze the codebase and find all TODO comments"
 
-# Delegate with priority
-claudine delegate "fix critical bug in auth system" --priority P0
+# Check status of all tasks
+claudine status
 
 # Check status of specific task
 claudine status task-abc123
 
-# Stream logs from running task
-claudine logs task-abc123 --follow
+# Get logs from completed task
+claudine logs task-abc123
 
-# List all tasks
-claudine list --format table
+# Cancel a running task
+claudine cancel task-abc123 "Taking too long"
 ```
 
 ## Engineering Principles
@@ -203,15 +216,18 @@ const updateTask = (task: Task, update: Partial<Task>): Task => ({
 9. **Testing**: Focus on integration tests that verify behaviors
 10. **Performance**: Measure and optimize critical paths
 
-## Current Architecture (v0.2.0)
+## Current Architecture (v0.2.1)
 
 ### Implemented Components
-- **Task Persistence**: SQLite database with WAL mode
-- **Autoscaling Manager**: Dynamic worker pool based on system resources
-- **Recovery Manager**: Restores interrupted tasks on startup
+- **Event-Driven Architecture**: EventBus with specialized event handlers
+- **Task Persistence**: SQLite database with WAL mode and recovery
+- **CLI Interface**: Direct task management commands
+- **Process Handling**: Proper stdin management (`stdio: ['ignore', 'pipe', 'pipe']`)
+- **Autoscaling Manager**: Event-driven worker pool based on system resources
+- **Recovery Manager**: Event-based task restoration on startup
 - **Configuration System**: Environment-based configuration with validation
-- **Output Management**: Buffered capture with file overflow
-- **Resource Monitoring**: Real-time CPU/memory tracking
+- **Output Management**: Event-driven buffered capture with file overflow
+- **Resource Monitoring**: Real-time CPU/memory tracking with event emission
 
 
 ## Release Process

@@ -6,17 +6,35 @@
 [![CI](https://github.com/dean0x/claudine/actions/workflows/ci.yml/badge.svg)](https://github.com/dean0x/claudine/actions/workflows/ci.yml)
 ![MCP](https://img.shields.io/badge/MCP-Compatible-purple)
 
-Claudine is an MCP server designed for **dedicated servers** that enables Claude Code to delegate tasks to background Claude Code instances, with automatic scaling based on available system resources.
+## Why Claudine Exists
 
-## Features
+**The Problem**: Claude Code is incredibly powerful, but you can only run one task at a time. When you need to analyze multiple files, run tests, generate documentation, and deploy - you're stuck waiting for each task to complete sequentially.
 
-✅ **Currently Available in v0.2.0**:
+**Our Belief**: AI should scale with your ambition, not limit it. Your server has 32 cores and 64GB RAM - why use only one Claude instance?
+
+**The Vision**: Transform your dedicated server into an AI powerhouse that can handle dozens of simultaneous Claude Code tasks, automatically scaling based on available resources.
+
+## How Claudine Works
+
+**Event-Driven Architecture**: Instead of managing state directly, Claudine uses events to coordinate between components, eliminating race conditions and ensuring reliability.
+
+**Intelligent Resource Management**: Monitors CPU and memory in real-time, spawning new Claude Code instances when resources are available, maintaining system stability.
+
+**Task Persistence & Recovery**: Every task is stored in SQLite with automatic recovery after crashes. Your work never gets lost.
+
+**No Artificial Limits**: Unlike traditional approaches, Claudine uses ALL available system resources - spawning as many workers as your server can handle.
+
+## What You Get
+
+✅ **Currently Available in v0.2.1**:
+- **Event-Driven Architecture**: Fully event-driven system with EventBus coordination
 - **Task Persistence**: SQLite-based storage with automatic recovery on startup
+- **CLI Interface**: Direct task management (`claudine delegate`, `claudine status`, etc.)
 - **Autoscaling**: Automatically spawns workers based on available CPU and memory  
 - **Priority Levels**: P0 (Critical), P1 (High), P2 (Normal) task prioritization
 - **Git Worktree Support**: Optional task isolation in separate worktrees
 - **Resource Management**: Dynamic worker scaling with CPU/memory monitoring
-- **Output Capture**: Buffered output with file overflow (configurable limits)
+- **Output Capture**: Fixed process handling with proper stdin management
 - **Recovery System**: Automatic task recovery after crashes
 - **Configuration**: Environment variables and per-task overrides
 
@@ -142,6 +160,7 @@ After adding the configuration, restart Claude Code or Claude Desktop to connect
 
 ### CLI Commands
 
+#### MCP Server Management
 ```bash
 # Start the MCP server
 claudine mcp start
@@ -151,6 +170,24 @@ claudine mcp test
 
 # Show MCP configuration
 claudine mcp config
+```
+
+#### Direct Task Management (New in v0.2.1)
+```bash
+# Delegate a task directly
+claudine delegate "Create a Python script to analyze CSV data"
+
+# Check status of all tasks
+claudine status
+
+# Check specific task status
+claudine status <task-id>
+
+# Get task logs
+claudine logs <task-id>
+
+# Cancel a running task
+claudine cancel <task-id> "Taking too long"
 
 # Show help
 claudine help
@@ -254,13 +291,17 @@ Claudine is optimized for **dedicated servers** with ample resources, not constr
 
 ### Core Components
 
-1. **MCP Server**: Handles JSON-RPC requests from Claude Code
-2. **Autoscaling Manager**: Dynamically adjusts worker count based on system resources
-3. **Task Queue**: Priority-based queue for pending tasks
-4. **Process Manager**: Spawns and manages background Claude Code instances
-5. **Output Capture**: Buffers and stores process output (10MB limit, overflow to files)
-6. **Task Persistence**: SQLite database for task history and recovery
-7. **Recovery Manager**: Restores queued tasks after crashes
+**Event-Driven Architecture (New in v0.2.1)**:
+1. **EventBus**: Central coordination hub for all system events
+2. **Event Handlers**: Specialized handlers for persistence, queue, worker, and output events
+3. **MCP Server**: Handles JSON-RPC requests from Claude Code
+4. **Task Manager**: Event-driven orchestrator (no direct state management)
+5. **Autoscaling Manager**: Event-based worker scaling with resource monitoring
+6. **Task Queue**: Priority-based queue with event-driven processing
+7. **Worker Pool**: Event-driven worker lifecycle management
+8. **Output Capture**: Event-based output handling with proper stdin management
+9. **Task Persistence**: SQLite database with event-driven operations
+10. **Recovery Manager**: Restores interrupted tasks via events on startup
 
 ### Task Lifecycle
 
@@ -333,7 +374,8 @@ npm run dev
 
 ## Roadmap
 
-- [x] **v0.2.0**: Autoscaling and persistence (Current - Released Sep 2025)
+- [x] **v0.2.0**: Autoscaling and persistence (Released Sep 2025)
+- [x] **v0.2.1**: Event-driven architecture and CLI commands (Current - Released Sep 2025)
 - [ ] **v0.3.0**: Task dependency resolution (Q4 2025)
 - [ ] **v0.4.0**: Distributed processing (Q1 2026)
 - [ ] **v0.5.0**: Advanced orchestration and monitoring (Q2 2026)

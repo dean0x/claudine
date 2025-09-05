@@ -1,6 +1,6 @@
-# Claudine v0.2.0 - Current Features
+# Claudine v0.2.1 - Current Features
 
-This document lists all features that are **currently implemented and working** in Claudine v0.2.0.
+This document lists all features that are **currently implemented and working** in Claudine v0.2.1.
 
 ## ✅ Core Task Delegation
 
@@ -101,11 +101,17 @@ This document lists all features that are **currently implemented and working** 
 
 ## ✅ CLI Interface
 
-### Commands
+### MCP Server Commands
 - `claudine mcp start`: Start the MCP server
 - `claudine mcp test`: Test server startup and validation
 - `claudine mcp config`: Show MCP configuration examples
 - `claudine help`: Show help and usage
+
+### Direct Task Commands (New in v0.2.1)
+- `claudine delegate <prompt>`: Delegate task directly to background Claude instance
+- `claudine status [task-id]`: Check status of all tasks or specific task
+- `claudine logs <task-id>`: Retrieve task output and logs
+- `claudine cancel <task-id> [reason]`: Cancel running task with optional reason
 
 ### Configuration Examples
 - **NPM Package**: Global installation support
@@ -122,14 +128,16 @@ This document lists all features that are **currently implemented and working** 
 - **Recovery Manager**: Startup task recovery
 - **Resource Monitor**: System resource tracking
 
-### Design Patterns
-- **Event-Driven Architecture**: Complete event-based coordination between components
+### Design Patterns (v0.2.1 Event-Driven Architecture)
+- **Event-Driven Architecture**: Complete event-based coordination via EventBus
+- **Event Handlers**: Specialized handlers (Persistence, Queue, Worker, Output)
 - **Singleton EventBus**: Shared event bus across all system components
+- **Zero Direct State**: TaskManager emits events, handlers manage state
 - **Dependency Injection**: Container-based DI with Result types
 - **Result Pattern**: No exceptions in business logic
 - **Immutable Domain**: Readonly data structures
 - **Database-First Pattern**: Single source of truth with no memory-database divergence
-- **Composable Functions**: Pipe-based function composition
+- **Proper Process Handling**: Fixed stdin management (`stdio: ['ignore', 'pipe', 'pipe']`)
 
 ## ❌ NOT Implemented (Despite Some Documentation Claims)
 
@@ -143,4 +151,26 @@ This document lists all features that are **currently implemented and working** 
 
 ---
 
-**Note**: This document reflects the actual implemented features as of v0.2.0. For planned features, see [ROADMAP.md](./ROADMAP.md).
+---
+
+## 🆕 What's New in v0.2.1
+
+### Event-Driven Architecture
+- **Complete Rewrite**: Moved from direct method calls to event-based coordination
+- **EventBus**: Central coordination hub for all system communication
+- **Event Handlers**: Specialized handlers for different concerns (persistence, queue, workers, output)
+- **Zero Direct State**: TaskManager is stateless, handlers manage all state via events
+
+### Direct CLI Commands  
+- **Task Management**: Direct CLI interface without MCP connection required
+- **Real-time Testing**: Instant task delegation and status checking
+- **Better DX**: No need to reconnect MCP server for testing
+
+### Process Handling Improvements
+- **Fixed Output Capture**: Resolved Claude CLI hanging issues
+- **Proper stdin**: Uses `stdio: ['ignore', 'pipe', 'pipe']` instead of hack
+- **Robust Spawning**: Eliminated stdin injection workarounds
+
+---
+
+**Note**: This document reflects the actual implemented features as of v0.2.1. For planned features, see [ROADMAP.md](./ROADMAP.md).
