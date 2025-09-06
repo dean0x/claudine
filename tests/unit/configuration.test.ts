@@ -7,7 +7,7 @@ describe('ConfigurationSchema', () => {
     const validConfig = {
       timeout: TEST_CONSTANTS.THIRTY_MINUTES_MS,
       maxOutputBuffer: TEST_CONSTANTS.TEN_MB,
-      cpuThreshold: 80,
+      cpuThreshold: 95,
       memoryReserve: TEST_CONSTANTS.ONE_GB,
       logLevel: 'info' as const
     };
@@ -18,7 +18,7 @@ describe('ConfigurationSchema', () => {
     if (result.success) {
       expect(result.data.timeout).toBe(TEST_CONSTANTS.THIRTY_MINUTES_MS);
       expect(result.data.maxOutputBuffer).toBe(TEST_CONSTANTS.TEN_MB);
-      expect(result.data.cpuThreshold).toBe(80);
+      expect(result.data.cpuThreshold).toBe(95);
       expect(result.data.memoryReserve).toBe(TEST_CONSTANTS.ONE_GB);
       expect(result.data.logLevel).toBe('info');
     }
@@ -130,8 +130,8 @@ describe('loadConfiguration', () => {
       
       expect(config.timeout).toBe(1800000); // 30 minutes default
       expect(config.maxOutputBuffer).toBe(10485760); // 10MB default
-      expect(config.cpuThreshold).toBe(80); // 80% default
-      expect(config.memoryReserve).toBe(1073741824); // 1GB default
+      expect(config.cpuThreshold).toBe(95); // 95% default (more permissive for dev)
+      expect(config.memoryReserve).toBe(100000000); // 100MB default (lower for dev)
       expect(config.logLevel).toBe('info'); // info default
     } finally {
       process.env = originalEnv;
@@ -177,8 +177,8 @@ describe('loadConfiguration', () => {
       // Should fallback to defaults for invalid values
       expect(config.timeout).toBe(1800000); // Default 30 minutes
       expect(config.maxOutputBuffer).toBe(10485760); // Default 10MB
-      expect(config.cpuThreshold).toBe(80); // Default 80%
-      expect(config.memoryReserve).toBe(1073741824); // Default 1GB
+      expect(config.cpuThreshold).toBe(95); // Default 95% (dev-friendly)
+      expect(config.memoryReserve).toBe(100000000); // Default 100MB (dev-friendly)
       expect(config.logLevel).toBe('info'); // Default info
     } finally {
       process.env = originalEnv;

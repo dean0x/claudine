@@ -41,7 +41,15 @@ describe('Error Scenario Tests', () => {
     taskManager = new TaskManagerService(
       mockEventBus,
       mockRepository,
-      mockLogger
+      mockLogger,
+      {
+        timeout: 30000,
+        maxOutputBuffer: 1024 * 1024,
+        cpuThreshold: 80,
+        memoryReserve: 1024 * 1024 * 100,
+        logLevel: 'info'
+      },
+      outputCapture
     );
   });
 

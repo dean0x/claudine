@@ -28,7 +28,15 @@ describe('TaskManagerService Event-Driven Architecture', () => {
     taskManager = new TaskManagerService(
       mockEventBus,
       mockRepository,
-      mockLogger
+      mockLogger,
+      {
+        timeout: TEST_CONSTANTS.FIVE_SECONDS_MS,
+        maxOutputBuffer: 1024 * 1024, // 1MB
+        cpuThreshold: 80,
+        memoryReserve: 1024 * 1024 * 100, // 100MB
+        logLevel: 'info'
+      },
+      undefined // outputCapture is optional
     );
   });
 
@@ -64,7 +72,15 @@ describe('TaskManagerService Event-Driven Architecture', () => {
       const failingTaskManager = new TaskManagerService(
         failingEventBus as any,
         mockRepository,
-        mockLogger
+        mockLogger,
+        {
+          timeout: TEST_CONSTANTS.FIVE_SECONDS_MS,
+          maxOutputBuffer: 1024 * 1024,
+          cpuThreshold: 80,
+          memoryReserve: 1024 * 1024 * 100,
+          logLevel: 'info'
+        },
+        undefined
       );
 
       const delegateResult = await failingTaskManager.delegate({
