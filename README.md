@@ -1,4 +1,4 @@
-# Claudine - Claude Code Background Task Delegation MCP Server
+# Claudine - Background Task Delegation MCP Server
 
 [![npm version](https://img.shields.io/npm/v/claudine.svg)](https://www.npmjs.com/package/claudine)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -6,19 +6,51 @@
 [![CI](https://github.com/dean0x/claudine/actions/workflows/ci.yml/badge.svg)](https://github.com/dean0x/claudine/actions/workflows/ci.yml)
 ![MCP](https://img.shields.io/badge/MCP-Compatible-purple)
 
-Claudine is an MCP server designed for **dedicated servers** that enables Claude Code to delegate tasks to background Claude Code instances, with automatic scaling based on available system resources.
+## Why Claudine Exists
 
-## Features
+**The Problem**: Claude Code is incredibly powerful, but you can only run one task at a time. This creates painful bottlenecks:
 
+- **Can't work on multiple repositories simultaneously** - Switch between projects? Wait for the current task to finish first
+- **Sequential task dependency** - Want to analyze code while tests are running? Impossible - you must wait
+- **Context switching overhead** - Bouncing between unrelated tasks in the same repo means losing focus and momentum  
+- **Resource waste** - Your 32-core server sits mostly idle while a single Claude instance uses one CPU core
+- **Productivity blocking** - Simple tasks like "run lint" get queued behind complex analysis work
+
+**Our Belief**: AI should scale with your ambition, not limit it. Your server has 32 cores and 64GB RAM - why use only one Claude instance?
+
+**The Vision**: Transform your dedicated server into an AI powerhouse that can handle dozens of simultaneous Claude Code tasks, automatically scaling based on available resources.
+
+## How Claudine Works
+
+**Event-Driven Architecture**: Instead of managing state directly, Claudine uses events to coordinate between components, eliminating race conditions and ensuring reliability.
+
+**Intelligent Resource Management**: Monitors CPU and memory in real-time, spawning new Claude Code instances when resources are available, maintaining system stability.
+
+**Task Persistence & Recovery**: Every task is stored in SQLite with automatic recovery after crashes. Your work never gets lost.
+
+**No Artificial Limits**: Unlike traditional approaches, Claudine uses ALL available system resources - spawning as many workers as your server can handle.
+
+## What You Get
+
+✅ **Currently Available in v0.2.1**:
+- **Event-Driven Architecture**: Fully event-driven system with EventBus coordination
 - **Task Persistence**: SQLite-based storage with automatic recovery on startup
-- **Autoscaling**: Automatically spawns workers based on available CPU and memory
-- **DelegateTask**: Process tasks in parallel with no artificial limits
-- **Queue Management**: Tasks queue when resources are busy, process when available
+- **CLI Interface**: Direct task management (`claudine delegate`, `claudine status`, etc.)
+- **Autoscaling**: Automatically spawns workers based on available CPU and memory  
+- **Priority Levels**: P0 (Critical), P1 (High), P2 (Normal) task prioritization
+- **Git Worktree Support**: Optional task isolation in separate worktrees
+- **Resource Management**: Dynamic worker scaling with CPU/memory monitoring
+- **Output Capture**: Fixed process handling with proper stdin management
+- **Recovery System**: Automatic task recovery after crashes
+- **Configuration**: Environment variables and per-task overrides
+
+📋 **MCP Tools**:
+- **DelegateTask**: Submit tasks to background Claude Code instances
 - **TaskStatus**: Real-time status of all running and queued tasks
 - **TaskLogs**: Stream or retrieve execution logs from any task
 - **CancelTask**: Cancel tasks with automatic resource cleanup
-- **Zero Configuration**: Works optimally out of the box on dedicated servers
-- **Non-interactive Mode**: Uses `--print` flag for automated Claude CLI execution
+
+See [FEATURES.md](./FEATURES.md) for complete feature documentation.
 
 ## Quick Start
 
@@ -134,15 +166,34 @@ After adding the configuration, restart Claude Code or Claude Desktop to connect
 
 ### CLI Commands
 
+#### MCP Server Management
 ```bash
 # Start the MCP server
 claudine mcp start
 
-# Test the server in mock mode
+# Test server startup and validation
 claudine mcp test
 
 # Show MCP configuration
 claudine mcp config
+```
+
+#### Direct Task Management (New in v0.2.1)
+```bash
+# Delegate a task directly
+claudine delegate "Create a Python script to analyze CSV data"
+
+# Check status of all tasks
+claudine status
+
+# Check specific task status
+claudine status <task-id>
+
+# Get task logs
+claudine logs <task-id>
+
+# Cancel a running task
+claudine cancel <task-id> "Taking too long"
 
 # Show help
 claudine help
@@ -246,13 +297,17 @@ Claudine is optimized for **dedicated servers** with ample resources, not constr
 
 ### Core Components
 
-1. **MCP Server**: Handles JSON-RPC requests from Claude Code
-2. **Autoscaling Manager**: Dynamically adjusts worker count based on system resources
-3. **Task Queue**: Priority-based queue for pending tasks
-4. **Process Manager**: Spawns and manages background Claude Code instances
-5. **Output Capture**: Buffers and stores process output (10MB limit, overflow to files)
-6. **Task Persistence**: SQLite database for task history and recovery
-7. **Recovery Manager**: Restores queued tasks after crashes
+**Event-Driven Architecture (New in v0.2.1)**:
+1. **EventBus**: Central coordination hub for all system events
+2. **Event Handlers**: Specialized handlers for persistence, queue, worker, and output events
+3. **MCP Server**: Handles JSON-RPC requests from Claude Code
+4. **Task Manager**: Event-driven orchestrator (no direct state management)
+5. **Autoscaling Manager**: Event-based worker scaling with resource monitoring
+6. **Task Queue**: Priority-based queue with event-driven processing
+7. **Worker Pool**: Event-driven worker lifecycle management
+8. **Output Capture**: Event-based output handling with proper stdin management
+9. **Task Persistence**: SQLite database with event-driven operations
+10. **Recovery Manager**: Restores interrupted tasks via events on startup
 
 ### Task Lifecycle
 
@@ -262,11 +317,43 @@ Claudine is optimized for **dedicated servers** with ample resources, not constr
 4. **Failed**: Task failed with error
 5. **Cancelled**: Task manually cancelled by user
 
+## Configuration
+
+### Environment Variables
+
+- `TASK_TIMEOUT`: Task timeout in milliseconds (default: 1800000 = 30 minutes, range: 1000-86400000)
+- `MAX_OUTPUT_BUFFER`: Output buffer size in bytes (default: 10485760 = 10MB, range: 1024-1073741824)  
+- `CPU_THRESHOLD`: CPU usage threshold percentage (default: 80, range: 1-100)
+- `MEMORY_RESERVE`: Memory reserve in bytes (default: 1073741824 = 1GB, range: 0+)
+- `LOG_LEVEL`: Logging level (default: 'info', options: 'debug', 'info', 'warn', 'error')
+
+### Per-Task Configuration
+
+You can override timeout and buffer limits for individual tasks via MCP parameters:
+
+```javascript
+// Example: Long-running task with larger buffer
+await claudine.DelegateTask({
+  prompt: "analyze large dataset and generate report", 
+  timeout: 7200000,        // 2 hours
+  maxOutputBuffer: 104857600  // 100MB
+});
+
+// Example: Quick task with minimal resources  
+await claudine.DelegateTask({
+  prompt: "run eslint on current file",
+  timeout: 30000,          // 30 seconds
+  maxOutputBuffer: 1048576    // 1MB
+});
+```
+
 ## Current Limitations
 
-- 30-minute timeout per task (configurable via TASK_TIMEOUT env var)
-- 10MB output buffer limit per task (larger outputs saved to files)
-- No distributed execution across multiple machines (planned for v0.5.0)
+- No task dependency resolution (planned for v0.3.0)  
+- No distributed execution across multiple machines (planned for v0.4.0)
+- No web dashboard (monitoring via logs only)
+
+For complete feature list, see [FEATURES.md](./FEATURES.md).
 
 ## Troubleshooting
 
@@ -293,11 +380,13 @@ npm run dev
 
 ## Roadmap
 
-- [x] Phase 1: MVP with autoscaling (Current - v0.2.0)
-- [ ] Phase 2: Persistence and recovery
-- [ ] Phase 3: Priority levels and dependencies  
-- [ ] Phase 4: Distributed processing (multi-server)
-- [ ] Phase 5: Advanced orchestration and monitoring
+- [x] **v0.2.0**: Autoscaling and persistence (Released Sep 2025)
+- [x] **v0.2.1**: Event-driven architecture and CLI commands (Current - Released Sep 2025)
+- [ ] **v0.3.0**: Task dependency resolution (Q4 2025)
+- [ ] **v0.4.0**: Distributed processing (Q1 2026)
+- [ ] **v0.5.0**: Advanced orchestration and monitoring (Q2 2026)
+
+See [ROADMAP.md](./ROADMAP.md) for detailed feature plans and timelines.
 
 ## Contributing
 

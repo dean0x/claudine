@@ -8,59 +8,68 @@ Claudine is an MCP (Model Context Protocol) server designed for dedicated server
 
 ## Core Architecture
 
+### Event-Driven Architecture (v0.2.1)
+
+Claudine uses a **fully event-driven architecture** with centralized EventBus coordination:
+
+```typescript
+// All components communicate through events, not direct method calls
+eventBus.emit('TaskDelegated', { task });
+eventBus.emit('TaskQueued', { taskId, task });
+eventBus.emit('WorkerSpawned', { workerId, taskId });
+```
+
 ### MCP Server Implementation
 - Claudine operates as an MCP server that Claude can connect to via the Model Context Protocol
 - Enables Claude to delegate tasks to background Claude Code instances for parallel task execution
-- Implements task queue management with priority levels and dependency resolution
+- All operations are event-driven with no direct state management
 
 ### Key Components
 
-1. **Autoscaling Manager**
-   - Monitors system CPU and memory in real-time
-   - Spawns new workers when resources are available
-   - No artificial worker limits - uses all available resources
-   - Maintains 20% CPU headroom and 1GB RAM for system stability
+**Event-Driven Core**:
+1. **EventBus (InMemoryEventBus)** - Central coordination hub for all system events
+2. **Event Handlers** - Specialized handlers that respond to specific events:
+   - `PersistenceHandler` - Database operations
+   - `QueueHandler` - Task queue management
+   - `WorkerHandler` - Worker lifecycle management
+   - `OutputHandler` - Output capture and logs
 
-2. **Task Queue**
-   - FIFO queue for pending tasks
-   - Processes tasks as soon as resources become available
-   - No queue size limits (only limited by memory)
-   - Priority support (P0 = critical, P1 = high, P2 = normal)
+**Business Logic**:
+3. **TaskManager (TaskManagerService)** - Pure event emitter, no direct state management
+4. **Autoscaling Manager** - Event-driven worker scaling based on resources
+5. **Recovery Manager** - Restores interrupted tasks via events on startup
 
-3. **Claude Code Instance Manager**
-   - Spawns background Claude Code instances dynamically
-   - Each instance runs with --dangerously-skip-permissions
-   - Monitors instance health and resource usage
-   - Automatic cleanup on completion or failure
-
-4. **MCP Protocol Handler**
-   - Implements MCP server specification
-   - Handles tool registration and invocation (DelegateTask, TaskStatus, etc.)
-   - Manages communication between Claude and background instances
+**Infrastructure**:
+6. **Task Queue (PriorityTaskQueue)** - FIFO with priority support (P0/P1/P2)
+7. **Worker Pool (EventDrivenWorkerPool)** - Event-based worker lifecycle
+8. **Process Spawner (ClaudeProcessSpawner)** - Proper stdin handling (`stdio: ['ignore', 'pipe', 'pipe']`)
+9. **Output Capture (BufferedOutputCapture)** - Event-driven output management
+10. **Task Repository (SQLiteTaskRepository)** - Persistent task storage with recovery
+11. **MCP Adapter** - Handles JSON-RPC requests from Claude Code
 
 ## Development Setup
 
 ### Prerequisites
-- Node.js 18+ or Python 3.9+ (depending on implementation choice)
-- Claude Code CLI installed
-- MCP SDK for the chosen language
+- Node.js 20.0.0+ (TypeScript implementation)
+- Claude Code CLI installed (`claude` command available)
+- SQLite3 (for task persistence)
 
 ### Initial Setup
 ```bash
-# Install dependencies (Node.js example)
+# Install dependencies
 npm install
 
-# Or for Python
-pip install -r requirements.txt
+# Build TypeScript
+npm run build
 ```
 
 ### Running the MCP Server
 ```bash
-# Start the MCP server (adjust based on implementation)
-npm run start
+# Start the MCP server
+claudine mcp start
 
-# Or for Python
-python -m claudine.server
+# Or run built files directly
+node dist/cli.js mcp start
 ```
 
 ### Testing
@@ -76,6 +85,11 @@ npm run test:coverage
 ```bash
 # Run in development with auto-reload
 npm run dev
+
+# Direct task testing (New in v0.2.1)
+claudine delegate "echo hello world"
+claudine status
+claudine logs <task-id>
 ```
 
 ## MCP Integration
@@ -83,7 +97,7 @@ npm run dev
 When implementing MCP tools for Claudine, follow these patterns:
 
 1. **Tool Registration**: All tools use PascalCase naming (DelegateTask, TaskStatus, etc.)
-2. **Task Delegation**: DelegateTask accepts specifications with priority and dependencies
+2. **Task Delegation**: DelegateTask accepts specifications with priority levels
 3. **Status Monitoring**: TaskStatus and ListTasks provide task status and health info
 4. **Result Retrieval**: TaskLogs and TaskMetrics fetch results from tasks
 
@@ -92,12 +106,12 @@ When implementing MCP tools for Claudine, follow these patterns:
 Tasks submitted to Claudine should follow this structure:
 ```json
 {
-  "id": "unique-task-id",
+  "prompt": "claude-code command or instruction",
   "priority": "P0|P1|P2",
-  "dependencies": ["task-id-1", "task-id-2"],
-  "command": "claude-code command or instruction",
-  "context": {},
-  "timeout": 300000
+  "timeout": 300000,
+  "maxOutputBuffer": 10485760,
+  "workingDirectory": "/path/to/work/in",
+  "useWorktree": false
 }
 ```
 
@@ -119,29 +133,28 @@ claudine mcp start
 claudine mcp start
 ```
 
-### Phase 2 - Direct Task Commands (Future)
-- `claudine delegate <task>` - Delegate a task to background Claude Code instance
-- `claudine status [task-id]` - Check task status (all tasks if no ID provided)
-- `claudine logs <task-id>` - Get task output and logs
-- `claudine cancel <task-id>` - Cancel a running task
-- `claudine list` - List all tasks with their current status
+### Direct Task Commands (Available in v0.2.1)
+- `claudine delegate <task>` - ✅ Delegate a task to background Claude Code instance
+- `claudine status [task-id]` - ✅ Check task status (all tasks if no ID provided)
+- `claudine logs <task-id>` - ✅ Get task output and logs
+- `claudine cancel <task-id> [reason]` - ✅ Cancel a running task
 
-### Future CLI Examples
+### CLI Examples (Working Now)
 ```bash
 # Delegate a simple task
 claudine delegate "analyze the codebase and find all TODO comments"
 
-# Delegate with priority
-claudine delegate "fix critical bug in auth system" --priority P0
+# Check status of all tasks
+claudine status
 
 # Check status of specific task
 claudine status task-abc123
 
-# Stream logs from running task
-claudine logs task-abc123 --follow
+# Get logs from completed task
+claudine logs task-abc123
 
-# List all tasks
-claudine list --format table
+# Cancel a running task
+claudine cancel task-abc123 "Taking too long"
 ```
 
 ## Engineering Principles
@@ -196,12 +209,25 @@ const updateTask = (task: Task, update: Partial<Task>): Task => ({
 2. **Autoscaling by Default**: No configuration needed - automatically uses all available system resources
 3. **Resource Management**: Maintains 20% CPU headroom and 1GB RAM reserve for system stability
 4. **Error Handling**: Use Result types, never throw in business logic
-5. **Queue Persistence**: Implement persistent task queue for reliability (Phase 2)
+5. **Queue Persistence**: ✅ **IMPLEMENTED** - SQLite-based persistent task queue with recovery
 6. **Security**: Validate all task inputs at boundaries using Zod
 7. **Logging**: Structured JSON logging with context
 8. **No Worker Limits**: Unlike traditional approaches, we spawn as many workers as the system can handle
 9. **Testing**: Focus on integration tests that verify behaviors
 10. **Performance**: Measure and optimize critical paths
+
+## Current Architecture (v0.2.1)
+
+### Implemented Components
+- **Event-Driven Architecture**: EventBus with specialized event handlers
+- **Task Persistence**: SQLite database with WAL mode and recovery
+- **CLI Interface**: Direct task management commands
+- **Process Handling**: Proper stdin management (`stdio: ['ignore', 'pipe', 'pipe']`)
+- **Autoscaling Manager**: Event-driven worker pool based on system resources
+- **Recovery Manager**: Event-based task restoration on startup
+- **Configuration System**: Environment-based configuration with validation
+- **Output Management**: Event-driven buffered capture with file overflow
+- **Resource Monitoring**: Real-time CPU/memory tracking with event emission
 
 
 ## Release Process
@@ -229,40 +255,73 @@ const updateTask = (task: Task, update: Partial<Task>): Task => ({
    npm test
    ```
 
-### Release Steps
+### Release Steps (CI/CD Only)
+
+**IMPORTANT**: Only use automated CI/CD releases to prevent versioning errors.
 
 1. **Create Pull Request**
    ```bash
    # Commit all changes
    git add .
-   git commit -m "chore: prepare v0.2.0 release"
+   git commit -m "chore: prepare v0.2.1 release"
    
    # Push branch
    git push origin feature/your-branch
    
    # Create PR via GitHub CLI
-   gh pr create --title "Release v0.2.0" --body "Release notes..."
+   gh pr create --title "Release v0.2.1" --body "Release notes..."
    ```
 
-2. **After PR is merged**
+2. **After PR is merged to main**
    ```bash
-   # Switch to main
+   # Switch to main branch
    git checkout main
-   git pull
+   git pull origin main
    
-   # Create and push tag
-   git tag v0.2.0
-   git push origin v0.2.0
+   # Use npm version to bump AND create git tag automatically
+   npm version minor  # Creates commit + tag automatically
    
-   # Publish to npm
-   npm publish
+   # Push both commit and tag
+   git push origin main --follow-tags
    ```
 
-3. **Create GitHub Release**
-   - Go to GitHub releases page
-   - Create release from tag
-   - Copy RELEASE_NOTES.md content
-   - Publish release
+3. **Create GitHub Release** (triggers automatic npm publish)
+   ```bash
+   # Create release - this triggers GitHub Actions CI/CD
+   gh release create v0.2.1 \
+     --title "🚀 Claudine v0.2.1 - Event-Driven Architecture" \
+     --notes-file CHANGELOG.md \
+     --generate-notes
+   ```
+   
+   **GitHub Actions will automatically:**
+   - Build and test the code
+   - Publish to npm with public access  
+   - Verify git tag matches package.json version
+   - Fail if any step is incorrect
+
+### Release Safeguards
+
+To prevent versioning issues like missing tags:
+
+1. **Always use `npm version`** - creates both version bump AND git tag
+2. **Always use `--follow-tags`** - ensures tags are pushed with commits
+3. **Never manual publish** - CI/CD handles npm publishing
+4. **Verify before release**:
+   ```bash
+   git log --oneline -1  # Check latest commit
+   git tag --points-at HEAD  # Verify tag exists on current commit
+   git push --dry-run --follow-tags  # Verify what will be pushed
+   npm run build && npm test  # Final validation
+   ```
+
+5. **Post-release verification**:
+   ```bash
+   # After GitHub release is created, verify everything matches:
+   npm view claudine versions --json  # Check npm registry
+   git tag --list | tail -5  # Check git tags
+   gh release list --limit 5  # Check GitHub releases
+   ```
 
 ### NPM Publishing Requirements
 - Must be logged in: `npm login`

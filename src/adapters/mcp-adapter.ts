@@ -16,6 +16,8 @@ const DelegateTaskSchema = z.object({
   priority: z.enum(['P0', 'P1', 'P2']).optional(),
   workingDirectory: z.string().optional(),
   useWorktree: z.boolean().optional().default(false),
+  timeout: z.number().min(1000).max(86400000).optional(), // 1 second to 24 hours
+  maxOutputBuffer: z.number().min(1024).max(1073741824).optional(), // 1KB to 1GB
 });
 
 const TaskStatusSchema = z.object({
@@ -126,6 +128,18 @@ export class MCPAdapter {
                     description: 'Create a git worktree for isolated execution',
                     default: false,
                   },
+                  timeout: {
+                    type: 'number',
+                    description: 'Task timeout in milliseconds (overrides global default)',
+                    minimum: 1000,
+                    maximum: 86400000, // 24 hours
+                  },
+                  maxOutputBuffer: {
+                    type: 'number',
+                    description: 'Maximum output buffer size in bytes (overrides global default)',
+                    minimum: 1024,
+                    maximum: 1073741824, // 1GB
+                  },
                 },
                 required: ['prompt'],
               },
@@ -208,7 +222,7 @@ export class MCPAdapter {
       };
     }
 
-    const { prompt, priority, workingDirectory, useWorktree } = parseResult.data;
+    const { prompt, priority, workingDirectory, useWorktree, timeout, maxOutputBuffer } = parseResult.data;
 
     // Create request
     const request: DelegateRequest = {
@@ -216,6 +230,8 @@ export class MCPAdapter {
       priority: priority as Priority,
       workingDirectory,
       useWorktree,
+      timeout,
+      maxOutputBuffer,
     };
 
     // Delegate task using our new architecture
@@ -343,7 +359,7 @@ export class MCPAdapter {
 
     const { taskId, tail } = parseResult.data;
 
-    const result = this.taskManager.getLogs(TaskId(taskId), tail);
+    const result = await this.taskManager.getLogs(TaskId(taskId), tail);
 
     return match(result, {
       ok: (output) => ({

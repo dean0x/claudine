@@ -4,13 +4,15 @@
  */
 
 import { Container } from './core/container.js';
-import { Config, Logger } from './core/interfaces.js';
+import { Config, Logger, EventBus, ProcessSpawner, ResourceMonitor, OutputCapture, TaskQueue, WorkerPool, TaskRepository, TaskManager } from './core/interfaces.js';
+import { Configuration } from './core/configuration.js';
+import { InMemoryEventBus } from './core/events/event-bus.js';
 
 // Implementations
 import { PriorityTaskQueue } from './implementations/task-queue.js';
 import { ClaudeProcessSpawner } from './implementations/process-spawner.js';
 import { SystemResourceMonitor } from './implementations/resource-monitor.js';
-import { AutoscalingWorkerPool } from './implementations/worker-pool.js';
+import { EventDrivenWorkerPool } from './implementations/event-driven-worker-pool.js';
 import { BufferedOutputCapture } from './implementations/output-capture.js';
 import { StructuredLogger, ConsoleLogger, LogLevel } from './implementations/logger.js';
 import { Database } from './implementations/database.js';
@@ -22,17 +24,36 @@ import { TaskManagerService } from './services/task-manager.js';
 import { AutoscalingManager } from './services/autoscaling-manager.js';
 import { RecoveryManager } from './services/recovery-manager.js';
 
+// Event Handlers
+import { PersistenceHandler } from './services/handlers/persistence-handler.js';
+import { QueueHandler } from './services/handlers/queue-handler.js';
+import { WorkerHandler } from './services/handlers/worker-handler.js';
+import { OutputHandler } from './services/handlers/output-handler.js';
+
 // Adapter
 import { MCPAdapter } from './adapters/mcp-adapter.js';
+import { loadConfiguration } from './core/configuration.js';
 
-// Environment configuration
-const getConfig = (): Config => ({
-  maxOutputBuffer: parseInt(process.env.MAX_OUTPUT_BUFFER || '10485760'), // 10MB
-  taskTimeout: parseInt(process.env.TASK_TIMEOUT || '1800000'), // 30 minutes
-  cpuThreshold: parseInt(process.env.CPU_THRESHOLD || '80'), // 80%
-  memoryReserve: parseInt(process.env.MEMORY_RESERVE || '1000000000'), // 1GB
-  logLevel: (process.env.LOG_LEVEL as any) || 'info',
-});
+// Convert new configuration format to existing Config interface
+const getConfig = (): Config => {
+  const config = loadConfiguration();
+  return {
+    maxOutputBuffer: config.maxOutputBuffer,
+    taskTimeout: config.timeout, // Note: renamed from timeout to taskTimeout
+    cpuThreshold: config.cpuThreshold,
+    memoryReserve: config.memoryReserve,
+    logLevel: config.logLevel
+  };
+};
+
+// Helper functions for safe container type casting
+const getFromContainer = <T>(container: Container, key: string): T => {
+  const result = container.get(key);
+  if (!result.ok) {
+    throw new Error(`Failed to get ${key} from container: ${result.error.message}`);
+  }
+  return result.value as T;
+};
 
 /**
  * Bootstrap the application with all dependencies
@@ -56,6 +77,17 @@ export async function bootstrap() {
     } else {
       return new ConsoleLogger('[Claudine]', true);
     }
+  });
+
+  // Register EventBus as singleton - ALL components must use this shared instance
+  container.registerSingleton('eventBus', () => {
+    const loggerResult = container.get('logger');
+    
+    if (!loggerResult.ok) {
+      throw new Error('Logger required for EventBus');
+    }
+    
+    return new InMemoryEventBus((loggerResult.value as Logger).child({ module: 'SharedEventBus' }));
   });
 
   // Get logger for bootstrap
@@ -92,128 +124,166 @@ export async function bootstrap() {
     new ClaudeProcessSpawner('claude')
   );
 
-  container.registerSingleton('resourceMonitor', () => 
-    new SystemResourceMonitor(config.cpuThreshold, config.memoryReserve)
-  );
+  container.registerSingleton('resourceMonitor', () => {
+    const loggerResult = container.get('logger');
+    const eventBusResult = container.get('eventBus');
+    
+    if (!loggerResult.ok || !eventBusResult.ok) {
+      throw new Error('Logger and EventBus required for ResourceMonitor');
+    }
+    
+    const monitor = new SystemResourceMonitor(
+      config.cpuThreshold, 
+      config.memoryReserve,
+      getFromContainer<EventBus>(container, 'eventBus'),
+      getFromContainer<Logger>(container, 'logger').child({ module: 'ResourceMonitor' })
+    );
+    
+    // Start monitoring after a brief delay to allow system startup
+    setTimeout(() => monitor.startMonitoring(), 2000);
+    
+    return monitor;
+  });
 
-  container.registerSingleton('outputCapture', () => 
-    new BufferedOutputCapture(config.maxOutputBuffer)
-  );
+  container.registerSingleton('outputCapture', () => {
+    const eventBus = getFromContainer<EventBus>(container, 'eventBus');
+    return new BufferedOutputCapture(config.maxOutputBuffer, eventBus);
+  });
 
   // Register worker pool
   container.registerSingleton('workerPool', () => {
-    const spawnerResult = container.get('processSpawner');
-    const monitorResult = container.get('resourceMonitor');
-    const loggerResult = container.get('logger');
-    const outputResult = container.get('outputCapture');
-
-    if (!spawnerResult.ok || !monitorResult.ok || !loggerResult.ok || !outputResult.ok) {
-      throw new Error('Failed to resolve dependencies for WorkerPool');
-    }
-
-    const pool = new AutoscalingWorkerPool(
-      spawnerResult.value as any,
-      monitorResult.value as any,
-      (loggerResult.value as Logger).child({ module: 'WorkerPool' }),
-      outputResult.value as any
+    const pool = new EventDrivenWorkerPool(
+      getFromContainer<ProcessSpawner>(container, 'processSpawner'),
+      getFromContainer<ResourceMonitor>(container, 'resourceMonitor'),
+      getFromContainer<Logger>(container, 'logger').child({ module: 'WorkerPool' }),
+      getFromContainer<EventBus>(container, 'eventBus'),
+      getFromContainer<OutputCapture>(container, 'outputCapture')
     );
     return pool;
   });
 
   // Register task manager
-  container.registerSingleton('taskManager', () => {
-    const queueResult = container.get('taskQueue');
-    const workersResult = container.get('workerPool');
-    const outputResult = container.get('outputCapture');
-    const monitorResult = container.get('resourceMonitor');
-    const loggerResult = container.get('logger');
+  container.registerSingleton('taskManager', async () => {
     const repositoryResult = container.get('taskRepository');
 
-    if (!queueResult.ok || !workersResult.ok || !outputResult.ok || 
-        !monitorResult.ok || !loggerResult.ok) {
-      throw new Error('Failed to resolve dependencies for TaskManager');
-    }
+    const repository = repositoryResult.ok ? repositoryResult.value as TaskRepository : undefined;
+    
+    // Create Configuration object for TaskManager
+    const taskManagerConfig: Configuration = {
+      timeout: config.taskTimeout,
+      maxOutputBuffer: config.maxOutputBuffer,
+      cpuThreshold: config.cpuThreshold,
+      memoryReserve: config.memoryReserve,
+      logLevel: config.logLevel
+    };
 
     const taskManager = new TaskManagerService(
-      queueResult.value as any,
-      workersResult.value as any,
-      outputResult.value as any,
-      monitorResult.value as any,
-      (loggerResult.value as Logger).child({ module: 'TaskManager' }),
-      repositoryResult.ok ? repositoryResult.value as any : undefined
+      getFromContainer<EventBus>(container, 'eventBus'),
+      repository,
+      getFromContainer<Logger>(container, 'logger').child({ module: 'TaskManager' }),
+      taskManagerConfig,
+      getFromContainer<OutputCapture>(container, 'outputCapture')
     );
 
-    // Wire up task completion handler
-    const workerPool = workersResult.value as any;
-    if (workerPool.setTaskCompleteHandler) {
-      workerPool.setTaskCompleteHandler((taskId: string, exitCode: number) => {
-        taskManager.onTaskComplete(taskId as any, exitCode);
-      });
+    // Wire up event handlers - this is critical for event-driven architecture
+    const logger = getFromContainer<Logger>(container, 'logger');
+    const eventBus = getFromContainer<EventBus>(container, 'eventBus');
+    
+    // 1. Persistence Handler - manages database operations
+    if (repositoryResult.ok) {
+      const persistenceHandler = new PersistenceHandler(
+        repositoryResult.value as TaskRepository,
+        logger.child({ module: 'PersistenceHandler' })
+      );
+      const persistenceSetup = await persistenceHandler.setup(eventBus);
+      if (!persistenceSetup.ok) {
+        throw new Error(`Failed to setup PersistenceHandler: ${persistenceSetup.error.message}`);
+      }
     }
 
+    // 2. Queue Handler - manages task queue operations
+    const queueHandler = new QueueHandler(
+      getFromContainer<TaskQueue>(container, 'taskQueue'),
+      logger.child({ module: 'QueueHandler' })
+    );
+    const queueSetup = await queueHandler.setup(eventBus);
+    if (!queueSetup.ok) {
+      throw new Error(`Failed to setup QueueHandler: ${queueSetup.error.message}`);
+    }
+
+    // 3. Worker Handler - manages worker lifecycle
+    const workerHandler = new WorkerHandler(
+      getFromContainer<WorkerPool>(container, 'workerPool'),
+      getFromContainer<ResourceMonitor>(container, 'resourceMonitor'),
+      queueHandler,
+      getFromContainer<TaskRepository>(container, 'taskRepository'),
+      eventBus,
+      logger.child({ module: 'WorkerHandler' })
+    );
+    const workerSetup = await workerHandler.setup(eventBus);
+    if (!workerSetup.ok) {
+      throw new Error(`Failed to setup WorkerHandler: ${workerSetup.error.message}`);
+    }
+
+    // 4. Output Handler - manages output and logs
+    const outputHandler = new OutputHandler(
+      getFromContainer<OutputCapture>(container, 'outputCapture'),
+      logger.child({ module: 'OutputHandler' })
+    );
+    const outputSetup = await outputHandler.setup(eventBus);
+    if (!outputSetup.ok) {
+      throw new Error(`Failed to setup OutputHandler: ${outputSetup.error.message}`);
+    }
+
+    logger.info('Event-driven architecture initialized successfully');
     return taskManager;
   });
 
   // Register autoscaling manager
-  container.registerSingleton('autoscalingManager', () => {
-    const queueResult = container.get('taskQueue');
-    const workersResult = container.get('workerPool');
-    const monitorResult = container.get('resourceMonitor');
-    const loggerResult = container.get('logger');
-    const taskManagerResult = container.get('taskManager');
-
-    if (!queueResult.ok || !workersResult.ok || !monitorResult.ok || !loggerResult.ok) {
-      throw new Error('Failed to resolve dependencies for AutoscalingManager');
-    }
-
+  container.registerSingleton('autoscalingManager', async () => {
     const autoscaler = new AutoscalingManager(
-      queueResult.value as any,
-      workersResult.value as any,
-      monitorResult.value as any,
-      (loggerResult.value as Logger).child({ module: 'Autoscaler' }),
-      1000 // Check every second
+      getFromContainer<TaskQueue>(container, 'taskQueue'),
+      getFromContainer<WorkerPool>(container, 'workerPool'),
+      getFromContainer<ResourceMonitor>(container, 'resourceMonitor'),
+      getFromContainer<EventBus>(container, 'eventBus'),
+      getFromContainer<Logger>(container, 'logger').child({ module: 'Autoscaler' })
     );
     
-    // Wire up scale event to task manager
-    if (taskManagerResult.ok) {
-      const taskManager = taskManagerResult.value as any;
-      autoscaler.setOnScaleUp(() => {
-        taskManager.tryProcessNext();
-      });
+    // Set up event subscriptions
+    const setupResult = await autoscaler.setup();
+    if (!setupResult.ok) {
+      throw new Error(`Failed to setup AutoscalingManager: ${setupResult.error.message}`);
     }
     
     return autoscaler;
   });
 
   // Register MCP adapter
-  container.registerSingleton('mcpAdapter', () => {
-    const taskManagerResult = container.get('taskManager');
-    const loggerResult = container.get('logger');
-
-    if (!taskManagerResult.ok || !loggerResult.ok) {
-      throw new Error('Failed to resolve dependencies for MCPAdapter');
+  container.registerSingleton('mcpAdapter', async () => {
+    const taskManagerResult = await container.resolve<TaskManager>('taskManager');
+    if (!taskManagerResult.ok) {
+      throw new Error(`Failed to resolve taskManager for MCPAdapter: ${taskManagerResult.error.message}`);
     }
-
+    
     return new MCPAdapter(
-      taskManagerResult.value as any,
-      (loggerResult.value as Logger).child({ module: 'MCP' })
+      taskManagerResult.value,
+      getFromContainer<Logger>(container, 'logger').child({ module: 'MCP' })
     );
   });
 
   // Register recovery manager
   container.registerSingleton('recoveryManager', () => {
     const repositoryResult = container.get('taskRepository');
-    const queueResult = container.get('taskQueue');
-    const loggerResult = container.get('logger');
     
-    if (!repositoryResult.ok || !queueResult.ok || !loggerResult.ok) {
-      throw new Error('Failed to resolve dependencies for RecoveryManager');
+    if (!repositoryResult.ok) {
+      throw new Error('TaskRepository required for RecoveryManager');
     }
     
     return new RecoveryManager(
-      repositoryResult.value as any,
-      queueResult.value as any,
-      (loggerResult.value as Logger).child({ module: 'Recovery' })
+      repositoryResult.value as TaskRepository,
+      getFromContainer<TaskQueue>(container, 'taskQueue'),
+      getFromContainer<EventBus>(container, 'eventBus'),
+      getFromContainer<Logger>(container, 'logger').child({ module: 'Recovery' })
     );
   });
   

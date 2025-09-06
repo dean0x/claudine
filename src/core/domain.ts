@@ -30,6 +30,8 @@ export interface Task {
   readonly priority: Priority;
   readonly workingDirectory?: string;
   readonly useWorktree: boolean;
+  readonly timeout?: number;
+  readonly maxOutputBuffer?: number;
   readonly createdAt: number;
   readonly startedAt?: number;
   readonly completedAt?: number;
@@ -66,6 +68,8 @@ export interface DelegateRequest {
   readonly priority?: Priority;
   readonly workingDirectory?: string;
   readonly useWorktree?: boolean;
+  readonly timeout?: number;
+  readonly maxOutputBuffer?: number;
 }
 
 export interface TaskUpdate {
@@ -94,6 +98,8 @@ export const createTask = (request: DelegateRequest): Task => ({
   priority: request.priority || Priority.P2,
   workingDirectory: request.workingDirectory,
   useWorktree: request.useWorktree || false,
+  timeout: request.timeout,
+  maxOutputBuffer: request.maxOutputBuffer,
   createdAt: Date.now(),
 });
 

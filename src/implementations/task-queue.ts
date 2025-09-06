@@ -52,6 +52,10 @@ export class PriorityTaskQueue implements TaskQueue {
     return ok(Object.freeze([...this.tasks]));
   }
 
+  contains(taskId: TaskId): boolean {
+    return this.tasks.some(t => t.id === taskId);
+  }
+
   size(): number {
     return this.tasks.length;
   }
@@ -109,6 +113,10 @@ export class FIFOTaskQueue implements TaskQueue {
 
   getAll(): Result<readonly Task[]> {
     return ok(Object.freeze([...this.tasks]));
+  }
+
+  contains(taskId: TaskId): boolean {
+    return this.tasks.some(t => t.id === taskId);
   }
 
   size(): number {

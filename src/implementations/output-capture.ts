@@ -3,7 +3,7 @@
  * Manages stdout/stderr for tasks with size limits
  */
 
-import { OutputCapture } from '../core/interfaces.js';
+import { OutputCapture, EventBus } from '../core/interfaces.js';
 import { TaskId, TaskOutput } from '../core/domain.js';
 import { Result, ok, err } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
@@ -14,12 +14,19 @@ interface OutputBuffer {
   totalSize: number;
 }
 
+export interface TaskConfig {
+  maxOutputBuffer: number;
+}
+
 export class BufferedOutputCapture implements OutputCapture {
   private readonly buffers = new Map<TaskId, OutputBuffer>();
+  private readonly taskConfigs = new Map<TaskId, TaskConfig>();
   private readonly maxBufferSize: number;
+  private readonly eventBus?: EventBus;
 
-  constructor(maxBufferSize = 10 * 1024 * 1024) { // 10MB default
+  constructor(maxBufferSize = 10 * 1024 * 1024, eventBus?: EventBus) { // 10MB default
     this.maxBufferSize = maxBufferSize;
+    this.eventBus = eventBus;
   }
 
   capture(taskId: TaskId, type: 'stdout' | 'stderr', data: string): Result<void> {
@@ -36,12 +43,16 @@ export class BufferedOutputCapture implements OutputCapture {
 
     const dataSize = Buffer.byteLength(data, 'utf8');
     
+    // Get the applicable buffer limit (per-task or global)
+    const taskConfig = this.taskConfigs.get(taskId);
+    const bufferLimit = taskConfig?.maxOutputBuffer !== undefined ? taskConfig.maxOutputBuffer : this.maxBufferSize;
+    
     // Check if adding this would exceed the limit
-    if (buffer.totalSize + dataSize > this.maxBufferSize) {
+    if (buffer.totalSize + dataSize > bufferLimit) {
       return err(new ClaudineError(
         ErrorCode.SYSTEM_ERROR,
         `Output buffer limit exceeded for task ${taskId}`,
-        { currentSize: buffer.totalSize, maxSize: this.maxBufferSize }
+        { currentSize: buffer.totalSize, maxSize: bufferLimit }
       ));
     }
 
@@ -53,6 +64,18 @@ export class BufferedOutputCapture implements OutputCapture {
     }
     
     buffer.totalSize += dataSize;
+
+    // Emit OutputCaptured event if eventBus is available
+    if (this.eventBus) {
+      this.eventBus.emit('OutputCaptured', {
+        taskId,
+        outputType: type,
+        data
+      }).catch(() => {
+        // Log error but don't fail the capture operation
+        // EventBus errors shouldn't break output capture
+      });
+    }
     
     return ok(undefined);
   }
@@ -89,6 +112,7 @@ export class BufferedOutputCapture implements OutputCapture {
 
   clear(taskId: TaskId): Result<void> {
     this.buffers.delete(taskId);
+    this.taskConfigs.delete(taskId);
     return ok(undefined);
   }
 
@@ -112,6 +136,18 @@ export class BufferedOutputCapture implements OutputCapture {
       this.buffers.delete(taskId);
     }
   }
+
+  // Per-task configuration methods
+  configureTask(taskId: TaskId, config: TaskConfig): Result<void> {
+    this.taskConfigs.set(taskId, config);
+    return ok(undefined);
+  }
+
+  cleanup(taskId: TaskId): Result<void> {
+    this.buffers.delete(taskId);
+    this.taskConfigs.delete(taskId);
+    return ok(undefined);
+  }
 }
 
 /**
@@ -119,6 +155,7 @@ export class BufferedOutputCapture implements OutputCapture {
  */
 export class TestOutputCapture implements OutputCapture {
   private readonly outputs = new Map<TaskId, { stdout: string[]; stderr: string[] }>();
+  private readonly taskConfigs = new Map<TaskId, TaskConfig>();
 
   capture(taskId: TaskId, type: 'stdout' | 'stderr', data: string): Result<void> {
     let output = this.outputs.get(taskId);
@@ -169,6 +206,19 @@ export class TestOutputCapture implements OutputCapture {
 
   clear(taskId: TaskId): Result<void> {
     this.outputs.delete(taskId);
+    this.taskConfigs.delete(taskId);
+    return ok(undefined);
+  }
+
+  // Per-task configuration methods
+  configureTask(taskId: TaskId, config: TaskConfig): Result<void> {
+    this.taskConfigs.set(taskId, config);
+    return ok(undefined);
+  }
+
+  cleanup(taskId: TaskId): Result<void> {
+    this.outputs.delete(taskId);
+    this.taskConfigs.delete(taskId);
     return ok(undefined);
   }
 

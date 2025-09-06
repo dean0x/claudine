@@ -82,7 +82,7 @@ Add to `~/.config/claude/mcp_servers.json`:
 # Start the MCP server manually
 claudine mcp start
 
-# Test in mock mode
+# Test server startup and validation
 claudine mcp test
 
 # Show help

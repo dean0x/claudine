@@ -16,7 +16,7 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
     claudeCommand = 'claude'
   ) {
     this.claudeCommand = claudeCommand;
-    this.baseArgs = Object.freeze(['--print', '--dangerously-skip-permissions']);
+    this.baseArgs = Object.freeze(['--print', '--dangerously-skip-permissions', '--output-format', 'json']);
   }
 
   spawn(prompt: string, workingDirectory: string): Result<{ process: ChildProcess; pid: number }> {
@@ -24,18 +24,21 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
       () => {
         // With --print flag, prompt is passed as argument, not via stdin
         const args = [...this.baseArgs, prompt];
+        
+        // DEBUGGING: Log the exact command being executed
+        console.error(`[ProcessSpawner] Executing: ${this.claudeCommand} ${args.map(arg => `"${arg}"`).join(' ')}`);
+        console.error(`[ProcessSpawner] Working directory: ${workingDirectory}`);
+        console.error(`[ProcessSpawner] Environment keys: ${Object.keys(process.env).length}`);
+        
         const child = spawn(this.claudeCommand, args, {
           cwd: workingDirectory,
           env: { ...process.env },
-          stdio: ['pipe', 'pipe', 'pipe'],
+          stdio: ['ignore', 'pipe', 'pipe'],
         });
 
         if (!child.pid) {
           throw new Error('Failed to get process PID');
         }
-
-        // Close stdin since we're not using it
-        child.stdin?.end();
 
         return { process: child, pid: child.pid };
       },

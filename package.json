@@ -1,6 +1,6 @@
 {
   "name": "claudine",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "main": "dist/index.js",
   "bin": {
     "claudine": "./dist/cli.js"
@@ -16,12 +16,15 @@
   },
   "scripts": {
     "test": "vitest",
+    "test:comprehensive": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage",
     "dev": "tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "test:ui": "vitest --ui",
     "clean": "rm -rf dist logs",
     "typecheck": "tsc --noEmit",
+    "validate": "npm run typecheck && npm run build && npm test",
     "prepublishOnly": "npm run build",
     "postinstall": "npm run build"
   },

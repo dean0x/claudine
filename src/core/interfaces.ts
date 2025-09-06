@@ -6,6 +6,7 @@
 import { Result } from './result.js';
 import { Task, TaskId, Worker, WorkerId, SystemResources, TaskOutput, DelegateRequest } from './domain.js';
 import { ChildProcess } from 'child_process';
+import { ClaudineEvent, EventHandler, BaseEvent } from './events/events.js';
 
 /**
  * Task queue management
@@ -16,6 +17,7 @@ export interface TaskQueue {
   peek(): Result<Task | null>;
   remove(taskId: TaskId): Result<void>;
   getAll(): Result<readonly Task[]>;
+  contains(taskId: TaskId): boolean;
   size(): number;
   clear(): Result<void>;
 }
@@ -77,6 +79,8 @@ export interface TaskRepository {
   findAll(): Promise<Result<readonly Task[]>>;
   findByStatus(status: string): Promise<Result<readonly Task[]>>;
   delete(taskId: TaskId): Promise<Result<void>>;
+  cleanupOldTasks(olderThanMs: number): Promise<Result<number>>;
+  transaction<T>(fn: (repo: TaskRepository) => Promise<Result<T>>): Promise<Result<T>>;
 }
 
 /**
@@ -118,12 +122,24 @@ export interface TaskEventEmitter {
 }
 
 /**
+ * Event bus for coordinating system events
+ */
+export interface EventBus {
+  emit<T extends ClaudineEvent>(type: T['type'], payload: Omit<T, keyof BaseEvent | 'type'>): Promise<Result<void>>;
+  subscribe<T extends ClaudineEvent>(eventType: T['type'], handler: EventHandler<T>): Result<void>;
+  unsubscribe<T extends ClaudineEvent>(eventType: T['type'], handler: EventHandler<T>): Result<void>;
+  subscribeAll(handler: EventHandler): Result<void>;
+  unsubscribeAll(handler: EventHandler): Result<void>;
+}
+
+/**
  * Main task manager orchestrator
  */
 export interface TaskManager {
   delegate(request: DelegateRequest): Promise<Result<Task>>;
   getStatus(taskId?: TaskId): Promise<Result<Task | readonly Task[]>>;
-  getLogs(taskId: TaskId, tail?: number): Result<TaskOutput>;
+  getLogs(taskId: TaskId, tail?: number): Promise<Result<TaskOutput>>;
   cancel(taskId: TaskId, reason?: string): Promise<Result<void>>;
+  /** @deprecated Use getStatus() without taskId parameter instead for async task listing */
   listTasks(): Result<readonly Task[]>;
 }
