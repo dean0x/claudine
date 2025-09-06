@@ -232,22 +232,34 @@ const updateTask = (task: Task, update: Partial<Task>): Task => ({
 
 ## Release Process
 
+### Automated Release Workflow (v0.2.1+)
+
+**IMPORTANT**: Releases are now fully automated via CI/CD with required manual release notes.
+
 ### Pre-release Checklist
 1. **Clean up workspace**
    - Remove test files (*.txt, test_*.py, etc.)
    - Ensure no temporary files are committed
 
-2. **Update version**
+2. **Update version in package.json**
    ```bash
-   # Update version in package.json
-   npm version patch  # for bug fixes (0.1.1 -> 0.1.2)
-   npm version minor  # for new features (0.1.1 -> 0.2.0)
-   npm version major  # for breaking changes (0.1.1 -> 1.0.0)
+   # Update version manually in package.json
+   npm version patch --no-git-tag-version  # for bug fixes (0.1.1 -> 0.1.2)
+   npm version minor --no-git-tag-version  # for new features (0.1.1 -> 0.2.0)
+   npm version major --no-git-tag-version  # for breaking changes (0.1.1 -> 1.0.0)
    ```
 
-3. **Create/Update RELEASE_NOTES.md**
-   - Document new features, bug fixes, breaking changes
-   - Include migration instructions if needed
+3. **Create release notes file** (REQUIRED)
+   ```bash
+   # Create release notes file matching version
+   touch RELEASE_NOTES_v0.2.2.md
+   
+   # Add comprehensive release notes:
+   # - Major features
+   # - Bug fixes  
+   # - Breaking changes
+   # - Migration instructions
+   ```
 
 4. **Test everything**
    ```bash
@@ -255,78 +267,97 @@ const updateTask = (task: Task, update: Partial<Task>): Task => ({
    npm test
    ```
 
-### Release Steps (CI/CD Only)
-
-**IMPORTANT**: Only use automated CI/CD releases to prevent versioning errors.
+### Release Steps (Fully Automated)
 
 1. **Create Pull Request**
    ```bash
-   # Commit all changes
-   git add .
-   git commit -m "chore: prepare v0.2.1 release"
+   # Commit version bump and release notes
+   git add package.json RELEASE_NOTES_v0.2.2.md
+   git commit -m "chore: prepare v0.2.2 release"
    
-   # Push branch
+   # Push branch and create PR
    git push origin feature/your-branch
-   
-   # Create PR via GitHub CLI
-   gh pr create --title "Release v0.2.1" --body "Release notes..."
+   gh pr create --title "Release v0.2.2" --body "See RELEASE_NOTES_v0.2.2.md"
    ```
 
-2. **After PR is merged to main**
-   ```bash
-   # Switch to main branch
-   git checkout main
-   git pull origin main
-   
-   # Use npm version to bump AND create git tag automatically
-   npm version minor  # Creates commit + tag automatically
-   
-   # Push both commit and tag
-   git push origin main --follow-tags
-   ```
+2. **Merge PR to main** - **This triggers full automation:**
 
-3. **Create GitHub Release** (triggers automatic npm publish)
-   ```bash
-   # Create release - this triggers GitHub Actions CI/CD
-   gh release create v0.2.1 \
-     --title "🚀 Claudine v0.2.1 - Event-Driven Architecture" \
-     --notes-file CHANGELOG.md \
-     --generate-notes
-   ```
-   
-   **GitHub Actions will automatically:**
-   - Build and test the code
-   - Publish to npm with public access  
-   - Verify git tag matches package.json version
-   - Fail if any step is incorrect
+   **CI automatically performs:**
+   ✅ **Version detection** - Compares package.json vs published npm version  
+   ✅ **Release notes validation** - **FAILS if RELEASE_NOTES_v{version}.md missing**  
+   ✅ **NPM publishing** - Publishes to npm registry with public access  
+   ✅ **Git tag creation** - Creates and pushes v{version} tag  
+   ✅ **GitHub release** - Creates release using manual release notes  
 
-### Release Safeguards
+### Release Validation
 
-To prevent versioning issues like missing tags:
+**CI enforces these requirements:**
 
-1. **Always use `npm version`** - creates both version bump AND git tag
-2. **Always use `--follow-tags`** - ensures tags are pushed with commits
-3. **Never manual publish** - CI/CD handles npm publishing
-4. **Verify before release**:
-   ```bash
-   git log --oneline -1  # Check latest commit
-   git tag --points-at HEAD  # Verify tag exists on current commit
-   git push --dry-run --follow-tags  # Verify what will be pushed
-   npm run build && npm test  # Final validation
-   ```
+```yaml
+# CI will FAIL if release notes don't exist
+if [ ! -f "RELEASE_NOTES_v${version}.md" ]; then
+  echo "❌ Error: RELEASE_NOTES_v${version}.md not found!"
+  exit 1
+fi
+```
 
-5. **Post-release verification**:
-   ```bash
-   # After GitHub release is created, verify everything matches:
-   npm view claudine versions --json  # Check npm registry
-   git tag --list | tail -5  # Check git tags
-   gh release list --limit 5  # Check GitHub releases
-   ```
+**What gets created automatically:**
+- ✅ **NPM package**: `claudine@{version}` 
+- ✅ **Git tag**: `v{version}`
+- ✅ **GitHub release**: With your manual release notes
 
-### NPM Publishing Requirements
-- Must be logged in: `npm login`
-- Must have publish permissions for 'claudine' package
-- Ensure all files in `files` array exist in package.json
+### Post-release Verification
+```bash
+# Verify everything was created correctly
+npm view claudine version                    # Check npm registry
+git tag --list | tail -3                     # Check git tags  
+gh release list --limit 3                    # Check GitHub releases
+```
+
+### Release Notes Template
+
+Create `RELEASE_NOTES_v{version}.md` with this structure:
+
+```markdown
+# 🚀 Claudine v{version} - Release Title
+
+## Major Features
+- **Feature Name**: Description of major new feature
+- **Another Feature**: Description
+
+## Bug Fixes  
+- **Issue**: Description of fix
+- **Another Fix**: Description
+
+## Breaking Changes
+**None** - All changes are backward compatible
+
+## Installation
+\`\`\`bash
+npm install -g claudine@{version}
+\`\`\`
+
+## What's Next
+See [ROADMAP.md](./ROADMAP.md) for upcoming features.
+```
+
+### Emergency Release Process
+
+If CI fails or manual intervention is needed:
+
+```bash
+# 1. Fix the issue
+git checkout main && git pull
+
+# 2. Ensure release notes exist  
+ls RELEASE_NOTES_v*.md
+
+# 3. Manual tag creation (if needed)
+git tag v{version} && git push origin v{version}
+
+# 4. Manual GitHub release (if needed)  
+gh release create v{version} --notes-file RELEASE_NOTES_v{version}.md
+```
 
 ## Important Guidelines
 

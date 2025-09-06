@@ -8,17 +8,18 @@
 
 ## Why Claudine Exists
 
-**The Problem**: Claude Code is incredibly powerful, but you can only run one task at a time. This creates painful bottlenecks:
+**The Problem**: Claude Code is incredibly powerful, but you can only work on one thing at a time. This kills true multitasking and orchestration:
 
-- **Can't work on multiple repositories simultaneously** - Switch between projects? Wait for the current task to finish first
-- **Sequential task dependency** - Want to analyze code while tests are running? Impossible - you must wait
-- **Context switching overhead** - Bouncing between unrelated tasks in the same repo means losing focus and momentum  
-- **Resource waste** - Your 32-core server sits mostly idle while a single Claude instance uses one CPU core
-- **Productivity blocking** - Simple tasks like "run lint" get queued behind complex analysis work
+- **No parallel feature development** - Can't work on authentication while simultaneously building the API layer
+- **Cross-repository workflow breaks** - Switch from frontend to backend repo? Your main session context gets polluted by the detour
+- **Session context pollution** - Get sidetracked debugging? Your original feature work context is contaminated and lost
+- **No true orchestration** - Can't coordinate multiple Claude instances to work on interconnected parts of your system
+- **Single-threaded thinking** - Complex products require parallel workstreams, but Claude Code forces linear execution
+- **Context juggling overhead** - Constantly losing mental models when forced to switch between unrelated codebases
 
-**Our Belief**: AI should scale with your ambition, not limit it. Your server has 32 cores and 64GB RAM - why use only one Claude instance?
+**Our Belief**: AI should scale with your ambition, not limit it. why use only one Claude instance?
 
-**The Vision**: Transform your dedicated server into an AI powerhouse that can handle dozens of simultaneous Claude Code tasks, automatically scaling based on available resources.
+**The Vision**: Transform your machine or dedicated server into an AI powerhouse where you orchestrate multiple Claude Code instances through one main session. Work on authentication in repo A while simultaneously building APIs in repo B, all coordinated through your primary Claude Code interface - no context pollution, no workflow interruption.
 
 ## How Claudine Works
 
@@ -73,39 +74,10 @@ See [FEATURES.md](./FEATURES.md) for complete feature documentation.
 - 500GB+ NVMe SSD
 - Dedicated Linux server (Ubuntu 22.04+)
 
-### Installation
+### Installation & Configuration
 
-#### Option 1: Install from npm (Recommended)
-```bash
-npm install -g claudine
-```
-
-#### Option 2: Install from source
-```bash
-# Clone the repository
-git clone https://github.com/dean0x/claudine.git
-cd claudine
-
-# Install dependencies
-npm install
-
-# Build the project
-npm run build
-```
-
-### Configuration
-
-#### Quick Setup
-
-Get the configuration for your platform:
-```bash
-claudine mcp config
-```
-
-#### For Claude Code
-
-Add to `.mcp.json` in your project root:
-
+#### Production Setup (Recommended)
+Add to your project's `.mcp.json`:
 ```json
 {
   "mcpServers": {
@@ -117,50 +89,20 @@ Add to `.mcp.json` in your project root:
 }
 ```
 
-#### For Local Development
-
-When developing or testing Claudine locally, use the built files directly:
-
+#### Local Development
+For developing Claudine itself:
 ```json
 {
   "mcpServers": {
     "claudine": {
-      "command": "node",
+      "command": "node", 
       "args": ["/path/to/claudine/dist/cli.js", "mcp", "start"]
     }
   }
 }
 ```
 
-Replace `/path/to/claudine` with your actual path. You can also use relative paths if the config file is in a stable location:
-
-```json
-{
-  "mcpServers": {
-    "claudine": {
-      "command": "node",
-      "args": ["../claudine/dist/cli.js", "mcp", "start"]
-    }
-  }
-}
-```
-
-#### For Global Installation
-
-If you installed Claudine globally with `npm install -g claudine`:
-
-```json
-{
-  "mcpServers": {
-    "claudine": {
-      "command": "claudine",
-      "args": ["mcp", "start"]
-    }
-  }
-}
-```
-
-After adding the configuration, restart Claude Code or Claude Desktop to connect to Claudine.
+After adding the configuration, restart Claude Code to connect to Claudine.
 
 ## Usage
 
