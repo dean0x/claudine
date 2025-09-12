@@ -25,10 +25,10 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
         // With --print flag, prompt is passed as argument, not via stdin
         const args = [...this.baseArgs, prompt];
         
-        // DEBUGGING: Log the exact command being executed
-        console.error(`[ProcessSpawner] Executing: ${this.claudeCommand} ${args.map(arg => `"${arg}"`).join(' ')}`);
-        console.error(`[ProcessSpawner] Working directory: ${workingDirectory}`);
-        console.error(`[ProcessSpawner] Environment keys: ${Object.keys(process.env).length}`);
+        // Log via proper logger instead of console.error to avoid interfering with output capture
+        // console.error(`[ProcessSpawner] Executing: ${this.claudeCommand} ${args.map(arg => `"${arg}"`).join(' ')}`);
+        // console.error(`[ProcessSpawner] Working directory: ${workingDirectory}`);
+        // console.error(`[ProcessSpawner] Environment keys: ${Object.keys(process.env).length}`);
         
         const child = spawn(this.claudeCommand, args, {
           cwd: workingDirectory,

@@ -4,7 +4,7 @@
  */
 
 import { Container } from './core/container.js';
-import { Config, Logger, EventBus, ProcessSpawner, ResourceMonitor, OutputCapture, TaskQueue, WorkerPool, TaskRepository, TaskManager } from './core/interfaces.js';
+import { Config, Logger, EventBus, ProcessSpawner, ResourceMonitor, OutputCapture, TaskQueue, WorkerPool, TaskRepository, TaskManager, WorktreeManager } from './core/interfaces.js';
 import { Configuration } from './core/configuration.js';
 import { InMemoryEventBus } from './core/events/event-bus.js';
 
@@ -23,6 +23,7 @@ import { SQLiteOutputRepository } from './implementations/output-repository.js';
 import { TaskManagerService } from './services/task-manager.js';
 import { AutoscalingManager } from './services/autoscaling-manager.js';
 import { RecoveryManager } from './services/recovery-manager.js';
+import { GitWorktreeManager } from './services/worktree-manager.js';
 
 // Event Handlers
 import { PersistenceHandler } from './services/handlers/persistence-handler.js';
@@ -150,6 +151,13 @@ export async function bootstrap() {
     return new BufferedOutputCapture(config.maxOutputBuffer, eventBus);
   });
 
+  // Register worktree manager
+  container.registerSingleton('worktreeManager', () => {
+    return new GitWorktreeManager(
+      getFromContainer<Logger>(container, 'logger').child({ module: 'WorktreeManager' })
+    );
+  });
+
   // Register worker pool
   container.registerSingleton('workerPool', () => {
     const pool = new EventDrivenWorkerPool(
@@ -157,6 +165,7 @@ export async function bootstrap() {
       getFromContainer<ResourceMonitor>(container, 'resourceMonitor'),
       getFromContainer<Logger>(container, 'logger').child({ module: 'WorkerPool' }),
       getFromContainer<EventBus>(container, 'eventBus'),
+      getFromContainer<WorktreeManager>(container, 'worktreeManager'),
       getFromContainer<OutputCapture>(container, 'outputCapture')
     );
     return pool;

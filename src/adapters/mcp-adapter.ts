@@ -16,6 +16,7 @@ const DelegateTaskSchema = z.object({
   priority: z.enum(['P0', 'P1', 'P2']).optional(),
   workingDirectory: z.string().optional(),
   useWorktree: z.boolean().optional().default(false),
+  cleanupWorktree: z.boolean().optional(), // Whether to cleanup worktree after completion
   timeout: z.number().min(1000).max(86400000).optional(), // 1 second to 24 hours
   maxOutputBuffer: z.number().min(1024).max(1073741824).optional(), // 1KB to 1GB
 });
@@ -128,6 +129,10 @@ export class MCPAdapter {
                     description: 'Create a git worktree for isolated execution',
                     default: false,
                   },
+                  cleanupWorktree: {
+                    type: 'boolean',
+                    description: 'Whether to cleanup worktree after task completion (default: false)',
+                  },
                   timeout: {
                     type: 'number',
                     description: 'Task timeout in milliseconds (overrides global default)',
@@ -222,7 +227,7 @@ export class MCPAdapter {
       };
     }
 
-    const { prompt, priority, workingDirectory, useWorktree, timeout, maxOutputBuffer } = parseResult.data;
+    const { prompt, priority, workingDirectory, useWorktree, cleanupWorktree, timeout, maxOutputBuffer } = parseResult.data;
 
     // Create request
     const request: DelegateRequest = {
@@ -230,6 +235,7 @@ export class MCPAdapter {
       priority: priority as Priority,
       workingDirectory,
       useWorktree,
+      cleanupWorktree,
       timeout,
       maxOutputBuffer,
     };

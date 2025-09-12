@@ -64,29 +64,29 @@ export class SystemResourceMonitor implements ResourceMonitor {
 
     const resources = resourcesResult.value;
     
-    // Log current state for debugging
-    console.error(`[ResourceMonitor] CPU: ${resources.cpuUsage.toFixed(1)}%, Memory: ${(resources.availableMemory / 1e9).toFixed(1)}GB, Workers: ${resources.workerCount}`);
+    // Debug logs removed to avoid interfering with output capture
+    // console.error(`[ResourceMonitor] CPU: ${resources.cpuUsage.toFixed(1)}%, Memory: ${(resources.availableMemory / 1e9).toFixed(1)}GB, Workers: ${resources.workerCount}`);
     
     // Check CPU threshold
     if (resources.cpuUsage >= this.cpuThreshold) {
-      console.error(`[ResourceMonitor] Cannot spawn: CPU ${resources.cpuUsage.toFixed(1)}% >= ${this.cpuThreshold}% threshold`);
+      // console.error(`[ResourceMonitor] Cannot spawn: CPU ${resources.cpuUsage.toFixed(1)}% >= ${this.cpuThreshold}% threshold`);
       return ok(false);
     }
 
     // Check memory reserve
     if (resources.availableMemory <= this.memoryReserve) {
-      console.error(`[ResourceMonitor] Cannot spawn: Memory ${(resources.availableMemory / 1e9).toFixed(1)}GB <= ${(this.memoryReserve / 1e9).toFixed(1)}GB reserve`);
+      // console.error(`[ResourceMonitor] Cannot spawn: Memory ${(resources.availableMemory / 1e9).toFixed(1)}GB <= ${(this.memoryReserve / 1e9).toFixed(1)}GB reserve`);
       return ok(false);
     }
 
     // Check load average (be more permissive)
     const cpuCount = os.cpus().length;
     if (resources.loadAverage[0] > cpuCount * 3) {  // Changed from 2x to 3x
-      console.error(`[ResourceMonitor] Cannot spawn: Load ${resources.loadAverage[0].toFixed(1)} > ${cpuCount * 3} (3x CPU count)`);
+      // console.error(`[ResourceMonitor] Cannot spawn: Load ${resources.loadAverage[0].toFixed(1)} > ${cpuCount * 3} (3x CPU count)`);
       return ok(false);
     }
 
-    console.error(`[ResourceMonitor] Can spawn worker!`);
+    // console.error(`[ResourceMonitor] Can spawn worker!`);
     return ok(true);
   }
 

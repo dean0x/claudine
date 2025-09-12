@@ -67,6 +67,7 @@ export class SQLiteTaskRepository implements TaskRepository {
           priority: task.priority,
           workingDirectory: task.workingDirectory || null,
           useWorktree: task.useWorktree ? 1 : 0,
+          cleanupWorktree: task.cleanupWorktree ? 1 : 0,
           createdAt: task.createdAt,
           startedAt: task.startedAt || null,
           completedAt: task.completedAt || null,
@@ -206,6 +207,7 @@ export class SQLiteTaskRepository implements TaskRepository {
       priority: row.priority as Priority,
       workingDirectory: row.working_directory || undefined,
       useWorktree: row.use_worktree === 1,
+      cleanupWorktree: row.cleanup_worktree !== 0, // Default to true if not set
       createdAt: row.created_at,
       startedAt: row.started_at || undefined,
       completedAt: row.completed_at || undefined,

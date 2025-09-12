@@ -143,3 +143,13 @@ export interface TaskManager {
   /** @deprecated Use getStatus() without taskId parameter instead for async task listing */
   listTasks(): Result<readonly Task[]>;
 }
+
+/**
+ * Git worktree management for isolated task execution
+ */
+export interface WorktreeManager {
+  createWorktree(taskId: TaskId, targetProjectDir?: string): Promise<Result<string>>;
+  removeWorktree(taskId: TaskId): Promise<Result<void>>;
+  getWorktreePath(taskId: TaskId, targetProjectDir?: string): string;
+  cleanup(): Promise<Result<void>>;
+}

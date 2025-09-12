@@ -25,19 +25,28 @@ MCP Server Commands:
   mcp config             Show MCP configuration for Claude
 
 Task Commands:
-  delegate <prompt>      Delegate a task to Claude Code
-  status [task-id]       Get status of task(s)
-  logs <task-id>         Get output logs for a task
-  cancel <task-id>       Cancel a running task
-  help                   Show this help message
+  delegate <prompt> [options]  Delegate a task to Claude Code
+    -p, --priority P0|P1|P2    Task priority (P0=critical, P1=high, P2=normal)
+    -w, --working-directory D  Working directory for task execution
+    -u, --use-worktree         Create a git worktree for isolated execution
+    --cleanup-worktree         Clean up worktree after task completion (default: preserve)
+    -t, --timeout MS           Task timeout in milliseconds
+    -b, --max-output-buffer B  Maximum output buffer size in bytes
+  status [task-id]             Get status of task(s)
+  logs <task-id>               Get output logs for a task
+  cancel <task-id>             Cancel a running task
+  help                         Show this help message
 
 Examples:
-  claudine mcp start                           # Start MCP server
-  claudine delegate "analyze this codebase"   # Delegate task  
-  claudine status                              # List all tasks
-  claudine status abc123                       # Get specific task status
-  claudine logs abc123                         # Get task output
-  claudine cancel abc123                       # Cancel task
+  claudine mcp start                                    # Start MCP server
+  claudine delegate "analyze this codebase"            # Delegate task  
+  claudine delegate "fix the bug" --priority P0        # High priority task
+  claudine delegate "test changes" --use-worktree      # Use git worktree
+  claudine delegate "modify files" --use-worktree --cleanup-worktree      # Clean up worktree
+  claudine status                                       # List all tasks
+  claudine status abc123                                # Get specific task status
+  claudine logs abc123                                  # Get task output
+  claudine cancel abc123                                # Cancel task
   
 Repository: https://github.com/dean0x/claudine
 `);
@@ -89,7 +98,14 @@ Learn more: https://github.com/dean0x/claudine#configuration
 `);
 }
 
-async function delegateTask(prompt: string) {
+async function delegateTask(prompt: string, options?: {
+  priority?: 'P0' | 'P1' | 'P2';
+  workingDirectory?: string;
+  useWorktree?: boolean;
+  cleanupWorktree?: boolean;
+  timeout?: number;
+  maxOutputBuffer?: number;
+}) {
   try {
     console.log('🚀 Bootstrapping Claudine...');
     const container = await bootstrap();
@@ -103,7 +119,22 @@ async function delegateTask(prompt: string) {
     const taskManager = taskManagerResult.value as any;
     console.log('📝 Delegating task:', prompt.substring(0, 100) + (prompt.length > 100 ? '...' : ''));
     
-    const result = await taskManager.delegate({ prompt });
+    const request = {
+      prompt,
+      ...options
+    };
+    
+    // Log the parameters being used
+    if (options) {
+      console.log('🔧 Task parameters:');
+      if (options.priority) console.log('  Priority:', options.priority);
+      if (options.workingDirectory) console.log('  Working Directory:', options.workingDirectory);
+      if (options.useWorktree) console.log('  Use Worktree:', options.useWorktree);
+      if (options.timeout) console.log('  Timeout:', options.timeout, 'ms');
+      if (options.maxOutputBuffer) console.log('  Max Output Buffer:', options.maxOutputBuffer, 'bytes');
+    }
+    
+    const result = await taskManager.delegate(request);
     if (result.ok) {
       const task = result.value;
       console.log('✅ Task delegated successfully!');
@@ -309,13 +340,87 @@ if (mainCommand === 'mcp') {
   }
   
 } else if (mainCommand === 'delegate') {
-  const prompt = args.slice(1).join(' ');
+  // Parse arguments for delegate command
+  const delegateArgs = args.slice(1);
+  const options: {
+    priority?: 'P0' | 'P1' | 'P2';
+    workingDirectory?: string;
+    useWorktree?: boolean;
+    cleanupWorktree?: boolean;
+    timeout?: number;
+    maxOutputBuffer?: number;
+  } = {};
+  
+  let promptWords: string[] = [];
+  
+  for (let i = 0; i < delegateArgs.length; i++) {
+    const arg = delegateArgs[i];
+    
+    if (arg === '--priority' || arg === '-p') {
+      const next = delegateArgs[i + 1];
+      if (next && ['P0', 'P1', 'P2'].includes(next)) {
+        options.priority = next as 'P0' | 'P1' | 'P2';
+        i++; // skip next arg
+      } else {
+        console.error('❌ Invalid priority. Must be P0, P1, or P2');
+        process.exit(1);
+      }
+    } else if (arg === '--working-directory' || arg === '-w') {
+      const next = delegateArgs[i + 1];
+      if (next && !next.startsWith('-')) {
+        options.workingDirectory = next;
+        i++; // skip next arg
+      } else {
+        console.error('❌ Working directory requires a path');
+        process.exit(1);
+      }
+    } else if (arg === '--use-worktree' || arg === '-u') {
+      options.useWorktree = true;
+    } else if (arg === '--cleanup-worktree') {
+      options.cleanupWorktree = true;
+    } else if (arg === '--timeout' || arg === '-t') {
+      const next = delegateArgs[i + 1];
+      const timeout = parseInt(next);
+      if (!isNaN(timeout) && timeout > 0) {
+        options.timeout = timeout;
+        i++; // skip next arg
+      } else {
+        console.error('❌ Timeout must be a positive number in milliseconds');
+        process.exit(1);
+      }
+    } else if (arg === '--max-output-buffer' || arg === '-b') {
+      const next = delegateArgs[i + 1];
+      const buffer = parseInt(next);
+      if (!isNaN(buffer) && buffer > 0) {
+        options.maxOutputBuffer = buffer;
+        i++; // skip next arg
+      } else {
+        console.error('❌ Max output buffer must be a positive number in bytes');
+        process.exit(1);
+      }
+    } else if (arg.startsWith('-')) {
+      console.error(`❌ Unknown flag: ${arg}`);
+      process.exit(1);
+    } else {
+      promptWords.push(arg);
+    }
+  }
+  
+  const prompt = promptWords.join(' ');
   if (!prompt) {
-    console.error('❌ Usage: claudine delegate "<prompt>"');
-    console.error('Example: claudine delegate "analyze this codebase"');
+    console.error('❌ Usage: claudine delegate "<prompt>" [options]');
+    console.error('Options:');
+    console.error('  -p, --priority P0|P1|P2     Task priority (P0=critical, P1=high, P2=normal)');
+    console.error('  -w, --working-directory DIR  Working directory for task execution');
+    console.error('  -u, --use-worktree           Create a git worktree for isolated execution');
+    console.error('  --cleanup-worktree           Clean up worktree after task completion');
+    console.error('  -t, --timeout MS             Task timeout in milliseconds');
+    console.error('  -b, --max-output-buffer B    Maximum output buffer size in bytes');
+    console.error('Example: claudine delegate "analyze this codebase" --priority P1 --use-worktree --cleanup-worktree');
     process.exit(1);
   }
-  await delegateTask(prompt);
+  
+  await delegateTask(prompt, Object.keys(options).length > 0 ? options : undefined);
   
 } else if (mainCommand === 'status') {
   const taskId = args[1];

@@ -58,7 +58,7 @@ export class ProcessConnector {
     // Handle process exit
     process.on('exit', (code) => {
       this.logger.debug('Process exited', { taskId, code, codeType: typeof code });
-      console.error(`[ProcessConnector] Process exit: taskId=${taskId}, code=${code}, type=${typeof code}`);
+      // Removed console.error to avoid interfering with output capture
       safeOnExit(code);
     });
 

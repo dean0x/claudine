@@ -3,8 +3,12 @@
  * Eliminates race conditions through event-based coordination
  */
 
-import { ChildProcess } from 'child_process';
-import { WorkerPool, ProcessSpawner, ResourceMonitor, Logger, OutputCapture, EventBus } from '../core/interfaces.js';
+import { ChildProcess, exec } from 'child_process';
+import { promisify } from 'util';
+import path from 'path';
+
+const execAsync = promisify(exec);
+import { WorkerPool, ProcessSpawner, ResourceMonitor, Logger, OutputCapture, EventBus, WorktreeManager } from '../core/interfaces.js';
 import { Worker, WorkerId, Task, TaskId } from '../core/domain.js';
 import { Result, ok, err, tryCatchAsync } from '../core/result.js';
 import { ClaudineError, ErrorCode, taskTimeout } from '../core/errors.js';
@@ -14,6 +18,7 @@ interface WorkerState extends Worker {
   process: ChildProcess;
   task: Task;
   timeoutTimer?: NodeJS.Timeout;
+  worktreePath?: string; // Path to git worktree if created for this task
 }
 
 export class EventDrivenWorkerPool implements WorkerPool {
@@ -26,6 +31,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
     private readonly monitor: ResourceMonitor,
     private readonly logger: Logger,
     private readonly eventBus: EventBus,
+    private readonly worktreeManager: WorktreeManager,
     outputCapture: OutputCapture
   ) {
     this.processConnector = new ProcessConnector(outputCapture, logger);
@@ -51,13 +57,79 @@ export class EventDrivenWorkerPool implements WorkerPool {
       ));
     }
 
+    // Handle git worktree creation if requested
+    let finalWorkingDirectory: string;
+    let worktreePath: string | undefined;
+
+    if (task.useWorktree) {
+      this.logger.debug('Creating git worktree for task', { taskId: task.id });
+      const worktreeResult = await this.worktreeManager.createWorktree(task.id, task.workingDirectory);
+      
+      if (!worktreeResult.ok) {
+        this.logger.warn('Failed to create worktree, falling back to normal execution', {
+          taskId: task.id,
+          error: worktreeResult.error.message
+        });
+        // Graceful fallback - continue without worktree
+        finalWorkingDirectory = task.workingDirectory || process.cwd();
+      } else {
+        worktreePath = worktreeResult.value;
+        // When working directory is specified with worktrees:
+        // 1. If absolute path: make relative to git root, then combine with worktree
+        // 2. If relative path: combine directly with worktree
+        if (task.workingDirectory) {
+          if (path.isAbsolute(task.workingDirectory)) {
+            // We need to extract the relative path from the git root
+            // The worktreeManager has already determined the git root, but we need it here
+            // For now, let's use a simple approach: assume workingDirectory is within the project
+            
+            // Try to find the git root of the working directory to calculate relative path
+            try {
+              const { stdout } = await execAsync('git rev-parse --show-toplevel', { 
+                cwd: task.workingDirectory,
+                timeout: 5000 
+              });
+              const gitRoot = stdout.trim();
+              const relativePath = path.relative(gitRoot, task.workingDirectory);
+              finalWorkingDirectory = path.join(worktreePath, relativePath);
+            } catch {
+              // Fallback: if can't determine git root, use worktree root
+              finalWorkingDirectory = worktreePath;
+            }
+          } else {
+            // Relative path - combine directly with worktree
+            finalWorkingDirectory = path.join(worktreePath, task.workingDirectory);
+          }
+        } else {
+          finalWorkingDirectory = worktreePath;
+        }
+        
+        this.logger.info('Using git worktree for task execution', {
+          taskId: task.id,
+          worktreePath,
+          finalWorkingDirectory
+        });
+      }
+    } else {
+      finalWorkingDirectory = task.workingDirectory || process.cwd();
+    }
+
     // Spawn the process
-    const spawnResult = this.spawner.spawn(
-      task.prompt,
-      task.workingDirectory || process.cwd()
-    );
+    const spawnResult = this.spawner.spawn(task.prompt, finalWorkingDirectory);
 
     if (!spawnResult.ok) {
+      // Clean up worktree if it was created but spawn failed
+      if (worktreePath) {
+        const cleanupResult = await this.worktreeManager.removeWorktree(task.id);
+        if (!cleanupResult.ok) {
+          this.logger.warn('Failed to cleanup worktree after spawn failure', {
+            taskId: task.id,
+            worktreePath,
+            error: cleanupResult.error.message
+          });
+        }
+      }
+
       return err(new ClaudineError(
         ErrorCode.WORKER_SPAWN_FAILED,
         `Failed to spawn worker: ${spawnResult.error.message}`
@@ -77,6 +149,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
       memoryUsage: 0,
       process: childProcess,
       task,
+      worktreePath, // Track worktree for cleanup
     };
 
     // Store worker
@@ -92,7 +165,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
       task.id,
       (exitCode) => {
         // Handle worker completion through events
-        console.error(`[WorkerPool] Received exit code: ${exitCode}, type=${typeof exitCode}`);
+        // Log removed to avoid interfering with output capture
         this.handleWorkerCompletion(task.id, exitCode ?? 0);
       }
     );
@@ -136,6 +209,27 @@ export class EventDrivenWorkerPool implements WorkerPool {
             worker.process.kill('SIGKILL');
           }
         }, 5000);
+      }
+
+      // Clean up git worktree if one was created and cleanup is enabled
+      if (worker.worktreePath && worker.task.cleanupWorktree) {
+        this.logger.debug('Cleaning up git worktree after worker kill', { 
+          taskId: worker.taskId, 
+          worktreePath: worker.worktreePath 
+        });
+        const cleanupResult = await this.worktreeManager.removeWorktree(worker.taskId);
+        if (!cleanupResult.ok) {
+          this.logger.warn('Failed to cleanup worktree after worker kill', {
+            taskId: worker.taskId,
+            worktreePath: worker.worktreePath,
+            error: cleanupResult.error.message
+          });
+        }
+      } else if (worker.worktreePath && !worker.task.cleanupWorktree) {
+        this.logger.info('Preserving worktree as requested', {
+          taskId: worker.taskId,
+          worktreePath: worker.worktreePath
+        });
       }
 
       // Clean up worker state
@@ -207,17 +301,18 @@ export class EventDrivenWorkerPool implements WorkerPool {
   private setupTimeoutForWorker(worker: WorkerState): void {
     const timeoutMs = worker.task.timeout;
     
-    console.error(`[WorkerPool] Setting up timeout for task ${worker.taskId}: ${timeoutMs}ms`);
+    // Debug logs removed to avoid interfering with output capture
+    // console.error(`[WorkerPool] Setting up timeout for task ${worker.taskId}: ${timeoutMs}ms`);
     
     // CRITICAL FIX: setTimeout(fn, undefined) executes immediately!
     if (!timeoutMs || timeoutMs <= 0) {
-      console.error(`[WorkerPool] No timeout configured for task ${worker.taskId}`);
+      // console.error(`[WorkerPool] No timeout configured for task ${worker.taskId}`);
       return; // No timeout configured
     }
 
     // Create timeout timer  
     worker.timeoutTimer = setTimeout(() => {
-      console.error(`[WorkerPool] TIMEOUT TRIGGERED for task ${worker.taskId} after ${timeoutMs}ms`);
+      // console.error(`[WorkerPool] TIMEOUT TRIGGERED for task ${worker.taskId} after ${timeoutMs}ms`);
       this.handleWorkerTimeout(worker.taskId, timeoutMs);
     }, timeoutMs);
 
@@ -266,6 +361,25 @@ export class EventDrivenWorkerPool implements WorkerPool {
 
     // Calculate duration
     const duration = Date.now() - worker.startedAt;
+
+    // Clean up git worktree if one was created and cleanup is enabled
+    if (worker.worktreePath && worker.task.cleanupWorktree) {
+      this.logger.debug('Cleaning up git worktree', { taskId, worktreePath: worker.worktreePath });
+      const cleanupResult = await this.worktreeManager.removeWorktree(taskId);
+      if (!cleanupResult.ok) {
+        this.logger.warn('Failed to cleanup worktree after task completion', {
+          taskId,
+          worktreePath: worker.worktreePath,
+          error: cleanupResult.error.message
+        });
+      }
+    } else if (worker.worktreePath && !worker.task.cleanupWorktree) {
+      this.logger.info('Preserving worktree as requested', {
+        taskId,
+        worktreePath: worker.worktreePath,
+        message: 'Worktree preserved at completion - user can access files manually'
+      });
+    }
 
     // Clean up worker state
     this.workers.delete(workerId);
