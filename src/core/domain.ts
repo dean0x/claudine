@@ -29,10 +29,25 @@ export interface Task {
   readonly status: TaskStatus;
   readonly priority: Priority;
   readonly workingDirectory?: string;
-  readonly useWorktree: boolean;
-  readonly cleanupWorktree: boolean; // Whether to cleanup worktree after completion
+  
+  // Worktree control (replaces old cleanupWorktree boolean)
+  readonly useWorktree: boolean;       // default: true (disabled via --no-worktree)
+  readonly worktreeCleanup?: 'auto' | 'keep' | 'delete'; // default: 'auto'
+  
+  // Merge strategy fields (only applies when useWorktree is true)
+  readonly mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch'; // default: 'pr', undefined when no worktree
+  readonly branchName?: string;        // default: 'claudine/task-{id}'
+  readonly baseBranch?: string;        // default: current branch
+  readonly autoCommit: boolean;        // default: true
+  readonly pushToRemote: boolean;      // default: true for PR mode
+  readonly prTitle?: string;           
+  readonly prBody?: string;
+  
+  // Execution control
   readonly timeout?: number;
   readonly maxOutputBuffer?: number;
+  
+  // Timestamps and results
   readonly createdAt: number;
   readonly startedAt?: number;
   readonly completedAt?: number;
@@ -68,8 +83,21 @@ export interface DelegateRequest {
   readonly prompt: string;
   readonly priority?: Priority;
   readonly workingDirectory?: string;
-  readonly useWorktree?: boolean;
-  readonly cleanupWorktree?: boolean; // Whether to cleanup worktree after completion
+  
+  // Worktree control
+  readonly useWorktree?: boolean;      // default: true
+  readonly worktreeCleanup?: 'auto' | 'keep' | 'delete'; // default: 'auto'
+  
+  // Merge strategy fields  
+  readonly mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch';
+  readonly branchName?: string;
+  readonly baseBranch?: string;
+  readonly autoCommit?: boolean;
+  readonly pushToRemote?: boolean;
+  readonly prTitle?: string;
+  readonly prBody?: string;
+  
+  // Execution control
   readonly timeout?: number;
   readonly maxOutputBuffer?: number;
 }
@@ -99,8 +127,21 @@ export const createTask = (request: DelegateRequest): Task => ({
   status: TaskStatus.QUEUED,
   priority: request.priority || Priority.P2,
   workingDirectory: request.workingDirectory,
-  useWorktree: request.useWorktree || false,
-  cleanupWorktree: request.cleanupWorktree === true, // Default to false to preserve work
+  
+  // Worktree configuration
+  useWorktree: request.useWorktree !== false, // Default to true
+  worktreeCleanup: request.worktreeCleanup || 'auto',
+  
+  // Merge strategy configuration
+  mergeStrategy: request.useWorktree === false ? undefined : (request.mergeStrategy || 'pr'),
+  branchName: request.branchName,
+  baseBranch: request.baseBranch,
+  autoCommit: request.autoCommit !== false, // Default to true
+  pushToRemote: request.pushToRemote !== false, // Default to true
+  prTitle: request.prTitle,
+  prBody: request.prBody,
+  
+  // Execution configuration
   timeout: request.timeout,
   maxOutputBuffer: request.maxOutputBuffer,
   createdAt: Date.now(),

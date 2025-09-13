@@ -15,8 +15,15 @@ const DelegateTaskSchema = z.object({
   prompt: z.string().min(1).max(4000),
   priority: z.enum(['P0', 'P1', 'P2']).optional(),
   workingDirectory: z.string().optional(),
-  useWorktree: z.boolean().optional().default(false),
-  cleanupWorktree: z.boolean().optional(), // Whether to cleanup worktree after completion
+  useWorktree: z.boolean().optional().default(true), // Changed default to true
+  worktreeCleanup: z.enum(['auto', 'keep', 'delete']).optional().default('auto'),
+  mergeStrategy: z.enum(['pr', 'auto', 'manual', 'patch']).optional().default('pr'),
+  branchName: z.string().optional(),
+  baseBranch: z.string().optional(),
+  autoCommit: z.boolean().optional().default(true),
+  pushToRemote: z.boolean().optional().default(true),
+  prTitle: z.string().optional(),
+  prBody: z.string().optional(),
   timeout: z.number().min(1000).max(86400000).optional(), // 1 second to 24 hours
   maxOutputBuffer: z.number().min(1024).max(1073741824).optional(), // 1KB to 1GB
 });
@@ -127,11 +134,45 @@ export class MCPAdapter {
                   useWorktree: {
                     type: 'boolean',
                     description: 'Create a git worktree for isolated execution',
-                    default: false,
+                    default: true,
                   },
-                  cleanupWorktree: {
+                  worktreeCleanup: {
+                    type: 'string',
+                    enum: ['auto', 'keep', 'delete'],
+                    description: 'Cleanup behavior: auto (based on strategy), keep, or delete',
+                    default: 'auto',
+                  },
+                  mergeStrategy: {
+                    type: 'string',
+                    enum: ['pr', 'auto', 'manual', 'patch'],
+                    description: 'How to handle changes after task completion',
+                    default: 'pr',
+                  },
+                  branchName: {
+                    type: 'string',
+                    description: 'Custom branch name (default: claudine/task-{id})',
+                  },
+                  baseBranch: {
+                    type: 'string',
+                    description: 'Base branch for worktree (default: current branch)',
+                  },
+                  autoCommit: {
                     type: 'boolean',
-                    description: 'Whether to cleanup worktree after task completion (default: false)',
+                    description: 'Auto-commit changes in worktree',
+                    default: true,
+                  },
+                  pushToRemote: {
+                    type: 'boolean',
+                    description: 'Push branch to remote (for PR/manual strategies)',
+                    default: true,
+                  },
+                  prTitle: {
+                    type: 'string',
+                    description: 'Custom PR title (for PR strategy)',
+                  },
+                  prBody: {
+                    type: 'string',
+                    description: 'Custom PR description (for PR strategy)',
                   },
                   timeout: {
                     type: 'number',
@@ -227,17 +268,24 @@ export class MCPAdapter {
       };
     }
 
-    const { prompt, priority, workingDirectory, useWorktree, cleanupWorktree, timeout, maxOutputBuffer } = parseResult.data;
+    const data = parseResult.data;
 
-    // Create request
+    // Create request with all new fields
     const request: DelegateRequest = {
-      prompt,
-      priority: priority as Priority,
-      workingDirectory,
-      useWorktree,
-      cleanupWorktree,
-      timeout,
-      maxOutputBuffer,
+      prompt: data.prompt,
+      priority: data.priority as Priority,
+      workingDirectory: data.workingDirectory,
+      useWorktree: data.useWorktree,
+      worktreeCleanup: data.worktreeCleanup,
+      mergeStrategy: data.mergeStrategy,
+      branchName: data.branchName,
+      baseBranch: data.baseBranch,
+      autoCommit: data.autoCommit,
+      pushToRemote: data.pushToRemote,
+      prTitle: data.prTitle,
+      prBody: data.prBody,
+      timeout: data.timeout,
+      maxOutputBuffer: data.maxOutputBuffer,
     };
 
     // Delegate task using our new architecture
