@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventDrivenWorkerPool } from '../../src/implementations/event-driven-worker-pool.js';
 import { TaskId } from '../../src/core/domain.js';
 import { taskTimeout } from '../../src/core/errors.js';
-import type { ProcessSpawner, ResourceMonitor, Logger, OutputCapture, EventBus } from '../../src/core/interfaces.js';
+import type { ProcessSpawner, ResourceMonitor, Logger, OutputCapture, EventBus, WorktreeManager } from '../../src/core/interfaces.js';
 import { TaskFactory, MockFactory, TEST_CONSTANTS, AssertionHelpers, MockVerification } from '../helpers/test-factories.js';
+import { ok } from '../../src/core/result.js';
 
 describe('EventDrivenWorkerPool Timer Management', () => {
   let workerPool: EventDrivenWorkerPool;
@@ -12,6 +13,7 @@ describe('EventDrivenWorkerPool Timer Management', () => {
   let mockLogger: Logger;
   let mockOutputCapture: OutputCapture;
   let mockEventBus: EventBus;
+  let mockWorktreeManager: WorktreeManager;
 
   beforeEach(() => {
     mockSpawner = MockFactory.processSpawner();
@@ -19,12 +21,28 @@ describe('EventDrivenWorkerPool Timer Management', () => {
     mockLogger = MockFactory.logger();
     mockOutputCapture = MockFactory.outputCapture();
     mockEventBus = MockFactory.eventBus();
+    
+    // Mock WorktreeManager
+    mockWorktreeManager = {
+      createWorktree: vi.fn().mockResolvedValue(ok({
+        path: '/tmp/worktree',
+        branch: 'test-branch',
+        baseBranch: 'main'
+      })),
+      completeTask: vi.fn().mockResolvedValue(ok({
+        action: 'pr_created',
+        prUrl: 'https://github.com/test/pr/1'
+      })),
+      removeWorktree: vi.fn().mockResolvedValue(ok(undefined)),
+      cleanup: vi.fn().mockResolvedValue(ok(undefined))
+    } as WorktreeManager;
 
     workerPool = new EventDrivenWorkerPool(
       mockSpawner,
       mockMonitor,
       mockLogger,
       mockEventBus,
+      mockWorktreeManager,
       mockOutputCapture
     );
   });

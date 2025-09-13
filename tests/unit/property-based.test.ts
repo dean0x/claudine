@@ -27,7 +27,7 @@ describe('Property-Based Tests', () => {
           expect(task.priority).toBe(priority);
           expect(task.id).toBeDefined();
           expect(task.createdAt).toBeGreaterThan(0);
-          expect(task.useWorktree).toBe(false); // Default value
+          expect(task.useWorktree).toBe(true); // Default value changed to true
         }
       }
     });

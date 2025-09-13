@@ -4,7 +4,7 @@ import { EventDrivenWorkerPool } from '../../src/implementations/event-driven-wo
 import { BufferedOutputCapture } from '../../src/implementations/output-capture.js';
 import { TaskStatus, Priority } from '../../src/core/domain.js';
 import { ErrorCode } from '../../src/core/errors.js';
-import type { TaskQueue, ResourceMonitor, Logger, TaskRepository, ProcessSpawner, EventBus } from '../../src/core/interfaces.js';
+import type { TaskQueue, ResourceMonitor, Logger, TaskRepository, ProcessSpawner, EventBus, WorktreeManager } from '../../src/core/interfaces.js';
 import { TaskFactory, MockFactory, TEST_CONSTANTS, AssertionHelpers, ErrorFactory } from '../helpers/test-factories.js';
 import { err, ok } from '../../src/core/result.js';
 import { taskTimeout } from '../../src/core/errors.js';
@@ -19,6 +19,7 @@ describe('Error Scenario Tests', () => {
   let mockRepository: TaskRepository;
   let mockSpawner: ProcessSpawner;
   let mockEventBus: EventBus;
+  let mockWorktreeManager: WorktreeManager;
 
   beforeEach(() => {
     mockQueue = MockFactory.taskQueue();
@@ -27,6 +28,21 @@ describe('Error Scenario Tests', () => {
     mockRepository = MockFactory.taskRepository();
     mockSpawner = MockFactory.processSpawner();
     mockEventBus = MockFactory.eventBus();
+    
+    // Mock WorktreeManager
+    mockWorktreeManager = {
+      createWorktree: vi.fn().mockResolvedValue(ok({
+        path: '/tmp/worktree',
+        branch: 'test-branch',
+        baseBranch: 'main'
+      })),
+      completeTask: vi.fn().mockResolvedValue(ok({
+        action: 'pr_created',
+        prUrl: 'https://github.com/test/pr/1'
+      })),
+      removeWorktree: vi.fn().mockResolvedValue(ok(undefined)),
+      cleanup: vi.fn().mockResolvedValue(ok(undefined))
+    } as WorktreeManager;
 
     outputCapture = new BufferedOutputCapture();
     
@@ -35,6 +51,7 @@ describe('Error Scenario Tests', () => {
       mockMonitor,
       mockLogger,
       mockEventBus,
+      mockWorktreeManager,
       outputCapture
     );
 
