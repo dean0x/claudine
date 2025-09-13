@@ -67,6 +67,7 @@ export class SQLiteTaskRepository implements TaskRepository {
           priority: task.priority,
           workingDirectory: task.workingDirectory || null,
           useWorktree: task.useWorktree ? 1 : 0,
+          cleanupWorktree: task.worktreeCleanup === 'delete' ? 1 : 0, // Legacy mapping
           createdAt: task.createdAt,
           startedAt: task.startedAt || null,
           completedAt: task.completedAt || null,
@@ -206,6 +207,10 @@ export class SQLiteTaskRepository implements TaskRepository {
       priority: row.priority as Priority,
       workingDirectory: row.working_directory || undefined,
       useWorktree: row.use_worktree === 1,
+      worktreeCleanup: row.cleanup_worktree ? 'delete' : 'auto', // Legacy mapping
+      mergeStrategy: 'pr' as const, // Default for legacy tasks
+      autoCommit: true,
+      pushToRemote: true,
       createdAt: row.created_at,
       startedAt: row.started_at || undefined,
       completedAt: row.completed_at || undefined,

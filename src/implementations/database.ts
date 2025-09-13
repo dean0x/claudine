@@ -16,6 +16,9 @@ export class Database {
     this.dbPath = dbPath || this.getDefaultDbPath();
     
     // Ensure data directory exists
+    // Note: We intentionally keep sync operation in constructor
+    // Async constructors are not supported in JS/TS
+    // This runs once at startup, not in hot path
     const dataDir = path.dirname(this.dbPath);
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
@@ -68,6 +71,7 @@ export class Database {
         priority TEXT NOT NULL,
         working_directory TEXT,
         use_worktree INTEGER DEFAULT 0,
+        cleanup_worktree INTEGER DEFAULT 1,
         timeout INTEGER,
         max_output_buffer INTEGER,
         created_at INTEGER NOT NULL,
@@ -90,6 +94,13 @@ export class Database {
         FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
       )
     `);
+
+    // Migrate existing databases by adding cleanup_worktree column if it doesn't exist
+    try {
+      this.db.exec(`ALTER TABLE tasks ADD COLUMN cleanup_worktree INTEGER DEFAULT 1`);
+    } catch (error) {
+      // Column already exists, ignore the error
+    }
 
     // Create indexes for performance
     this.db.exec(`

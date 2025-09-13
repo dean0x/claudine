@@ -48,3 +48,7 @@ temp/
 
 # Internal documentation (keep local only)
 .docs/
+.claude/
+.mcp.json
+CLAUDE.md
+output/

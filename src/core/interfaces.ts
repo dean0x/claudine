@@ -28,7 +28,8 @@ export interface TaskQueue {
 export interface ProcessSpawner {
   spawn(
     prompt: string,
-    workingDirectory: string
+    workingDirectory: string,
+    taskId?: string
   ): Result<{ process: ChildProcess; pid: number }>;
   kill(pid: number): Result<void>;
 }
@@ -143,3 +144,9 @@ export interface TaskManager {
   /** @deprecated Use getStatus() without taskId parameter instead for async task listing */
   listTasks(): Result<readonly Task[]>;
 }
+
+/**
+ * Git worktree management for isolated task execution
+ */
+// Re-export from the actual implementation
+export type { WorktreeManager, WorktreeInfo, CompletionResult } from '../services/worktree-manager.js';
