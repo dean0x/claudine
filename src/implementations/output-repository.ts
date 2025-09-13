@@ -5,6 +5,7 @@
 
 import SQLite from 'better-sqlite3';
 import fs from 'fs';
+import { promises as fsPromises } from 'fs';
 import path from 'path';
 import { TaskId, TaskOutput } from '../core/domain.js';
 import { Result, ok, err, tryCatchAsync } from '../core/result.js';
@@ -35,6 +36,9 @@ export class SQLiteOutputRepository implements OutputRepository {
     const dbPath = this.db.name;
     this.outputDir = path.join(path.dirname(dbPath), 'output');
     
+    // Note: We intentionally keep sync operation in constructor
+    // Async constructors are not supported in JS/TS
+    // This runs once at startup, not in hot path
     if (!fs.existsSync(this.outputDir)) {
       fs.mkdirSync(this.outputDir, { recursive: true });
     }
@@ -64,7 +68,7 @@ export class SQLiteOutputRepository implements OutputRepository {
       
       // Check if we should use file storage
       if (totalSize > FILE_STORAGE_THRESHOLD) {
-        this.saveToFile(taskId, fullOutput);
+        await this.saveToFile(taskId, fullOutput);
       } else {
         this.saveToDatabase(taskId, fullOutput, totalSize);
       }
@@ -124,7 +128,7 @@ export class SQLiteOutputRepository implements OutputRepository {
 
         // Check if output is in a file
         if (row.file_path) {
-          return this.loadFromFile(taskId, row.file_path);
+          return await this.loadFromFile(taskId, row.file_path);
         }
 
         // Parse from database
@@ -152,8 +156,13 @@ export class SQLiteOutputRepository implements OutputRepository {
         if (row?.file_path) {
           // Delete the file
           const filePath = path.join(this.outputDir, row.file_path);
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
+          try {
+            await fsPromises.unlink(filePath);
+          } catch (error: any) {
+            // Ignore if file doesn't exist
+            if (error.code !== 'ENOENT') {
+              throw error;
+            }
           }
         }
 
@@ -184,12 +193,12 @@ export class SQLiteOutputRepository implements OutputRepository {
     });
   }
 
-  private saveToFile(taskId: TaskId, output: TaskOutput): void {
+  private async saveToFile(taskId: TaskId, output: TaskOutput): Promise<void> {
     const fileName = `${taskId}.json`;
     const filePath = path.join(this.outputDir, fileName);
     
-    // Write to file
-    fs.writeFileSync(filePath, JSON.stringify(output));
+    // Write to file asynchronously
+    await fsPromises.writeFile(filePath, JSON.stringify(output));
     
     // Save reference in database
     this.saveStmt.run({
@@ -201,14 +210,17 @@ export class SQLiteOutputRepository implements OutputRepository {
     });
   }
 
-  private loadFromFile(taskId: TaskId, fileName: string): TaskOutput {
+  private async loadFromFile(taskId: TaskId, fileName: string): Promise<TaskOutput> {
     const filePath = path.join(this.outputDir, fileName);
     
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`Output file not found: ${filePath}`);
+    try {
+      const content = await fsPromises.readFile(filePath, 'utf-8');
+      return JSON.parse(content);
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        throw new Error(`Output file not found: ${filePath}`);
+      }
+      throw error;
     }
-
-    const content = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(content);
   }
 }

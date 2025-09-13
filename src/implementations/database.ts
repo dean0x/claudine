@@ -16,6 +16,9 @@ export class Database {
     this.dbPath = dbPath || this.getDefaultDbPath();
     
     // Ensure data directory exists
+    // Note: We intentionally keep sync operation in constructor
+    // Async constructors are not supported in JS/TS
+    // This runs once at startup, not in hot path
     const dataDir = path.dirname(this.dbPath);
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });

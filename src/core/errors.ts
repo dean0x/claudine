@@ -1,45 +1,83 @@
 /**
  * Error types for Result pattern
  * Never throw these - always return them in Result.err()
+ * 
+ * @see /docs/SECURITY.md for security-related error handling
  */
 
+/**
+ * Error codes used throughout the application
+ * Organized by category for better maintainability
+ */
 export enum ErrorCode {
   // Task errors
+  /** Task with specified ID does not exist */
   TASK_NOT_FOUND = 'TASK_NOT_FOUND',
+  /** Task is already running and cannot be started again */
   TASK_ALREADY_RUNNING = 'TASK_ALREADY_RUNNING',
+  /** Task is in a state that prevents cancellation */
   TASK_CANNOT_CANCEL = 'TASK_CANNOT_CANCEL',
+  /** Task exceeded its configured timeout */
   TASK_TIMEOUT = 'TASK_TIMEOUT',
   
   // Resource errors
+  /** System lacks resources (CPU/memory) to spawn new workers */
   INSUFFICIENT_RESOURCES = 'INSUFFICIENT_RESOURCES',
+  /** Failed to monitor system resources */
   RESOURCE_MONITORING_FAILED = 'RESOURCE_MONITORING_FAILED',
   
   // Process errors
+  /** Failed to spawn child process */
   PROCESS_SPAWN_FAILED = 'PROCESS_SPAWN_FAILED',
+  /** Failed to kill child process */
   PROCESS_KILL_FAILED = 'PROCESS_KILL_FAILED',
+  /** Process with specified PID not found */
   PROCESS_NOT_FOUND = 'PROCESS_NOT_FOUND',
   
   // Worker errors
+  /** Worker with specified ID not found */
   WORKER_NOT_FOUND = 'WORKER_NOT_FOUND',
+  /** Failed to spawn worker process */
   WORKER_SPAWN_FAILED = 'WORKER_SPAWN_FAILED',
+  /** Failed to kill worker process */
   WORKER_KILL_FAILED = 'WORKER_KILL_FAILED',
+  /** Task execution failed within worker */
   TASK_EXECUTION_FAILED = 'TASK_EXECUTION_FAILED',
   
-  // Validation errors
+  // Validation errors (Security-critical)
+  /** Input validation failed - may indicate injection attempt */
   INVALID_INPUT = 'INVALID_INPUT',
+  /** Task ID format or content invalid */
   INVALID_TASK_ID = 'INVALID_TASK_ID',
+  /** Task prompt validation failed */
   INVALID_PROMPT = 'INVALID_PROMPT',
+  /** Directory path invalid or outside allowed boundaries */
   INVALID_DIRECTORY = 'INVALID_DIRECTORY',
   
   // System errors
+  /** Generic system error - check logs for details */
   SYSTEM_ERROR = 'SYSTEM_ERROR',
+  /** Configuration validation or loading failed */
   CONFIGURATION_ERROR = 'CONFIGURATION_ERROR',
   
   // Queue errors
+  /** Task queue has reached maximum capacity */
   QUEUE_FULL = 'QUEUE_FULL',
+  /** Attempted operation on empty queue */
   QUEUE_EMPTY = 'QUEUE_EMPTY',
 }
 
+/**
+ * Custom error class for Claudine
+ * Includes error code and optional context for debugging
+ * 
+ * @example
+ * return err(new ClaudineError(
+ *   ErrorCode.INVALID_INPUT,
+ *   'Path traversal detected',
+ *   { path: inputPath, base: baseDir }
+ * ));
+ */
 export class ClaudineError extends Error {
   constructor(
     public readonly code: ErrorCode,

@@ -24,6 +24,7 @@ import { TaskManagerService } from './services/task-manager.js';
 import { AutoscalingManager } from './services/autoscaling-manager.js';
 import { RecoveryManager } from './services/recovery-manager.js';
 import { GitWorktreeManager } from './services/worktree-manager.js';
+import { GitHubIntegration } from './services/github-integration.js';
 
 // Event Handlers
 import { PersistenceHandler } from './services/handlers/persistence-handler.js';
@@ -151,10 +152,27 @@ export async function bootstrap() {
     return new BufferedOutputCapture(config.maxOutputBuffer, eventBus);
   });
 
-  // Register worktree manager
+  // Register GitHub integration
+  container.registerSingleton('githubIntegration', () => {
+    const github = new GitHubIntegration(
+      getFromContainer<Logger>(container, 'logger').child({ module: 'GitHub' })
+    );
+    
+    // Check availability but don't fail
+    github.isAvailable().then(available => {
+      if (!available) {
+        getFromContainer<Logger>(container, 'logger').warn('GitHub CLI not available - PR merge strategy disabled');
+      }
+    });
+    
+    return github;
+  });
+
+  // Register worktree manager with GitHub integration
   container.registerSingleton('worktreeManager', () => {
     return new GitWorktreeManager(
-      getFromContainer<Logger>(container, 'logger').child({ module: 'WorktreeManager' })
+      getFromContainer<Logger>(container, 'logger').child({ module: 'WorktreeManager' }),
+      getFromContainer<GitHubIntegration>(container, 'githubIntegration')
     );
   });
 
