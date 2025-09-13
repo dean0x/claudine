@@ -25,6 +25,9 @@ process.on('unhandledRejection', (error) => {
 });
 
 async function main() {
+  // Set process title for easy identification in ps/pgrep/pkill
+  process.title = 'claudine-mcp';
+  
   let container: Container | null = null;
   let autoscaler: AutoscalingManager | null = null;
 

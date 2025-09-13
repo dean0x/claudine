@@ -1,8 +1,13 @@
 #!/usr/bin/env node
+
+// Set process title for easy identification in ps/pgrep/pkill
+process.title = 'claudine-cli';
+
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { bootstrap } from './bootstrap.js';
+import { validatePath, validateBufferSize, validateTimeout } from './utils/validation.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,24 +30,28 @@ MCP Server Commands:
   mcp config             Show MCP configuration for Claude
 
 Task Commands:
-  delegate <prompt> [options]  Delegate a task to Claude Code
+  delegate <prompt> [options]  Delegate a task to Claude Code (with git worktree by default)
     -p, --priority P0|P1|P2    Task priority (P0=critical, P1=high, P2=normal)
     -w, --working-directory D  Working directory for task execution
-    -u, --use-worktree         Create a git worktree for isolated execution
-    --cleanup-worktree         Clean up worktree after task completion (default: preserve)
+    --no-worktree              Run directly without worktree isolation
+    --keep-worktree            Always preserve worktree after completion
+    --delete-worktree          Always cleanup worktree after completion
+    -s, --strategy STRATEGY    Merge strategy: pr|auto|manual|patch (default: pr)
+    -b, --branch NAME          Custom branch name
+    --base BRANCH              Base branch (default: current)
     -t, --timeout MS           Task timeout in milliseconds
-    -b, --max-output-buffer B  Maximum output buffer size in bytes
   status [task-id]             Get status of task(s)
-  logs <task-id>               Get output logs for a task
-  cancel <task-id>             Cancel a running task
+  logs <task-id> [--tail N]    Get output logs for a task (optionally limit to last N lines)
+  cancel <task-id> [reason]    Cancel a running task with optional reason
   help                         Show this help message
 
 Examples:
   claudine mcp start                                    # Start MCP server
-  claudine delegate "analyze this codebase"            # Delegate task  
+  claudine delegate "analyze this codebase"            # Delegate task (PR by default)
   claudine delegate "fix the bug" --priority P0        # High priority task
-  claudine delegate "test changes" --use-worktree      # Use git worktree
-  claudine delegate "modify files" --use-worktree --cleanup-worktree      # Clean up worktree
+  claudine delegate "test changes" --no-worktree      # Run directly without worktree
+  claudine delegate "new feature" --strategy auto     # Auto-merge if no conflicts
+  claudine delegate "experiment" --keep-worktree      # Preserve worktree after completion
   claudine status                                       # List all tasks
   claudine status abc123                                # Get specific task status
   claudine logs abc123                                  # Get task output
@@ -102,7 +111,14 @@ async function delegateTask(prompt: string, options?: {
   priority?: 'P0' | 'P1' | 'P2';
   workingDirectory?: string;
   useWorktree?: boolean;
-  cleanupWorktree?: boolean;
+  worktreeCleanup?: 'auto' | 'keep' | 'delete';
+  mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch';
+  branchName?: string;
+  baseBranch?: string;
+  autoCommit?: boolean;
+  pushToRemote?: boolean;
+  prTitle?: string;
+  prBody?: string;
   timeout?: number;
   maxOutputBuffer?: number;
 }) {
@@ -141,6 +157,7 @@ async function delegateTask(prompt: string, options?: {
       console.log('📋 Task ID:', task.id);
       console.log('🔍 Status:', task.status);
       console.log('⏰ Check status with: claudine status', task.id);
+      process.exit(0);
     } else {
       console.error('❌ Failed to delegate task:', result.error.message);
       process.exit(1);
@@ -186,23 +203,27 @@ async function getTaskStatus(taskId?: string) {
       }
     } else {
       console.log('📋 Getting all tasks...');
-      const result = await taskManager.listTasks();
-      if (result.ok && result.value.length > 0) {
+      const result = await taskManager.getStatus();
+      if (result.ok && Array.isArray(result.value) && result.value.length > 0) {
         console.log(`📋 Found ${result.value.length} tasks:\n`);
         result.value.forEach((task: any) => {
           console.log(`${task.id} - ${task.status} - ${task.prompt.substring(0, 50)}...`);
         });
-      } else {
+      } else if (result.ok) {
         console.log('📋 No tasks found');
+      } else {
+        console.error('❌ Failed to get tasks:', result.error.message);
+        process.exit(1);
       }
     }
+    process.exit(0);
   } catch (error) {
     console.error('❌ Error:', error);
     process.exit(1);
   }
 }
 
-async function getTaskLogs(taskId: string) {
+async function getTaskLogs(taskId: string, tail?: number) {
   try {
     console.log('🚀 Bootstrapping Claudine...');
     const container = await bootstrap();
@@ -219,17 +240,28 @@ async function getTaskLogs(taskId: string) {
     const result = await taskManager.getLogs(taskId);
     if (result.ok) {
       const logs = result.value;
-      if (logs.stdout && logs.stdout.length > 0) {
-        console.log('\n📤 STDOUT:');
-        logs.stdout.forEach((line: string) => console.log('  ', line));
+      
+      // Apply tail limit if specified
+      let stdoutLines = logs.stdout || [];
+      let stderrLines = logs.stderr || [];
+      
+      if (tail && tail > 0) {
+        stdoutLines = stdoutLines.slice(-tail);
+        stderrLines = stderrLines.slice(-tail);
       }
-      if (logs.stderr && logs.stderr.length > 0) {
-        console.log('\n📤 STDERR:');
-        logs.stderr.forEach((line: string) => console.log('  ', line));
+      
+      if (stdoutLines.length > 0) {
+        console.log('\n📤 STDOUT' + (tail ? ` (last ${tail} lines)` : '') + ':');
+        stdoutLines.forEach((line: string) => console.log('  ', line));
+      }
+      if (stderrLines.length > 0) {
+        console.log('\n📤 STDERR' + (tail ? ` (last ${tail} lines)` : '') + ':');
+        stderrLines.forEach((line: string) => console.log('  ', line));
       }
       if ((!logs.stdout || logs.stdout.length === 0) && (!logs.stderr || logs.stderr.length === 0)) {
         console.log('\n📤 No output captured');
       }
+      process.exit(0);
     } else {
       console.error('❌ Failed to get task logs:', result.error.message);
       process.exit(1);
@@ -240,7 +272,7 @@ async function getTaskLogs(taskId: string) {
   }
 }
 
-async function cancelTask(taskId: string) {
+async function cancelTask(taskId: string, reason?: string) {
   try {
     console.log('🚀 Bootstrapping Claudine...');
     const container = await bootstrap();
@@ -253,10 +285,14 @@ async function cancelTask(taskId: string) {
     
     const taskManager = taskManagerResult.value as any;
     console.log('🛑 Canceling task:', taskId);
+    if (reason) {
+      console.log('📝 Reason:', reason);
+    }
     
-    const result = await taskManager.cancel(taskId);
+    const result = await taskManager.cancel(taskId, reason);
     if (result.ok) {
       console.log('✅ Task canceled successfully');
+      process.exit(0);
     } else {
       console.error('❌ Failed to cancel task:', result.error.message);
       process.exit(1);
@@ -346,10 +382,23 @@ if (mainCommand === 'mcp') {
     priority?: 'P0' | 'P1' | 'P2';
     workingDirectory?: string;
     useWorktree?: boolean;
-    cleanupWorktree?: boolean;
+    worktreeCleanup?: 'auto' | 'keep' | 'delete';
+    mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch';
+    branchName?: string;
+    baseBranch?: string;
+    autoCommit?: boolean;
+    pushToRemote?: boolean;
+    prTitle?: string;
+    prBody?: string;
     timeout?: number;
     maxOutputBuffer?: number;
-  } = {};
+  } = {
+    useWorktree: true,  // Default: use worktree
+    worktreeCleanup: 'auto',  // Default: smart cleanup
+    mergeStrategy: 'pr',  // Default: create PR
+    autoCommit: true,
+    pushToRemote: true
+  };
   
   let promptWords: string[] = [];
   
@@ -368,36 +417,94 @@ if (mainCommand === 'mcp') {
     } else if (arg === '--working-directory' || arg === '-w') {
       const next = delegateArgs[i + 1];
       if (next && !next.startsWith('-')) {
-        options.workingDirectory = next;
+        // Validate the path to prevent traversal attacks
+        const pathResult = validatePath(next);
+        if (!pathResult.ok) {
+          console.error(`❌ Invalid working directory: ${pathResult.error.message}`);
+          process.exit(1);
+        }
+        options.workingDirectory = pathResult.value;
         i++; // skip next arg
       } else {
         console.error('❌ Working directory requires a path');
         process.exit(1);
       }
-    } else if (arg === '--use-worktree' || arg === '-u') {
-      options.useWorktree = true;
-    } else if (arg === '--cleanup-worktree') {
-      options.cleanupWorktree = true;
+    } else if (arg === '--no-worktree') {
+      options.useWorktree = false;
+      options.mergeStrategy = undefined; // Merge strategies don't apply without worktree
+    } else if (arg === '--keep-worktree') {
+      options.worktreeCleanup = 'keep';
+    } else if (arg === '--delete-worktree') {
+      options.worktreeCleanup = 'delete';
+    } else if (arg === '--strategy' || arg === '-s') {
+      const next = delegateArgs[i + 1];
+      if (next && ['pr', 'auto', 'manual', 'patch'].includes(next)) {
+        options.mergeStrategy = next as 'pr' | 'auto' | 'manual' | 'patch';
+        i++;
+      } else {
+        console.error('❌ Invalid strategy. Must be pr, auto, manual, or patch');
+        process.exit(1);
+      }
+    } else if (arg === '--branch' || arg === '-b') {
+      const next = delegateArgs[i + 1];
+      if (next && !next.startsWith('-')) {
+        options.branchName = next;
+        i++;
+      } else {
+        console.error('❌ Branch name required');
+        process.exit(1);
+      }
+    } else if (arg === '--base') {
+      const next = delegateArgs[i + 1];
+      if (next && !next.startsWith('-')) {
+        options.baseBranch = next;
+        i++;
+      } else {
+        console.error('❌ Base branch required');
+        process.exit(1);
+      }
+    } else if (arg === '--pr-title') {
+      const next = delegateArgs[i + 1];
+      if (next && !next.startsWith('-')) {
+        options.prTitle = next;
+        i++;
+      } else {
+        console.error('❌ PR title required');
+        process.exit(1);
+      }
+    } else if (arg === '--pr-body') {
+      const next = delegateArgs[i + 1];
+      if (next && !next.startsWith('-')) {
+        options.prBody = next;
+        i++;
+      } else {
+        console.error('❌ PR body required');
+        process.exit(1);
+      }
+    } else if (arg === '--no-commit') {
+      options.autoCommit = false;
+    } else if (arg === '--no-push') {
+      options.pushToRemote = false;
     } else if (arg === '--timeout' || arg === '-t') {
       const next = delegateArgs[i + 1];
       const timeout = parseInt(next);
-      if (!isNaN(timeout) && timeout > 0) {
-        options.timeout = timeout;
-        i++; // skip next arg
-      } else {
-        console.error('❌ Timeout must be a positive number in milliseconds');
+      const timeoutResult = validateTimeout(timeout);
+      if (!timeoutResult.ok) {
+        console.error(`❌ ${timeoutResult.error.message}`);
         process.exit(1);
       }
-    } else if (arg === '--max-output-buffer' || arg === '-b') {
+      options.timeout = timeoutResult.value;
+      i++; // skip next arg
+    } else if (arg === '--max-output-buffer') {
       const next = delegateArgs[i + 1];
       const buffer = parseInt(next);
-      if (!isNaN(buffer) && buffer > 0) {
-        options.maxOutputBuffer = buffer;
-        i++; // skip next arg
-      } else {
-        console.error('❌ Max output buffer must be a positive number in bytes');
+      const bufferResult = validateBufferSize(buffer);
+      if (!bufferResult.ok) {
+        console.error(`❌ ${bufferResult.error.message}`);
         process.exit(1);
       }
+      options.maxOutputBuffer = bufferResult.value;
+      i++; // skip next arg
     } else if (arg.startsWith('-')) {
       console.error(`❌ Unknown flag: ${arg}`);
       process.exit(1);
@@ -410,13 +517,32 @@ if (mainCommand === 'mcp') {
   if (!prompt) {
     console.error('❌ Usage: claudine delegate "<prompt>" [options]');
     console.error('Options:');
-    console.error('  -p, --priority P0|P1|P2     Task priority (P0=critical, P1=high, P2=normal)');
-    console.error('  -w, --working-directory DIR  Working directory for task execution');
-    console.error('  -u, --use-worktree           Create a git worktree for isolated execution');
-    console.error('  --cleanup-worktree           Clean up worktree after task completion');
-    console.error('  -t, --timeout MS             Task timeout in milliseconds');
-    console.error('  -b, --max-output-buffer B    Maximum output buffer size in bytes');
-    console.error('Example: claudine delegate "analyze this codebase" --priority P1 --use-worktree --cleanup-worktree');
+    console.error('  -p, --priority P0|P1|P2      Task priority (P0=critical, P1=high, P2=normal)');
+    console.error('  -w, --working-directory DIR   Working directory for task execution');
+    console.error('');
+    console.error('Worktree Control:');
+    console.error('  --no-worktree                 Run directly without worktree isolation');
+    console.error('  --keep-worktree               Always preserve worktree after completion');
+    console.error('  --delete-worktree             Always cleanup worktree after completion');
+    console.error('');
+    console.error('Merge Strategy (requires worktree):');
+    console.error('  -s, --strategy STRATEGY       Merge strategy: pr|auto|manual|patch (default: pr)');
+    console.error('  -b, --branch NAME             Custom branch name');
+    console.error('  --base BRANCH                 Base branch (default: current)');
+    console.error('  --no-commit                   Don\'t auto-commit changes');
+    console.error('  --no-push                     Don\'t push to remote');
+    console.error('  --pr-title TITLE              PR title (for pr strategy)');
+    console.error('  --pr-body BODY                PR description');
+    console.error('');
+    console.error('Execution:');
+    console.error('  -t, --timeout MS              Task timeout in milliseconds');
+    console.error('  --max-output-buffer BYTES     Maximum output buffer size');
+    console.error('');
+    console.error('Examples:');
+    console.error('  claudine delegate "refactor auth"                     # Default: PR with worktree');
+    console.error('  claudine delegate "quick fix" --no-worktree           # Direct execution');
+    console.error('  claudine delegate "feature" --strategy auto           # Auto-merge');
+    console.error('  claudine delegate "experiment" --keep-worktree        # Preserve worktree');
     process.exit(1);
   }
   
@@ -429,20 +555,38 @@ if (mainCommand === 'mcp') {
 } else if (mainCommand === 'logs') {
   const taskId = args[1];
   if (!taskId) {
-    console.error('❌ Usage: claudine logs <task-id>');
+    console.error('❌ Usage: claudine logs <task-id> [--tail N]');
     console.error('Example: claudine logs abc123');
+    console.error('         claudine logs abc123 --tail 50');
     process.exit(1);
   }
-  await getTaskLogs(taskId);
+  
+  // Parse optional tail parameter
+  let tail: number | undefined;
+  const tailIndex = args.indexOf('--tail');
+  if (tailIndex !== -1 && args[tailIndex + 1]) {
+    const tailValue = parseInt(args[tailIndex + 1]);
+    if (isNaN(tailValue) || tailValue < 1 || tailValue > 1000) {
+      console.error('❌ Invalid tail value. Must be between 1 and 1000');
+      process.exit(1);
+    }
+    tail = tailValue;
+  }
+  
+  await getTaskLogs(taskId, tail);
   
 } else if (mainCommand === 'cancel') {
   const taskId = args[1];
   if (!taskId) {
-    console.error('❌ Usage: claudine cancel <task-id>');
+    console.error('❌ Usage: claudine cancel <task-id> [reason]');
     console.error('Example: claudine cancel abc123');
+    console.error('         claudine cancel abc123 "Taking too long"');
     process.exit(1);
   }
-  await cancelTask(taskId);
+  
+  // Optional reason is everything after the task ID
+  const reason = args.slice(2).join(' ') || undefined;
+  await cancelTask(taskId, reason);
   
 } else if (mainCommand === 'help' || !mainCommand) {
   showHelp();

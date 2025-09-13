@@ -28,7 +28,8 @@ export interface TaskQueue {
 export interface ProcessSpawner {
   spawn(
     prompt: string,
-    workingDirectory: string
+    workingDirectory: string,
+    taskId?: string
   ): Result<{ process: ChildProcess; pid: number }>;
   kill(pid: number): Result<void>;
 }
@@ -147,9 +148,5 @@ export interface TaskManager {
 /**
  * Git worktree management for isolated task execution
  */
-export interface WorktreeManager {
-  createWorktree(taskId: TaskId, targetProjectDir?: string): Promise<Result<string>>;
-  removeWorktree(taskId: TaskId): Promise<Result<void>>;
-  getWorktreePath(taskId: TaskId, targetProjectDir?: string): string;
-  cleanup(): Promise<Result<void>>;
-}
+// Re-export from the actual implementation
+export type { WorktreeManager, WorktreeInfo, CompletionResult } from '../services/worktree-manager.js';

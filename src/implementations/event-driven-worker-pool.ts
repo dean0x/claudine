@@ -8,7 +8,7 @@ import { promisify } from 'util';
 import path from 'path';
 
 const execAsync = promisify(exec);
-import { WorkerPool, ProcessSpawner, ResourceMonitor, Logger, OutputCapture, EventBus, WorktreeManager } from '../core/interfaces.js';
+import { WorkerPool, ProcessSpawner, ResourceMonitor, Logger, OutputCapture, EventBus, WorktreeManager, WorktreeInfo, CompletionResult } from '../core/interfaces.js';
 import { Worker, WorkerId, Task, TaskId } from '../core/domain.js';
 import { Result, ok, err, tryCatchAsync } from '../core/result.js';
 import { ClaudineError, ErrorCode, taskTimeout } from '../core/errors.js';
@@ -18,7 +18,7 @@ interface WorkerState extends Worker {
   process: ChildProcess;
   task: Task;
   timeoutTimer?: NodeJS.Timeout;
-  worktreePath?: string; // Path to git worktree if created for this task
+  worktreeInfo?: WorktreeInfo; // Worktree info if created for this task
 }
 
 export class EventDrivenWorkerPool implements WorkerPool {
@@ -59,11 +59,11 @@ export class EventDrivenWorkerPool implements WorkerPool {
 
     // Handle git worktree creation if requested
     let finalWorkingDirectory: string;
-    let worktreePath: string | undefined;
+    let worktreeInfo: WorktreeInfo | undefined;
 
     if (task.useWorktree) {
       this.logger.debug('Creating git worktree for task', { taskId: task.id });
-      const worktreeResult = await this.worktreeManager.createWorktree(task.id, task.workingDirectory);
+      const worktreeResult = await this.worktreeManager.createWorktree(task);
       
       if (!worktreeResult.ok) {
         this.logger.warn('Failed to create worktree, falling back to normal execution', {
@@ -73,7 +73,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
         // Graceful fallback - continue without worktree
         finalWorkingDirectory = task.workingDirectory || process.cwd();
       } else {
-        worktreePath = worktreeResult.value;
+        worktreeInfo = worktreeResult.value;
         // When working directory is specified with worktrees:
         // 1. If absolute path: make relative to git root, then combine with worktree
         // 2. If relative path: combine directly with worktree
@@ -91,22 +91,23 @@ export class EventDrivenWorkerPool implements WorkerPool {
               });
               const gitRoot = stdout.trim();
               const relativePath = path.relative(gitRoot, task.workingDirectory);
-              finalWorkingDirectory = path.join(worktreePath, relativePath);
+              finalWorkingDirectory = path.join(worktreeInfo.path, relativePath);
             } catch {
               // Fallback: if can't determine git root, use worktree root
-              finalWorkingDirectory = worktreePath;
+              finalWorkingDirectory = worktreeInfo.path;
             }
           } else {
             // Relative path - combine directly with worktree
-            finalWorkingDirectory = path.join(worktreePath, task.workingDirectory);
+            finalWorkingDirectory = path.join(worktreeInfo.path, task.workingDirectory);
           }
         } else {
-          finalWorkingDirectory = worktreePath;
+          finalWorkingDirectory = worktreeInfo.path;
         }
         
         this.logger.info('Using git worktree for task execution', {
           taskId: task.id,
-          worktreePath,
+          worktreePath: worktreeInfo.path,
+          branch: worktreeInfo.branch,
           finalWorkingDirectory
         });
       }
@@ -114,17 +115,17 @@ export class EventDrivenWorkerPool implements WorkerPool {
       finalWorkingDirectory = task.workingDirectory || process.cwd();
     }
 
-    // Spawn the process
-    const spawnResult = this.spawner.spawn(task.prompt, finalWorkingDirectory);
+    // Spawn the process with task ID for identification
+    const spawnResult = this.spawner.spawn(task.prompt, finalWorkingDirectory, task.id);
 
     if (!spawnResult.ok) {
       // Clean up worktree if it was created but spawn failed
-      if (worktreePath) {
+      if (worktreeInfo) {
         const cleanupResult = await this.worktreeManager.removeWorktree(task.id);
         if (!cleanupResult.ok) {
           this.logger.warn('Failed to cleanup worktree after spawn failure', {
             taskId: task.id,
-            worktreePath,
+            worktreePath: worktreeInfo.path,
             error: cleanupResult.error.message
           });
         }
@@ -149,7 +150,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
       memoryUsage: 0,
       process: childProcess,
       task,
-      worktreePath, // Track worktree for cleanup
+      worktreeInfo, // Track worktree info for cleanup and merge
     };
 
     // Store worker
@@ -211,25 +212,9 @@ export class EventDrivenWorkerPool implements WorkerPool {
         }, 5000);
       }
 
-      // Clean up git worktree if one was created and cleanup is enabled
-      if (worker.worktreePath && worker.task.cleanupWorktree) {
-        this.logger.debug('Cleaning up git worktree after worker kill', { 
-          taskId: worker.taskId, 
-          worktreePath: worker.worktreePath 
-        });
-        const cleanupResult = await this.worktreeManager.removeWorktree(worker.taskId);
-        if (!cleanupResult.ok) {
-          this.logger.warn('Failed to cleanup worktree after worker kill', {
-            taskId: worker.taskId,
-            worktreePath: worker.worktreePath,
-            error: cleanupResult.error.message
-          });
-        }
-      } else if (worker.worktreePath && !worker.task.cleanupWorktree) {
-        this.logger.info('Preserving worktree as requested', {
-          taskId: worker.taskId,
-          worktreePath: worker.worktreePath
-        });
+      // Clean up git worktree based on cleanup strategy
+      if (worker.worktreeInfo) {
+        await this.handleWorktreeCleanup(worker.task, worker.worktreeInfo);
       }
 
       // Clean up worker state
@@ -362,23 +347,43 @@ export class EventDrivenWorkerPool implements WorkerPool {
     // Calculate duration
     const duration = Date.now() - worker.startedAt;
 
-    // Clean up git worktree if one was created and cleanup is enabled
-    if (worker.worktreePath && worker.task.cleanupWorktree) {
-      this.logger.debug('Cleaning up git worktree', { taskId, worktreePath: worker.worktreePath });
-      const cleanupResult = await this.worktreeManager.removeWorktree(taskId);
-      if (!cleanupResult.ok) {
-        this.logger.warn('Failed to cleanup worktree after task completion', {
+    // Handle worktree completion and cleanup
+    let mergeResult: CompletionResult | undefined;
+    let mergeError: Error | undefined;
+    
+    if (worker.worktreeInfo && worker.task.mergeStrategy) {
+      const completionResult = await this.worktreeManager.completeTask(worker.task, worker.worktreeInfo);
+      if (completionResult.ok) {
+        mergeResult = completionResult.value;
+        this.logger.info('Task merge strategy completed', {
           taskId,
-          worktreePath: worker.worktreePath,
-          error: cleanupResult.error.message
+          strategy: worker.task.mergeStrategy,
+          result: mergeResult
+        });
+      } else {
+        mergeError = completionResult.error;
+        this.logger.error('Merge strategy failed', completionResult.error, { 
+          taskId,
+          strategy: worker.task.mergeStrategy,
+          worktreePath: worker.worktreeInfo.path,
+          branch: worker.worktreeInfo.branch,
+          message: `Merge strategy '${worker.task.mergeStrategy}' failed. Worktree preserved at ${worker.worktreeInfo.path}`
         });
       }
-    } else if (worker.worktreePath && !worker.task.cleanupWorktree) {
-      this.logger.info('Preserving worktree as requested', {
-        taskId,
-        worktreePath: worker.worktreePath,
-        message: 'Worktree preserved at completion - user can access files manually'
-      });
+    }
+
+    // Handle cleanup based on strategy and merge result
+    // Don't cleanup if merge failed, to allow manual recovery
+    if (worker.worktreeInfo) {
+      if (mergeError) {
+        this.logger.warn('Preserving worktree due to merge failure', {
+          taskId,
+          path: worker.worktreeInfo.path,
+          branch: worker.worktreeInfo.branch
+        });
+      } else {
+        await this.handleWorktreeCleanup(worker.task, worker.worktreeInfo);
+      }
     }
 
     // Clean up worker state
@@ -463,5 +468,44 @@ export class EventDrivenWorkerPool implements WorkerPool {
         `Worker process error: ${error.message}`
       )
     });
+  }
+
+  /**
+   * Handle worktree cleanup based on task settings and merge strategy
+   */
+  private async handleWorktreeCleanup(task: Task, info: WorktreeInfo): Promise<void> {
+    let shouldCleanup = false;
+
+    switch (task.worktreeCleanup) {
+      case 'keep':
+        shouldCleanup = false;
+        break;
+      case 'delete':
+        shouldCleanup = true;
+        break;
+      case 'auto':
+      default:
+        // Auto: cleanup for pr/auto/patch, keep for manual
+        shouldCleanup = task.mergeStrategy !== 'manual';
+        break;
+    }
+
+    if (shouldCleanup) {
+      const result = await this.worktreeManager.removeWorktree(task.id);
+      if (result.ok) {
+        this.logger.info('Worktree cleaned up', { taskId: task.id });
+      } else {
+        this.logger.warn('Failed to cleanup worktree', {
+          taskId: task.id,
+          error: result.error.message
+        });
+      }
+    } else {
+      this.logger.info('Worktree preserved', {
+        taskId: task.id,
+        path: info.path,
+        branch: info.branch
+      });
+    }
   }
 }
