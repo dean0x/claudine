@@ -2,10 +2,12 @@
 
 This document lists all features that are **currently implemented and working** in Claudine v0.2.1.
 
+Last Updated: September 2025
+
 ## ✅ Core Task Delegation
 
 ### MCP Tools
-- **DelegateTask**: Submit tasks to background Claude Code instances
+- **DelegateTask**: Submit tasks to background Claude Code instances with full worktree/PR options
 - **TaskStatus**: Check status of running/completed tasks
 - **TaskLogs**: Retrieve stdout/stderr output from tasks (with tail option)
 - **CancelTask**: Cancel running tasks with optional reason
@@ -15,7 +17,10 @@ This document lists all features that are **currently implemented and working** 
 - **Task Status Tracking**: QUEUED, RUNNING, COMPLETED, FAILED, CANCELLED
 - **Per-Task Configuration**: Custom timeout and output buffer per task
 - **Working Directory Support**: Run tasks in specific directories
-- **Git Worktree Isolation**: Optional worktree creation for task isolation
+- **Git Worktree Isolation**: Branch-based task execution with automatic creation/cleanup
+- **Merge Strategies**: PR (pull request), auto, manual, patch
+- **GitHub Integration**: Automatic PR creation with custom titles/descriptions
+- **Retry Logic**: Exponential backoff for git push and API operations
 
 ## ✅ Autoscaling & Resource Management
 

@@ -4,6 +4,39 @@ All notable changes to Claudine will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🚀 Major Features
+- **🌳 Git Worktree Support**: Branch-based task isolation with automatic creation/cleanup
+  - Isolated task execution in separate worktrees
+  - Multiple merge strategies: PR, auto, manual, patch
+  - Automatic branch creation and management
+  - Configurable cleanup behavior
+- **🔀 GitHub Integration**: Automatic PR creation and management
+  - Create PRs with custom titles and descriptions
+  - Automatic PR status checks
+  - Push branches to remote automatically
+  - Secure command execution with simple-git
+- **🔄 Retry Logic**: Exponential backoff for transient failures
+  - Smart error detection (network, rate limits, timeouts)
+  - Configurable retry attempts and delays
+  - Applied to git operations and GitHub API calls
+
+### 🛠️ Technical Improvements
+- **Security Enhancements**: Replaced shell command execution with secure libraries
+  - Migrated from exec/shell to simple-git for git operations
+  - Command injection prevention through proper argument handling
+  - Array-based command execution instead of string concatenation
+- **CLI/MCP Alignment**: Perfect parameter parity between interfaces
+  - Added `--tail` parameter to CLI logs command
+  - Added optional reason parameter to CLI cancel command
+  - All MCP parameters now available in CLI
+
+### 🐛 Bug Fixes
+- **Command Injection**: Fixed potential security vulnerabilities in git operations
+- **Test Reliability**: Fixed flaky tests with proper mocking
+- **Parameter Consistency**: Aligned CLI and MCP tool parameters
+
 ## [0.2.1] - 2025-09-05
 
 ### 🚀 Major Features

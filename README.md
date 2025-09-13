@@ -39,7 +39,9 @@
 - **CLI Interface**: Direct task management (`claudine delegate`, `claudine status`, etc.)
 - **Autoscaling**: Automatically spawns workers based on available CPU and memory  
 - **Priority Levels**: P0 (Critical), P1 (High), P2 (Normal) task prioritization
-- **Git Worktree Support**: Optional task isolation in separate worktrees
+- **Git Worktree Support**: Branch-based isolation with PR/manual/auto/patch merge strategies
+- **GitHub Integration**: Automatic PR creation with merge strategies
+- **Retry Logic**: Exponential backoff for transient failures (git, network, API)
 - **Resource Management**: Dynamic worker scaling with CPU/memory monitoring
 - **Output Capture**: Fixed process handling with proper stdin management
 - **Recovery System**: Automatic task recovery after crashes
@@ -131,11 +133,11 @@ claudine status
 # Check specific task status
 claudine status <task-id>
 
-# Get task logs
-claudine logs <task-id>
+# Get task logs (with optional tail)
+claudine logs <task-id> [--tail 100]
 
 # Cancel a running task
-claudine cancel <task-id> "Taking too long"
+claudine cancel <task-id> [reason]
 
 # Show help
 claudine help
@@ -248,7 +250,7 @@ Claudine is optimized for **dedicated servers** with ample resources, not constr
 6. **Task Queue**: Priority-based queue with event-driven processing
 7. **Worker Pool**: Event-driven worker lifecycle management
 8. **Output Capture**: Event-based output handling with proper stdin management
-9. **Task Persistence**: SQLite database with event-driven operations
+9. **Task Persistence**: SQLite database with WAL mode for concurrent access
 10. **Recovery Manager**: Restores interrupted tasks via events on startup
 
 ### Task Lifecycle

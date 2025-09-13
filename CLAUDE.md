@@ -38,14 +38,17 @@ eventBus.emit('WorkerSpawned', { workerId, taskId });
 3. **TaskManager (TaskManagerService)** - Pure event emitter, no direct state management
 4. **Autoscaling Manager** - Event-driven worker scaling based on resources
 5. **Recovery Manager** - Restores interrupted tasks via events on startup
+6. **WorktreeManager** - Git worktree isolation with branch-based task execution
+7. **GitHubIntegration** - Automatic PR creation and management
 
 **Infrastructure**:
-6. **Task Queue (PriorityTaskQueue)** - FIFO with priority support (P0/P1/P2)
-7. **Worker Pool (EventDrivenWorkerPool)** - Event-based worker lifecycle
-8. **Process Spawner (ClaudeProcessSpawner)** - Proper stdin handling (`stdio: ['ignore', 'pipe', 'pipe']`)
-9. **Output Capture (BufferedOutputCapture)** - Event-driven output management
-10. **Task Repository (SQLiteTaskRepository)** - Persistent task storage with recovery
-11. **MCP Adapter** - Handles JSON-RPC requests from Claude Code
+8. **Task Queue (PriorityTaskQueue)** - FIFO with priority support (P0/P1/P2)
+9. **Worker Pool (EventDrivenWorkerPool)** - Event-based worker lifecycle
+10. **Process Spawner (ClaudeProcessSpawner)** - Proper stdin handling (`stdio: ['ignore', 'pipe', 'pipe']`)
+11. **Output Capture (BufferedOutputCapture)** - Event-driven output management
+12. **Task Repository (SQLiteTaskRepository)** - Persistent task storage with WAL mode
+13. **MCP Adapter** - Handles JSON-RPC requests from Claude Code
+14. **Retry Utilities** - Exponential backoff for transient failures
 
 ## Development Setup
 
@@ -111,7 +114,15 @@ Tasks submitted to Claudine should follow this structure:
   "timeout": 300000,
   "maxOutputBuffer": 10485760,
   "workingDirectory": "/path/to/work/in",
-  "useWorktree": false
+  "useWorktree": true,
+  "worktreeCleanup": "auto|keep|delete",
+  "mergeStrategy": "pr|auto|manual|patch",
+  "branchName": "custom-branch-name",
+  "baseBranch": "main",
+  "autoCommit": true,
+  "pushToRemote": true,
+  "prTitle": "Custom PR title",
+  "prBody": "Custom PR description"
 }
 ```
 
@@ -136,7 +147,7 @@ claudine mcp start
 ### Direct Task Commands (Available in v0.2.1)
 - `claudine delegate <task>` - ✅ Delegate a task to background Claude Code instance
 - `claudine status [task-id]` - ✅ Check task status (all tasks if no ID provided)
-- `claudine logs <task-id>` - ✅ Get task output and logs
+- `claudine logs <task-id> [--tail N]` - ✅ Get task output and logs with optional tail
 - `claudine cancel <task-id> [reason]` - ✅ Cancel a running task
 
 ### CLI Examples (Working Now)
@@ -151,10 +162,10 @@ claudine status
 claudine status task-abc123
 
 # Get logs from completed task
-claudine logs task-abc123
+claudine logs task-abc123 [--tail 100]
 
 # Cancel a running task
-claudine cancel task-abc123 "Taking too long"
+claudine cancel task-abc123 [reason]
 ```
 
 ## Engineering Principles

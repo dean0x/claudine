@@ -1,11 +1,11 @@
 # Claudine Development Roadmap
 
-## Current Status: v0.2.0 ✅
+## Current Status: v0.2.1 ✅
 
 **Released**: September 2025  
 **Status**: Production Ready  
 
-Claudine v0.2.0 is a fully-featured MCP server with autoscaling, persistence, and advanced task management. See [FEATURES.md](./FEATURES.md) for complete list of current capabilities.
+Claudine v0.2.1 is a fully-featured MCP server with autoscaling, persistence, and advanced task management. See [FEATURES.md](./FEATURES.md) for complete list of current capabilities.
 
 ---
 
@@ -163,6 +163,7 @@ tasks:
 | Version | Target Date | Status | Focus |
 |---------|-------------|--------|--------|
 | v0.2.0 | Sep 2025 | ✅ **Released** | Autoscaling + Persistence |
+| v0.2.1 | Sep 2025 | ✅ **Released** | Event-driven + Git Worktree + GitHub PR |
 | v0.2.5 | Dec 2025 | 🚧 **Planning** | Worktree Safety Features |
 | v0.3.0 | Jan 2026 | 💭 **Research** | Task Dependencies |
 | v0.4.0 | Mar 2026 | 💭 **Research** | Distributed Processing |
