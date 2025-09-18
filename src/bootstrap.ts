@@ -29,6 +29,7 @@ import { GitHubIntegration } from './services/github-integration.js';
 // Event Handlers
 import { PersistenceHandler } from './services/handlers/persistence-handler.js';
 import { QueueHandler } from './services/handlers/queue-handler.js';
+import { QueryHandler } from './services/handlers/query-handler.js';
 import { WorkerHandler } from './services/handlers/worker-handler.js';
 import { OutputHandler } from './services/handlers/output-handler.js';
 
@@ -228,7 +229,20 @@ export async function bootstrap() {
       }
     }
 
-    // 2. Queue Handler - manages task queue operations
+    // 2. Query Handler - handles read operations for pure event-driven architecture
+    // ARCHITECTURE: Critical for pure event-driven pattern - processes all queries
+    const repositoryForQueries = repositoryResult.ok ? repositoryResult.value as TaskRepository : undefined;
+    const queryHandler = new QueryHandler(
+      repositoryForQueries!,
+      getFromContainer<OutputCapture>(container, 'outputCapture'),
+      logger.child({ module: 'QueryHandler' })
+    );
+    const querySetup = await queryHandler.setup(eventBus);
+    if (!querySetup.ok) {
+      throw new Error(`Failed to setup QueryHandler: ${querySetup.error.message}`);
+    }
+
+    // 3. Queue Handler - manages task queue operations
     const queueHandler = new QueueHandler(
       getFromContainer<TaskQueue>(container, 'taskQueue'),
       logger.child({ module: 'QueueHandler' })
@@ -238,7 +252,7 @@ export async function bootstrap() {
       throw new Error(`Failed to setup QueueHandler: ${queueSetup.error.message}`);
     }
 
-    // 3. Worker Handler - manages worker lifecycle
+    // 4. Worker Handler - manages worker lifecycle
     const workerHandler = new WorkerHandler(
       getFromContainer<WorkerPool>(container, 'workerPool'),
       getFromContainer<ResourceMonitor>(container, 'resourceMonitor'),
@@ -252,7 +266,7 @@ export async function bootstrap() {
       throw new Error(`Failed to setup WorkerHandler: ${workerSetup.error.message}`);
     }
 
-    // 4. Output Handler - manages output and logs
+    // 5. Output Handler - manages output and logs
     const outputHandler = new OutputHandler(
       getFromContainer<OutputCapture>(container, 'outputCapture'),
       logger.child({ module: 'OutputHandler' })

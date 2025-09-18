@@ -127,6 +127,7 @@ export interface TaskEventEmitter {
  */
 export interface EventBus {
   emit<T extends ClaudineEvent>(type: T['type'], payload: Omit<T, keyof BaseEvent | 'type'>): Promise<Result<void>>;
+  request<T extends ClaudineEvent, R = any>(type: T['type'], payload: Omit<T, keyof BaseEvent | 'type'>): Promise<Result<R>>;
   subscribe<T extends ClaudineEvent>(eventType: T['type'], handler: EventHandler<T>): Result<void>;
   unsubscribe<T extends ClaudineEvent>(eventType: T['type'], handler: EventHandler<T>): Result<void>;
   subscribeAll(handler: EventHandler): Result<void>;

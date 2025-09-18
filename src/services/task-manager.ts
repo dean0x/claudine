@@ -1,10 +1,20 @@
 /**
  * Event-driven task manager orchestrator
- * Coordinates components through events, eliminating race conditions and state divergence
+ *
+ * ARCHITECTURE: Pure event-driven pattern - ALL operations go through EventBus
+ * Pattern: Event-Driven Architecture with Request-Response for queries
+ * Rationale: Single source of truth, consistency, testability, extensibility
+ * Trade-offs: ~1ms overhead for queries vs direct repository access
+ *
+ * Rules:
+ * - NO direct repository access (all data operations via events)
+ * - Commands use fire-and-forget emit()
+ * - Queries use request-response request()
+ * - All state changes MUST go through events
  */
 
-import { 
-  TaskManager, 
+import {
+  TaskManager,
   TaskRepository,
   Logger,
   EventBus,
@@ -26,11 +36,17 @@ import { Configuration } from '../core/configuration.js';
 export class TaskManagerService implements TaskManager {
   constructor(
     private readonly eventBus: EventBus,
-    private readonly repository: TaskRepository | undefined,
+    private readonly repository: TaskRepository | undefined, // DEPRECATED: Will be removed in v3.0
     private readonly logger: Logger,
     private readonly config: Configuration,
-    private readonly outputCapture?: OutputCapture
-  ) {}
+    private readonly outputCapture?: OutputCapture // DEPRECATED: Will be removed in v3.0
+  ) {
+    // ARCHITECTURE: Repository is passed for backwards compatibility only
+    // All new code MUST use event-driven patterns via eventBus
+    if (repository) {
+      this.logger.warn('TaskManager initialized with direct repository - migration to pure events pending');
+    }
+  }
 
   /**
    * Delegate a task - purely event-driven, no direct state management
@@ -67,90 +83,41 @@ export class TaskManagerService implements TaskManager {
   }
 
   async getStatus(taskId?: TaskId): Promise<Result<Task | readonly Task[]>> {
-    // Database-only approach - no memory cache to manage
-    if (!this.repository) {
-      return err(new ClaudineError(
-        ErrorCode.CONFIGURATION_ERROR,
-        'TaskRepository not available'
-      ));
+    // ARCHITECTURE: Pure event-driven query - no direct repository access
+    const result = await this.eventBus.request<any, Task | readonly Task[]>(
+      'TaskStatusQuery',
+      { taskId }
+    );
+
+    if (!result.ok) {
+      this.logger.error('Task status query failed', result.error, { taskId });
+      return result;
     }
 
-    if (taskId) {
-      const result = await this.repository.findById(taskId);
-      
-      if (!result.ok) {
-        return result;
-      }
-      
-      if (!result.value) {
-        return err(taskNotFound(taskId));
-      }
-      
-      return ok(result.value);
-    }
-
-    // Return all tasks from database
-    const result = await this.repository.findAll();
-    return result.ok ? ok(result.value) : err(result.error);
+    return ok(result.value);
   }
 
   async getLogs(taskId: TaskId, tail?: number): Promise<Result<TaskOutput>> {
-    // Verify task exists first if repository is available
-    if (this.repository) {
-      const taskResult = await this.repository.findById(taskId);
-      
-      if (!taskResult.ok) {
-        return err(taskResult.error);
-      }
-      
-      if (!taskResult.value) {
-        return err(taskNotFound(taskId));
-      }
+    // ARCHITECTURE: Pure event-driven query for logs
+    const result = await this.eventBus.request<any, TaskOutput>(
+      'TaskLogsQuery',
+      { taskId, tail }
+    );
+
+    if (!result.ok) {
+      this.logger.error('Task logs query failed', result.error, { taskId });
+      return result;
     }
 
-    // Get logs directly from output capture if available
-    if (this.outputCapture) {
-      return this.outputCapture.getOutput(taskId, tail);
-    }
-
-    // Fallback: emit event to request logs
-    await this.eventBus.emit('LogsRequested', { taskId, tail });
-    
-    // Return empty logs as fallback
-    return ok({
-      taskId,
-      stdout: [],
-      stderr: [],
-      totalSize: 0,
-    });
+    return ok(result.value);
   }
 
   async cancel(taskId: TaskId, reason?: string): Promise<Result<void>> {
-    // Verify task exists and can be cancelled if repository is available
-    if (this.repository) {
-      const taskResult = await this.repository.findById(taskId);
-
-      if (!taskResult.ok) {
-        return err(taskResult.error);
-      }
-
-      if (!taskResult.value) {
-        return err(taskNotFound(taskId));
-      }
-
-      const task = taskResult.value;
-
-      if (!canCancel(task)) {
-        return err(new ClaudineError(
-          ErrorCode.TASK_CANNOT_CANCEL,
-          `Task ${taskId} cannot be cancelled in state ${task.status}`
-        ));
-      }
-    }
-
+    // ARCHITECTURE: Validation now happens in event handler, not here
+    // This maintains pure event-driven pattern
     this.logger.info('Cancelling task', { taskId, reason });
 
-    // Emit event - handlers will manage the cancellation process
+    // Emit cancellation event - handler will validate and process
     const result = await this.eventBus.emit('TaskCancellationRequested', { taskId, reason });
 
     if (!result.ok) {
@@ -179,25 +146,14 @@ export class TaskManagerService implements TaskManager {
    * // - retryOf: abc-123 (direct parent)
    */
   async retry(taskId: TaskId): Promise<Result<Task>> {
-    // Verify task exists and is in a terminal state
-    if (!this.repository) {
-      return err(new ClaudineError(
-        ErrorCode.CONFIGURATION_ERROR,
-        'TaskRepository not available'
-      ));
-    }
-
-    const taskResult = await this.repository.findById(taskId);
+    // ARCHITECTURE: Use event-driven query to get task
+    const taskResult = await this.eventBus.request<any, Task>('TaskStatusQuery', { taskId });
 
     if (!taskResult.ok) {
       return err(taskResult.error);
     }
 
-    if (!taskResult.value) {
-      return err(taskNotFound(taskId));
-    }
-
-    const originalTask = taskResult.value;
+    const originalTask = taskResult.value as Task;
 
     // Only retry tasks that are in terminal states
     if (!isTerminalState(originalTask.status)) {

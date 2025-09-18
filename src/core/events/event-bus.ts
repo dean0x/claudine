@@ -10,9 +10,13 @@ import { ClaudineEvent, EventHandler, createEvent, BaseEvent } from './events.js
 
 /**
  * Event bus interface for dependency injection
+ *
+ * ARCHITECTURE: Supports both fire-and-forget (emit) and request-response (request) patterns
+ * for pure event-driven architecture. All service operations go through this bus.
  */
 export interface EventBus {
   emit<T extends ClaudineEvent>(type: T['type'], payload: Omit<T, keyof BaseEvent | 'type'>): Promise<Result<void>>;
+  request<T extends ClaudineEvent, R = any>(type: T['type'], payload: Omit<T, keyof BaseEvent | 'type'>): Promise<Result<R>>;
   subscribe<T extends ClaudineEvent>(eventType: T['type'], handler: EventHandler<T>): Result<void>;
   unsubscribe<T extends ClaudineEvent>(eventType: T['type'], handler: EventHandler<T>): Result<void>;
   subscribeAll(handler: EventHandler): Result<void>;
@@ -81,6 +85,62 @@ export class InMemoryEventBus implements EventBus {
         ErrorCode.SYSTEM_ERROR,
         `Event emission failed for ${type}: ${error}`,
         { eventId: event.eventId }
+      ));
+    }
+  }
+
+  /**
+   * Request-response pattern for query events
+   * ARCHITECTURE: Enables synchronous-like queries in event-driven system
+   */
+  async request<T extends ClaudineEvent, R = any>(
+    type: T['type'],
+    payload: Omit<T, keyof BaseEvent | 'type'>
+  ): Promise<Result<R>> {
+    const event = createEvent(type, payload) as T & { __response?: R; __error?: Error };
+
+    this.logger.debug('Request event emitted', {
+      eventType: event.type,
+      eventId: event.eventId
+    });
+
+    try {
+      // Get handlers for this event type
+      const handlers = this.handlers.get(type) || [];
+
+      if (handlers.length === 0) {
+        return err(new ClaudineError(
+          ErrorCode.SYSTEM_ERROR,
+          `No handlers registered for query: ${type}`
+        ));
+      }
+
+      // Execute first handler (queries should have single handler)
+      await handlers[0](event);
+
+      // Check for response or error
+      if (event.__error) {
+        return err(event.__error as ClaudineError);
+      }
+
+      if (event.__response !== undefined) {
+        return ok(event.__response);
+      }
+
+      return err(new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Query handler did not provide response: ${type}`
+      ));
+
+    } catch (error) {
+      this.logger.error('Request event failed', error as Error, {
+        eventType: type,
+        eventId: event.eventId
+      });
+
+      return err(new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Request failed for ${type}: ${error}`
       ));
     }
   }
@@ -180,6 +240,10 @@ export class InMemoryEventBus implements EventBus {
 export class NullEventBus implements EventBus {
   async emit<T extends ClaudineEvent>(): Promise<Result<void>> {
     return ok(undefined);
+  }
+
+  async request<T extends ClaudineEvent, R = any>(): Promise<Result<R>> {
+    return ok(undefined as any);
   }
 
   subscribe<T extends ClaudineEvent>(): Result<void> {
