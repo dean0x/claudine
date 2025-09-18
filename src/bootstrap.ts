@@ -232,9 +232,15 @@ export async function bootstrap() {
     // 2. Query Handler - handles read operations for pure event-driven architecture
     // ARCHITECTURE: Critical for pure event-driven pattern - processes all queries
     const repositoryForQueries = repositoryResult.ok ? repositoryResult.value as TaskRepository : undefined;
+
+    if (!repositoryForQueries) {
+      throw new Error('Repository is required for QueryHandler in pure event-driven architecture');
+    }
+
     const queryHandler = new QueryHandler(
-      repositoryForQueries!,
+      repositoryForQueries,
       getFromContainer<OutputCapture>(container, 'outputCapture'),
+      eventBus,
       logger.child({ module: 'QueryHandler' })
     );
     const querySetup = await queryHandler.setup(eventBus);

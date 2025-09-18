@@ -14,7 +14,7 @@ import { TaskRepository, Logger, OutputCapture } from '../../core/interfaces.js'
 import { Task } from '../../core/domain.js';
 import { Result, ok, err } from '../../core/result.js';
 import { BaseEventHandler } from '../../core/events/handlers.js';
-import { EventBus } from '../../core/events/event-bus.js';
+import { EventBus, InMemoryEventBus } from '../../core/events/event-bus.js';
 import {
   TaskStatusQueryEvent,
   TaskStatusResponseEvent,
@@ -28,6 +28,7 @@ export class QueryHandler extends BaseEventHandler {
   constructor(
     private readonly repository: TaskRepository,
     private readonly outputCapture: OutputCapture | undefined,
+    private readonly eventBus: EventBus,
     logger: Logger
   ) {
     super(logger, 'QueryHandler');
@@ -57,10 +58,13 @@ export class QueryHandler extends BaseEventHandler {
    * Handle task status queries
    * Returns single task or all tasks based on query
    */
-  private async handleTaskStatusQuery(event: TaskStatusQueryEvent): Promise<void> {
+  private async handleTaskStatusQuery(event: TaskStatusQueryEvent & { __correlationId?: string }): Promise<void> {
+    const correlationId = event.__correlationId;
+
     this.logger.debug('Processing task status query', {
       taskId: event.taskId,
-      isAllTasks: !event.taskId
+      isAllTasks: !event.taskId,
+      correlationId
     });
 
     try {
@@ -90,31 +94,35 @@ export class QueryHandler extends BaseEventHandler {
         result = tasksResult.value;
       }
 
-      // Emit response event with result
-      const responseEvent = createEvent<TaskStatusResponseEvent>(
-        'TaskStatusResponse',
-        { result }
-      );
-
-      // Store response for caller to retrieve
-      // Note: In a full implementation, we'd use request-response correlation
-      (event as any).__response = result;
+      // Send response back via event bus
+      if (correlationId && 'respond' in this.eventBus) {
+        (this.eventBus as InMemoryEventBus).respond(correlationId, result);
+      }
 
     } catch (error) {
       this.logger.error('Task status query failed', error as Error, {
-        taskId: event.taskId
+        taskId: event.taskId,
+        correlationId
       });
-      (event as any).__error = error;
+
+      // Send error back via event bus
+      if (correlationId && 'respondError' in this.eventBus) {
+        const actualError = error instanceof Error ? error : new Error(String(error));
+        (this.eventBus as InMemoryEventBus).respondError(correlationId, actualError);
+      }
     }
   }
 
   /**
    * Handle task logs queries
    */
-  private async handleTaskLogsQuery(event: TaskLogsQueryEvent): Promise<void> {
+  private async handleTaskLogsQuery(event: TaskLogsQueryEvent & { __correlationId?: string }): Promise<void> {
+    const correlationId = event.__correlationId;
+
     this.logger.debug('Processing task logs query', {
       taskId: event.taskId,
-      tail: event.tail
+      tail: event.tail,
+      correlationId
     });
 
     try {
@@ -144,19 +152,29 @@ export class QueryHandler extends BaseEventHandler {
         }
       }
 
-      // Store response for caller
-      (event as any).__response = {
+      const response = {
         taskId: event.taskId,
         stdout,
         stderr,
         totalSize
       };
 
+      // Send response back via event bus
+      if (correlationId && 'respond' in this.eventBus) {
+        (this.eventBus as InMemoryEventBus).respond(correlationId, response);
+      }
+
     } catch (error) {
       this.logger.error('Task logs query failed', error as Error, {
-        taskId: event.taskId
+        taskId: event.taskId,
+        correlationId
       });
-      (event as any).__error = error;
+
+      // Send error back via event bus
+      if (correlationId && 'respondError' in this.eventBus) {
+        const actualError = error instanceof Error ? error : new Error(String(error));
+        (this.eventBus as InMemoryEventBus).respondError(correlationId, actualError);
+      }
     }
   }
 }

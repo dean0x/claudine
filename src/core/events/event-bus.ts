@@ -29,6 +29,11 @@ export interface EventBus {
 export class InMemoryEventBus implements EventBus {
   private readonly handlers = new Map<string, EventHandler[]>();
   private readonly globalHandlers: EventHandler[] = [];
+  private readonly pendingRequests = new Map<string, {
+    resolve: (value: any) => void;
+    reject: (error: Error) => void;
+    timeoutId: NodeJS.Timeout;
+  }>();
 
   constructor(private readonly logger: Logger) {}
 
@@ -90,58 +95,108 @@ export class InMemoryEventBus implements EventBus {
   }
 
   /**
-   * Request-response pattern for query events
-   * ARCHITECTURE: Enables synchronous-like queries in event-driven system
+   * Request-response pattern for query events with proper correlation
+   * ARCHITECTURE: Thread-safe implementation using correlation IDs and promises
+   * Includes automatic timeout (default 5s) to prevent hanging queries
    */
   async request<T extends ClaudineEvent, R = any>(
     type: T['type'],
-    payload: Omit<T, keyof BaseEvent | 'type'>
+    payload: Omit<T, keyof BaseEvent | 'type'>,
+    timeoutMs: number = 5000
   ): Promise<Result<R>> {
-    const event = createEvent(type, payload) as T & { __response?: R; __error?: Error };
+    const correlationId = crypto.randomUUID();
 
-    this.logger.debug('Request event emitted', {
-      eventType: event.type,
-      eventId: event.eventId
-    });
+    return new Promise<Result<R>>((resolve) => {
+      // Set up timeout
+      const timeoutId = setTimeout(() => {
+        const pending = this.pendingRequests.get(correlationId);
+        if (pending) {
+          this.pendingRequests.delete(correlationId);
+          this.logger.error('Request timeout', undefined, {
+            eventType: type,
+            correlationId,
+            timeoutMs
+          });
+          resolve(err(new ClaudineError(
+            ErrorCode.SYSTEM_ERROR,
+            `Request timeout after ${timeoutMs}ms for ${type}`
+          )));
+        }
+      }, timeoutMs);
 
-    try {
+      // Store pending request
+      this.pendingRequests.set(correlationId, {
+        resolve: (value: R) => {
+          clearTimeout(timeoutId);
+          this.pendingRequests.delete(correlationId);
+          resolve(ok(value));
+        },
+        reject: (error: Error) => {
+          clearTimeout(timeoutId);
+          this.pendingRequests.delete(correlationId);
+          resolve(err(error instanceof ClaudineError ? error : new ClaudineError(
+            ErrorCode.SYSTEM_ERROR,
+            error.message
+          )));
+        },
+        timeoutId
+      });
+
+      // Emit event with correlation ID
+      const event = createEvent(type, {
+        ...payload,
+        __correlationId: correlationId
+      } as any) as T;
+
+      this.logger.debug('Request event emitted', {
+        eventType: event.type,
+        eventId: event.eventId,
+        correlationId
+      });
+
       // Get handlers for this event type
       const handlers = this.handlers.get(type) || [];
 
       if (handlers.length === 0) {
-        return err(new ClaudineError(
-          ErrorCode.SYSTEM_ERROR,
-          `No handlers registered for query: ${type}`
-        ));
+        const pending = this.pendingRequests.get(correlationId);
+        if (pending) {
+          pending.reject(new ClaudineError(
+            ErrorCode.SYSTEM_ERROR,
+            `No handlers registered for query: ${type}`
+          ));
+        }
+        return;
       }
 
-      // Execute first handler (queries should have single handler)
-      await handlers[0](event);
-
-      // Check for response or error
-      if (event.__error) {
-        return err(event.__error as ClaudineError);
-      }
-
-      if (event.__response !== undefined) {
-        return ok(event.__response);
-      }
-
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Query handler did not provide response: ${type}`
-      ));
-
-    } catch (error) {
-      this.logger.error('Request event failed', error as Error, {
-        eventType: type,
-        eventId: event.eventId
+      // Execute handler asynchronously
+      handlers[0](event).catch((error) => {
+        const pending = this.pendingRequests.get(correlationId);
+        if (pending) {
+          pending.reject(error instanceof Error ? error : new Error(String(error)));
+        }
       });
+    });
+  }
 
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Request failed for ${type}: ${error}`
-      ));
+  /**
+   * Respond to a request with a correlation ID
+   * Used by handlers to send responses back to request callers
+   */
+  respond(correlationId: string, response: any): void {
+    const pending = this.pendingRequests.get(correlationId);
+    if (pending) {
+      pending.resolve(response);
+    }
+  }
+
+  /**
+   * Respond to a request with an error
+   * Used by handlers to send errors back to request callers
+   */
+  respondError(correlationId: string, error: Error): void {
+    const pending = this.pendingRequests.get(correlationId);
+    if (pending) {
+      pending.reject(error);
     }
   }
 

@@ -79,15 +79,43 @@ export class WorkerHandler extends BaseEventHandler {
   }
 
   /**
-   * Handle task cancellation - kill worker if running
+   * Handle task cancellation - validate and kill worker if running
+   * ARCHITECTURE: Validation moved here from TaskManager for pure event-driven pattern
    */
   private async handleTaskCancellation(event: any): Promise<void> {
     await this.handleEvent(event, async (event) => {
-      const { taskId } = event;
-      
+      const { taskId, reason } = event;
+
+      // First validate that task can be cancelled
+      if (this.taskRepository) {
+        const taskResult = await this.taskRepository.findById(taskId);
+
+        if (!taskResult.ok) {
+          this.logger.error('Failed to find task for cancellation', taskResult.error, { taskId });
+          throw taskResult.error;
+        }
+
+        if (!taskResult.value) {
+          this.logger.error('Task not found for cancellation', undefined, { taskId });
+          throw new Error(`Task ${taskId} not found`);
+        }
+
+        const task = taskResult.value;
+
+        // Check if task can be cancelled (must be QUEUED or RUNNING)
+        if (task.status !== 'queued' && task.status !== 'running') {
+          this.logger.warn('Cannot cancel task in current state', {
+            taskId,
+            status: task.status,
+            reason
+          });
+          throw new Error(`Task ${taskId} cannot be cancelled in state ${task.status}`);
+        }
+      }
+
       // Check if we have a worker for this task
       const workerResult = this.workerPool.getWorkerForTask(taskId);
-      
+
       if (workerResult.ok && workerResult.value) {
         const worker = workerResult.value;
         

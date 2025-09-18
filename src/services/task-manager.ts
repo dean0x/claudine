@@ -20,6 +20,7 @@ import {
   EventBus,
   OutputCapture
 } from '../core/interfaces.js';
+import { TaskStatusQueryEvent, TaskLogsQueryEvent } from '../core/events/events.js';
 import {
   Task,
   TaskId,
@@ -84,7 +85,7 @@ export class TaskManagerService implements TaskManager {
 
   async getStatus(taskId?: TaskId): Promise<Result<Task | readonly Task[]>> {
     // ARCHITECTURE: Pure event-driven query - no direct repository access
-    const result = await this.eventBus.request<any, Task | readonly Task[]>(
+    const result = await this.eventBus.request<TaskStatusQueryEvent, Task | readonly Task[]>(
       'TaskStatusQuery',
       { taskId }
     );
@@ -99,7 +100,7 @@ export class TaskManagerService implements TaskManager {
 
   async getLogs(taskId: TaskId, tail?: number): Promise<Result<TaskOutput>> {
     // ARCHITECTURE: Pure event-driven query for logs
-    const result = await this.eventBus.request<any, TaskOutput>(
+    const result = await this.eventBus.request<TaskLogsQueryEvent, TaskOutput>(
       'TaskLogsQuery',
       { taskId, tail }
     );
@@ -147,7 +148,7 @@ export class TaskManagerService implements TaskManager {
    */
   async retry(taskId: TaskId): Promise<Result<Task>> {
     // ARCHITECTURE: Use event-driven query to get task
-    const taskResult = await this.eventBus.request<any, Task>('TaskStatusQuery', { taskId });
+    const taskResult = await this.eventBus.request<TaskStatusQueryEvent, Task>('TaskStatusQuery', { taskId });
 
     if (!taskResult.ok) {
       return err(taskResult.error);
