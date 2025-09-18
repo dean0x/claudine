@@ -1,0 +1,30 @@
+{
+  "testRun": {
+    "id": null,
+    "startTime": null,
+    "endTime": null,
+    "environment": null,
+    "claudineVersion": "0.2.2",
+    "systemInfo": {
+      "platform": null,
+      "nodeVersion": null,
+      "cpuCount": null,
+      "totalMemory": null
+    }
+  },
+  "scenarios": [],
+  "summary": {
+    "totalTests": 0,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "cliPassRate": 0,
+    "mcpPassRate": 0,
+    "averageExecutionTime": 0
+  },
+  "metadata": {
+    "lastUpdated": null,
+    "testRunner": "claude-code-instance",
+    "notes": ""
+  }
+}

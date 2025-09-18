@@ -10,13 +10,14 @@ import {
   EventBus,
   OutputCapture
 } from '../core/interfaces.js';
-import { 
-  Task, 
-  TaskId, 
-  DelegateRequest, 
-  TaskOutput, 
+import {
+  Task,
+  TaskId,
+  DelegateRequest,
+  TaskOutput,
   createTask,
-  canCancel
+  canCancel,
+  isTerminalState
 } from '../core/domain.js';
 import { Result, ok, err } from '../core/result.js';
 import { taskNotFound, ClaudineError, ErrorCode } from '../core/errors.js';
@@ -128,11 +129,11 @@ export class TaskManagerService implements TaskManager {
     // Verify task exists and can be cancelled if repository is available
     if (this.repository) {
       const taskResult = await this.repository.findById(taskId);
-      
+
       if (!taskResult.ok) {
         return err(taskResult.error);
       }
-      
+
       if (!taskResult.value) {
         return err(taskNotFound(taskId));
       }
@@ -151,13 +152,115 @@ export class TaskManagerService implements TaskManager {
 
     // Emit event - handlers will manage the cancellation process
     const result = await this.eventBus.emit('TaskCancellationRequested', { taskId, reason });
-    
+
     if (!result.ok) {
       this.logger.error('Task cancellation failed', result.error, { taskId });
       return err(result.error);
     }
 
     return ok(undefined);
+  }
+
+  /**
+   * Retry a failed or completed task by creating a new task with the same configuration
+   *
+   * Creates a completely new task to avoid side effects from partially executed
+   * Claude Code operations (file changes, commits, etc.). The new task maintains
+   * a link to the original via retry tracking fields.
+   *
+   * @param taskId - ID of the task to retry (must be in terminal state)
+   * @returns New task with retry tracking, or error if task cannot be retried
+   *
+   * @example
+   * // CLI usage: claudine retry-task abc-123
+   * // Creates new task def-456 with:
+   * // - parentTaskId: abc-123 (or original if abc-123 is already a retry)
+   * // - retryCount: 1 (or incremented from abc-123's count)
+   * // - retryOf: abc-123 (direct parent)
+   */
+  async retry(taskId: TaskId): Promise<Result<Task>> {
+    // Verify task exists and is in a terminal state
+    if (!this.repository) {
+      return err(new ClaudineError(
+        ErrorCode.CONFIGURATION_ERROR,
+        'TaskRepository not available'
+      ));
+    }
+
+    const taskResult = await this.repository.findById(taskId);
+
+    if (!taskResult.ok) {
+      return err(taskResult.error);
+    }
+
+    if (!taskResult.value) {
+      return err(taskNotFound(taskId));
+    }
+
+    const originalTask = taskResult.value;
+
+    // Only retry tasks that are in terminal states
+    if (!isTerminalState(originalTask.status)) {
+      return err(new ClaudineError(
+        ErrorCode.INVALID_OPERATION,
+        `Task ${taskId} cannot be retried in state ${originalTask.status}`
+      ));
+    }
+
+    this.logger.info('Retrying task', {
+      taskId,
+      status: originalTask.status,
+      prompt: originalTask.prompt.substring(0, 100),
+    });
+
+    // Find the root parent task ID (for tracking all retries in a chain)
+    const parentTaskId = originalTask.parentTaskId || taskId;
+    const retryCount = (originalTask.retryCount || 0) + 1;
+
+    // Create the retry request with all the original task's configuration
+    const retryRequest: DelegateRequest = {
+      prompt: originalTask.prompt,
+      priority: originalTask.priority,
+      workingDirectory: originalTask.workingDirectory,
+      useWorktree: originalTask.useWorktree,
+      worktreeCleanup: originalTask.worktreeCleanup,
+      mergeStrategy: originalTask.mergeStrategy,
+      branchName: originalTask.branchName,
+      baseBranch: originalTask.baseBranch,
+      autoCommit: originalTask.autoCommit,
+      pushToRemote: originalTask.pushToRemote,
+      prTitle: originalTask.prTitle,
+      prBody: originalTask.prBody,
+      timeout: originalTask.timeout,
+      maxOutputBuffer: originalTask.maxOutputBuffer,
+      // Add retry tracking
+      parentTaskId: TaskId(parentTaskId),
+      retryCount,
+      retryOf: taskId,
+    };
+
+    // Create the new retry task
+    const newTask = createTask(retryRequest);
+
+    this.logger.info('Creating retry task', {
+      originalTaskId: taskId,
+      newTaskId: newTask.id,
+      retryCount,
+      parentTaskId,
+    });
+
+    // Emit TaskDelegated event for the new retry task
+    const result = await this.eventBus.emit('TaskDelegated', { task: newTask });
+
+    if (!result.ok) {
+      this.logger.error('Failed to delegate retry task', result.error, {
+        originalTaskId: taskId,
+        newTaskId: newTask.id,
+      });
+      return err(result.error);
+    }
+
+    return ok(newTask);
   }
 
   listTasks(): Result<readonly Task[]> {

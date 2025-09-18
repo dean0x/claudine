@@ -14,11 +14,33 @@ export default defineConfig({
         '**/*.test.ts',
         '**/*.spec.ts',
         '**/index.ts',
-        'vitest.config.ts'
+        'vitest.config.ts',
+        'tests/**/*'
       ]
     },
-    testTimeout: 10000,
-    hookTimeout: 10000
+    testTimeout: 30000, // Increased for integration tests
+    hookTimeout: 30000,
+    include: [
+      'src/**/*.test.ts',
+      'tests/**/*.test.ts'
+    ],
+    exclude: [
+      'node_modules',
+      'dist',
+      '.git'
+    ],
+    pool: 'forks', // Better isolation for integration tests
+    poolOptions: {
+      forks: {
+        singleFork: false,
+        maxForks: 2 // Limit concurrent test files to prevent process overload
+      }
+    },
+    // Run stress tests sequentially to prevent system overload
+    sequence: {
+      concurrent: false,
+      shuffle: false
+    }
   },
   resolve: {
     alias: {

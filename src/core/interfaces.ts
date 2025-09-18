@@ -141,6 +141,7 @@ export interface TaskManager {
   getStatus(taskId?: TaskId): Promise<Result<Task | readonly Task[]>>;
   getLogs(taskId: TaskId, tail?: number): Promise<Result<TaskOutput>>;
   cancel(taskId: TaskId, reason?: string): Promise<Result<void>>;
+  retry(taskId: TaskId): Promise<Result<Task>>;
   /** @deprecated Use getStatus() without taskId parameter instead for async task listing */
   listTasks(): Result<readonly Task[]>;
 }

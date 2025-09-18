@@ -26,6 +26,7 @@ export interface TaskDelegatedEvent extends BaseEvent {
 export interface TaskPersistedEvent extends BaseEvent {
   type: 'TaskPersisted';
   taskId: TaskId;
+  task: Task;  // Include full task for QueueHandler
 }
 
 export interface TaskQueuedEvent extends BaseEvent {
@@ -140,7 +141,7 @@ export interface RecoveryCompletedEvent extends BaseEvent {
 /**
  * Union type of all events
  */
-export type ClaudineEvent = 
+export type ClaudineEvent =
   | TaskDelegatedEvent
   | TaskPersistedEvent
   | TaskQueuedEvent

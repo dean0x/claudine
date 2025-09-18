@@ -3,11 +3,11 @@
  */
 
 import { vi, expect } from 'vitest';
-import { createTask, Priority, TaskStatus, TaskId } from '../../src/core/domain.js';
-import type { DelegateRequest, Task } from '../../src/core/domain.js';
-import type { ProcessSpawner, ResourceMonitor, Logger, OutputCapture, TaskQueue, WorkerPool, TaskRepository } from '../../src/core/interfaces.js';
-import type { EventBus } from '../../src/core/events/event-bus.js';
-import { ok } from '../../src/core/result.js';
+import { createTask, Priority, TaskStatus, TaskId } from '../../src/core/domain';
+import type { DelegateRequest, Task } from '../../src/core/domain';
+import type { ProcessSpawner, ResourceMonitor, Logger, OutputCapture, TaskQueue, WorkerPool, TaskRepository } from '../../src/core/interfaces';
+import type { EventBus } from '../../src/core/events/event-bus';
+import { ok } from '../../src/core/result';
 
 // Test Constants
 export const TEST_CONSTANTS = {

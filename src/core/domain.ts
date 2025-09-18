@@ -29,30 +29,38 @@ export interface Task {
   readonly status: TaskStatus;
   readonly priority: Priority;
   readonly workingDirectory?: string;
-  
+
   // Worktree control (replaces old cleanupWorktree boolean)
   readonly useWorktree: boolean;       // default: true (disabled via --no-worktree)
   readonly worktreeCleanup?: 'auto' | 'keep' | 'delete'; // default: 'auto'
-  
+
   // Merge strategy fields (only applies when useWorktree is true)
   readonly mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch'; // default: 'pr', undefined when no worktree
   readonly branchName?: string;        // default: 'claudine/task-{id}'
   readonly baseBranch?: string;        // default: current branch
   readonly autoCommit: boolean;        // default: true
   readonly pushToRemote: boolean;      // default: true for PR mode
-  readonly prTitle?: string;           
+  readonly prTitle?: string;
   readonly prBody?: string;
-  
+
   // Execution control
   readonly timeout?: number;
   readonly maxOutputBuffer?: number;
-  
+
+  // Retry tracking - populated when task is created via retry-task command
+  readonly parentTaskId?: TaskId;      // Root task ID in retry chain (original task)
+  readonly retryCount?: number;        // Number in retry chain (1 = first retry, 2 = second, etc.)
+  readonly retryOf?: TaskId;          // Direct parent task ID (task this is a retry of)
+
   // Timestamps and results
   readonly createdAt: number;
+  readonly updatedAt?: number;
   readonly startedAt?: number;
   readonly completedAt?: number;
   readonly workerId?: WorkerId;
   readonly exitCode?: number;
+  readonly duration?: number;
+  readonly error?: any;
 }
 
 export interface Worker {
@@ -83,12 +91,12 @@ export interface DelegateRequest {
   readonly prompt: string;
   readonly priority?: Priority;
   readonly workingDirectory?: string;
-  
+
   // Worktree control
   readonly useWorktree?: boolean;      // default: true
   readonly worktreeCleanup?: 'auto' | 'keep' | 'delete'; // default: 'auto'
-  
-  // Merge strategy fields  
+
+  // Merge strategy fields
   readonly mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch';
   readonly branchName?: string;
   readonly baseBranch?: string;
@@ -96,10 +104,15 @@ export interface DelegateRequest {
   readonly pushToRemote?: boolean;
   readonly prTitle?: string;
   readonly prBody?: string;
-  
+
   // Execution control
   readonly timeout?: number;
   readonly maxOutputBuffer?: number;
+
+  // Retry tracking (used internally when creating retry tasks)
+  readonly parentTaskId?: TaskId;
+  readonly retryCount?: number;
+  readonly retryOf?: TaskId;
 }
 
 export interface TaskUpdate {
@@ -108,6 +121,8 @@ export interface TaskUpdate {
   readonly startedAt?: number;
   readonly completedAt?: number;
   readonly exitCode?: number;
+  readonly duration?: number;
+  readonly error?: any;
 }
 
 /**
@@ -116,6 +131,7 @@ export interface TaskUpdate {
 export const updateTask = (task: Task, update: TaskUpdate): Task => ({
   ...task,
   ...update,
+  updatedAt: Date.now(),
 });
 
 /**
@@ -127,11 +143,11 @@ export const createTask = (request: DelegateRequest): Task => ({
   status: TaskStatus.QUEUED,
   priority: request.priority || Priority.P2,
   workingDirectory: request.workingDirectory,
-  
+
   // Worktree configuration
   useWorktree: request.useWorktree !== false, // Default to true
-  worktreeCleanup: request.worktreeCleanup || 'auto',
-  
+  worktreeCleanup: request.worktreeCleanup !== undefined ? request.worktreeCleanup : 'auto',
+
   // Merge strategy configuration
   mergeStrategy: request.useWorktree === false ? undefined : (request.mergeStrategy || 'pr'),
   branchName: request.branchName,
@@ -140,11 +156,17 @@ export const createTask = (request: DelegateRequest): Task => ({
   pushToRemote: request.pushToRemote !== false, // Default to true
   prTitle: request.prTitle,
   prBody: request.prBody,
-  
+
+  // Retry tracking
+  parentTaskId: request.parentTaskId,
+  retryCount: request.retryCount,
+  retryOf: request.retryOf,
+
   // Execution configuration
   timeout: request.timeout,
   maxOutputBuffer: request.maxOutputBuffer,
   createdAt: Date.now(),
+  updatedAt: Date.now(),
 });
 
 /**

@@ -7,8 +7,8 @@ import { TaskQueue, Logger } from '../../core/interfaces.js';
 import { Result, ok, err } from '../../core/result.js';
 import { BaseEventHandler } from '../../core/events/handlers.js';
 import { EventBus } from '../../core/events/event-bus.js';
-import { 
-  TaskDelegatedEvent,
+import {
+  TaskPersistedEvent,
   TaskCancelledEvent,
   createEvent
 } from '../../core/events/events.js';
@@ -29,9 +29,9 @@ export class QueueHandler extends BaseEventHandler {
    */
   async setup(eventBus: EventBus): Promise<Result<void>> {
     this.eventBus = eventBus; // Store reference for later use
-    
+
     const subscriptions = [
-      eventBus.subscribe('TaskDelegated', this.handleTaskDelegated.bind(this)),
+      eventBus.subscribe('TaskPersisted', this.handleTaskPersisted.bind(this)),
       eventBus.subscribe('TaskCancellationRequested', this.handleTaskCancellation.bind(this))
     ];
 
@@ -47,9 +47,9 @@ export class QueueHandler extends BaseEventHandler {
   }
 
   /**
-   * Handle task delegation - add task to queue
+   * Handle task persisted - add task to queue only after it's been saved to database
    */
-  private async handleTaskDelegated(event: TaskDelegatedEvent): Promise<void> {
+  private async handleTaskPersisted(event: TaskPersistedEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
       const result = this.queue.enqueue(event.task);
       
@@ -67,7 +67,6 @@ export class QueueHandler extends BaseEventHandler {
       });
 
       // Emit event that task is now queued - critical for worker spawning
-      console.error(`[QueueHandler] About to emit TaskQueued event for task ${event.task.id}`);
       if (this.eventBus) {
         const emitResult = await this.eventBus.emit('TaskQueued', { 
           taskId: event.task.id,
@@ -78,13 +77,12 @@ export class QueueHandler extends BaseEventHandler {
           this.logger.error('Failed to emit TaskQueued event', emitResult.error, {
             taskId: event.task.id
           });
-          console.error(`[QueueHandler] FAILED to emit TaskQueued event: ${emitResult.error.message}`);
           // Don't fail the enqueue operation - the task is in the queue
-        } else {
-          console.error(`[QueueHandler] Successfully emitted TaskQueued event for task ${event.task.id}`);
         }
       } else {
-        console.error(`[QueueHandler] ERROR: No eventBus available to emit TaskQueued event!`);
+        this.logger.error('No eventBus available to emit TaskQueued event', undefined, {
+          taskId: event.task.id
+        });
       }
       
       return ok(undefined);

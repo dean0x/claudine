@@ -70,11 +70,11 @@ export function pipeAsync<A, B, C, D, E>(
 ): Promise<E>;
 export async function pipeAsync(
   value: any,
-  ...fns: Array<(arg: any) => Promise<any>>
+  ...fns: Array<(arg: any) => Promise<any> | any>
 ): Promise<any> {
-  let result = value;
+  let result = await Promise.resolve(value);
   for (const fn of fns) {
-    result = await fn(result);
+    result = await Promise.resolve(fn(result));
   }
   return result;
 }
@@ -131,7 +131,11 @@ export function compose(
  * Tap for side effects (debugging, logging)
  */
 export const tap = <T>(fn: (value: T) => void) => (value: T): T => {
-  fn(value);
+  try {
+    fn(value);
+  } catch {
+    // Ignore tap errors by default
+  }
   return value;
 };
 
@@ -139,3 +143,38 @@ export const tap = <T>(fn: (value: T) => void) => (value: T): T => {
  * Identity function
  */
 export const identity = <T>(value: T): T => value;
+
+/**
+ * Async tap for async side effects
+ */
+export const tapAsync = <T>(fn: (value: T) => Promise<void>) => async (value: T): Promise<T> => {
+  await fn(value);
+  return value;
+};
+
+/**
+ * Async compose functions right-to-left
+ */
+export function composeAsync<A, B>(
+  fn1: (a: A) => Promise<B>
+): (a: A) => Promise<B>;
+export function composeAsync<A, B, C>(
+  fn2: (b: B) => Promise<C>,
+  fn1: (a: A) => Promise<B>
+): (a: A) => Promise<C>;
+export function composeAsync<A, B, C, D>(
+  fn3: (c: C) => Promise<D>,
+  fn2: (b: B) => Promise<C>,
+  fn1: (a: A) => Promise<B>
+): (a: A) => Promise<D>;
+export function composeAsync(
+  ...fns: Array<(arg: any) => Promise<any>>
+): (arg: any) => Promise<any> {
+  return async (value: any) => {
+    let result = value;
+    for (let i = fns.length - 1; i >= 0; i--) {
+      result = await fns[i](result);
+    }
+    return result;
+  };
+}

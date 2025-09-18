@@ -42,6 +42,10 @@ const CancelTaskSchema = z.object({
   reason: z.string().optional(),
 });
 
+const RetryTaskSchema = z.object({
+  taskId: z.string(),
+});
+
 export class MCPAdapter {
   private server: Server;
 
@@ -95,6 +99,8 @@ export class MCPAdapter {
             return await this.handleTaskLogs(args);
           case 'CancelTask':
             return await this.handleCancelTask(args);
+          case 'RetryTask':
+            return await this.handleRetryTask(args);
           default:
             throw new Error(`Unknown tool: ${name}`);
         }
@@ -241,6 +247,21 @@ export class MCPAdapter {
                     type: 'string',
                     description: 'Optional reason for cancellation',
                     maxLength: 200,
+                  },
+                },
+                required: ['taskId'],
+              },
+            },
+            {
+              name: 'RetryTask',
+              description: 'Retry a failed or completed task',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  taskId: {
+                    type: 'string',
+                    description: 'Task ID to retry',
+                    pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
                   },
                 },
                 required: ['taskId'],
@@ -475,6 +496,55 @@ export class MCPAdapter {
             text: JSON.stringify({
               success: true,
               message: `Task ${taskId} cancelled`,
+            }),
+          },
+        ],
+      }),
+      err: (error) => ({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              success: false,
+              error: error.message,
+            }),
+          },
+        ],
+        isError: true,
+      }),
+    });
+  }
+
+  private async handleRetryTask(args: unknown): Promise<any> {
+    const parseResult = RetryTaskSchema.safeParse(args);
+
+    if (!parseResult.success) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Validation error: ${parseResult.error.message}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const { taskId } = parseResult.data;
+
+    const result = await this.taskManager.retry(TaskId(taskId));
+
+    return match(result, {
+      ok: (newTask) => ({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: `Task ${taskId} retried successfully`,
+              newTaskId: newTask.id,
+              retryCount: newTask.retryCount || 1,
+              parentTaskId: newTask.parentTaskId,
             }),
           },
         ],

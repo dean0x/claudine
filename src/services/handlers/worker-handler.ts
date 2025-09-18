@@ -61,17 +61,19 @@ export class WorkerHandler extends BaseEventHandler {
    * Handle task queued - process immediately
    */
   private async handleTaskQueued(event: any): Promise<void> {
-    console.error(`[WorkerHandler] Received TaskQueued event for task ${event.taskId || event.task?.id}`);
+    this.logger.debug('Received TaskQueued event', {
+      taskId: event.taskId || event.task?.id
+    });
     await this.handleEvent(event, async (event) => {
       this.logger.debug('Task queued, attempting to process', {
         taskId: event.taskId || event.task?.id
       });
 
-      console.error(`[WorkerHandler] About to call processNextTask()`);
+      this.logger.debug('About to call processNextTask()');
       // Process task immediately when queued
       await this.processNextTask();
-      console.error(`[WorkerHandler] Completed processNextTask()`);
-      
+      this.logger.debug('Completed processNextTask()');
+
       return ok(undefined);
     });
   }

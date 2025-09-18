@@ -262,6 +262,9 @@ export async function bootstrap() {
       throw new Error(`Failed to setup OutputHandler: ${outputSetup.error.message}`);
     }
 
+    // Note: Retry functionality is now handled directly in TaskManager.retry()
+    // The retry creates a new task with retry tracking and emits TaskDelegated event
+
     logger.info('Event-driven architecture initialized successfully');
     return taskManager;
   });

@@ -59,7 +59,22 @@ export enum ErrorCode {
   SYSTEM_ERROR = 'SYSTEM_ERROR',
   /** Configuration validation or loading failed */
   CONFIGURATION_ERROR = 'CONFIGURATION_ERROR',
-  
+  /**
+   * Operation not allowed in current context
+   * @example Attempting to retry a task that is not in a terminal state (QUEUED, RUNNING)
+   * @example Trying to cancel a task that has already completed
+   * @example Performing operations on tasks without required permissions
+   */
+  INVALID_OPERATION = 'INVALID_OPERATION',
+  /**
+   * System state inconsistent or corrupted
+   * @example Missing expected data in database
+   * @example Task references non-existent parent task
+   * @example Orphaned worker processes without corresponding tasks
+   * @example Database schema version mismatch
+   */
+  INVALID_STATE = 'INVALID_STATE',
+
   // Queue errors
   /** Task queue has reached maximum capacity */
   QUEUE_FULL = 'QUEUE_FULL',

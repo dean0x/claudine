@@ -26,10 +26,18 @@ export class SQLiteTaskRepository implements TaskRepository {
     this.saveStmt = this.db.prepare(`
       INSERT OR REPLACE INTO tasks (
         id, prompt, status, priority, working_directory, use_worktree,
-        created_at, started_at, completed_at, worker_id, exit_code, dependencies
+        worktree_cleanup, merge_strategy, branch_name, base_branch,
+        auto_commit, push_to_remote, pr_title, pr_body,
+        timeout, max_output_buffer,
+        created_at, started_at, completed_at, worker_id, exit_code, dependencies,
+        parent_task_id, retry_count, retry_of
       ) VALUES (
         @id, @prompt, @status, @priority, @workingDirectory, @useWorktree,
-        @createdAt, @startedAt, @completedAt, @workerId, @exitCode, @dependencies
+        @worktreeCleanup, @mergeStrategy, @branchName, @baseBranch,
+        @autoCommit, @pushToRemote, @prTitle, @prBody,
+        @timeout, @maxOutputBuffer,
+        @createdAt, @startedAt, @completedAt, @workerId, @exitCode, @dependencies,
+        @parentTaskId, @retryCount, @retryOf
       )
     `);
 
@@ -67,13 +75,25 @@ export class SQLiteTaskRepository implements TaskRepository {
           priority: task.priority,
           workingDirectory: task.workingDirectory || null,
           useWorktree: task.useWorktree ? 1 : 0,
-          cleanupWorktree: task.worktreeCleanup === 'delete' ? 1 : 0, // Legacy mapping
+          worktreeCleanup: task.worktreeCleanup || 'auto',
+          mergeStrategy: task.mergeStrategy || 'pr',
+          branchName: task.branchName || null,
+          baseBranch: task.baseBranch || null,
+          autoCommit: task.autoCommit ? 1 : 0,
+          pushToRemote: task.pushToRemote ? 1 : 0,
+          prTitle: task.prTitle || null,
+          prBody: task.prBody || null,
+          timeout: task.timeout || null,
+          maxOutputBuffer: task.maxOutputBuffer || null,
           createdAt: task.createdAt,
           startedAt: task.startedAt || null,
           completedAt: task.completedAt || null,
           workerId: task.workerId || null,
           exitCode: task.exitCode ?? null,
-          dependencies: null // Phase 4: Task dependencies not yet implemented
+          dependencies: null, // Phase 4: Task dependencies not yet implemented
+          parentTaskId: task.parentTaskId || null,
+          retryCount: task.retryCount || null,
+          retryOf: task.retryOf || null
         };
 
         this.saveStmt.run(dbTask);
@@ -207,10 +227,19 @@ export class SQLiteTaskRepository implements TaskRepository {
       priority: row.priority as Priority,
       workingDirectory: row.working_directory || undefined,
       useWorktree: row.use_worktree === 1,
-      worktreeCleanup: row.cleanup_worktree ? 'delete' : 'auto', // Legacy mapping
-      mergeStrategy: 'pr' as const, // Default for legacy tasks
-      autoCommit: true,
-      pushToRemote: true,
+      worktreeCleanup: row.worktree_cleanup || 'auto',
+      mergeStrategy: row.merge_strategy || 'pr',
+      branchName: row.branch_name || undefined,
+      baseBranch: row.base_branch || undefined,
+      autoCommit: row.auto_commit === null || row.auto_commit === 1,
+      pushToRemote: row.push_to_remote === null || row.push_to_remote === 1,
+      prTitle: row.pr_title || undefined,
+      prBody: row.pr_body || undefined,
+      timeout: row.timeout || undefined,
+      maxOutputBuffer: row.max_output_buffer || undefined,
+      parentTaskId: row.parent_task_id ? row.parent_task_id as TaskId : undefined,
+      retryCount: row.retry_count || undefined,
+      retryOf: row.retry_of ? row.retry_of as TaskId : undefined,
       createdAt: row.created_at,
       startedAt: row.started_at || undefined,
       completedAt: row.completed_at || undefined,

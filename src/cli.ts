@@ -43,6 +43,7 @@ Task Commands:
   status [task-id]             Get status of task(s)
   logs <task-id> [--tail N]    Get output logs for a task (optionally limit to last N lines)
   cancel <task-id> [reason]    Cancel a running task with optional reason
+  retry-task <task-id>         Retry a failed or completed task
   help                         Show this help message
 
 Examples:
@@ -276,25 +277,60 @@ async function cancelTask(taskId: string, reason?: string) {
   try {
     console.log('🚀 Bootstrapping Claudine...');
     const container = await bootstrap();
-    
+
     const taskManagerResult = await container.resolve('taskManager');
     if (!taskManagerResult.ok) {
       console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
       process.exit(1);
     }
-    
+
     const taskManager = taskManagerResult.value as any;
     console.log('🛑 Canceling task:', taskId);
     if (reason) {
       console.log('📝 Reason:', reason);
     }
-    
+
     const result = await taskManager.cancel(taskId, reason);
     if (result.ok) {
       console.log('✅ Task canceled successfully');
       process.exit(0);
     } else {
       console.error('❌ Failed to cancel task:', result.error.message);
+      process.exit(1);
+    }
+  } catch (error) {
+    console.error('❌ Error:', error);
+    process.exit(1);
+  }
+}
+
+async function retryTask(taskId: string) {
+  try {
+    console.log('🚀 Bootstrapping Claudine...');
+    const container = await bootstrap();
+
+    const taskManagerResult = await container.resolve('taskManager');
+    if (!taskManagerResult.ok) {
+      console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
+      process.exit(1);
+    }
+
+    const taskManager = taskManagerResult.value as any;
+    console.log('🔄 Retrying task:', taskId);
+
+    const result = await taskManager.retry(taskId);
+    if (result.ok) {
+      const newTask = result.value;
+      console.log('✅ Retry task created successfully');
+      console.log(`📝 New Task ID: ${newTask.id}`);
+      console.log(`📊 Status: ${newTask.status}`);
+      console.log(`🔢 Retry count: ${newTask.retryCount || 1}`);
+      if (newTask.parentTaskId) {
+        console.log(`🔗 Parent task: ${newTask.parentTaskId}`);
+      }
+      process.exit(0);
+    } else {
+      console.error('❌ Failed to retry task:', result.error.message);
       process.exit(1);
     }
   } catch (error) {
@@ -583,14 +619,24 @@ if (mainCommand === 'mcp') {
     console.error('         claudine cancel abc123 "Taking too long"');
     process.exit(1);
   }
-  
+
   // Optional reason is everything after the task ID
   const reason = args.slice(2).join(' ') || undefined;
   await cancelTask(taskId, reason);
-  
+
+} else if (mainCommand === 'retry-task') {
+  const taskId = args[1];
+  if (!taskId) {
+    console.error('❌ Usage: claudine retry-task <task-id>');
+    console.error('Example: claudine retry-task abc123');
+    process.exit(1);
+  }
+
+  await retryTask(taskId);
+
 } else if (mainCommand === 'help' || !mainCommand) {
   showHelp();
-  
+
 } else {
   console.error(`❌ Unknown command: ${mainCommand}`);
   showHelp();

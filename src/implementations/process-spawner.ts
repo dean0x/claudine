@@ -22,8 +22,22 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
   spawn(prompt: string, workingDirectory: string, taskId?: string): Result<{ process: ChildProcess; pid: number }> {
     return tryCatch(
       () => {
+        // Make prompt more explicit if it looks like a simple command
+        let finalPrompt = prompt;
+
+        // If the prompt looks like a simple command without explicit instructions,
+        // wrap it to make Claude understand it should execute it
+        if (!prompt.toLowerCase().includes('run') &&
+            !prompt.toLowerCase().includes('execute') &&
+            !prompt.toLowerCase().includes('perform') &&
+            !prompt.toLowerCase().includes('bash') &&
+            !prompt.toLowerCase().includes('command') &&
+            prompt.split(' ').length <= 3) {
+          finalPrompt = `Execute the following bash command: ${prompt}`;
+        }
+
         // With --print flag, prompt is passed as argument, not via stdin
-        const args = [...this.baseArgs, prompt];
+        const args = [...this.baseArgs, finalPrompt];
         
         // Log via proper logger instead of console.error to avoid interfering with output capture
         // console.error(`[ProcessSpawner] Executing: ${this.claudeCommand} ${args.map(arg => `"${arg}"`).join(' ')}`);

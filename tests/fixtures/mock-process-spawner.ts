@@ -1,0 +1,204 @@
+import { ProcessSpawner } from '../../src/core/interfaces';
+import { Result, ok, err } from '../../src/core/result';
+import { ClaudineError } from '../../src/core/errors';
+import { ChildProcess, spawn } from 'child_process';
+import { EventEmitter } from 'events';
+
+/**
+ * Mock process spawner for testing
+ * Simulates Claude command execution without requiring the actual CLI
+ */
+export class MockProcessSpawner implements ProcessSpawner {
+  private processes = new Map<string, MockChildProcess>();
+  private shouldFail = false;
+  private failureMessage = 'Mock failure';
+  private executionDelay = 100;
+
+  spawn(command: string, args: string[]): Result<ChildProcess> {
+    if (this.shouldFail) {
+      return err(new ClaudineError(this.failureMessage, 'SPAWN_FAILED'));
+    }
+
+    // Parse the command to determine what to simulate
+    const isClaudeCommand = command === 'claude';
+    const prompt = args[args.length - 1]; // Last arg is usually the prompt
+
+    if (isClaudeCommand) {
+      // Simulate Claude command execution
+      const mockProcess = new MockChildProcess(prompt, this.executionDelay);
+      this.processes.set(mockProcess.pid.toString(), mockProcess);
+
+      // Start execution after a small delay
+      setTimeout(() => mockProcess.execute(), 10);
+
+      return ok(mockProcess as any);
+    } else {
+      // For non-Claude commands, use real spawn
+      try {
+        const child = spawn(command, args, {
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+        return ok(child);
+      } catch (error) {
+        return err(new ClaudineError(`Failed to spawn process: ${error}`, 'SPAWN_FAILED'));
+      }
+    }
+  }
+
+  // Test helper methods
+  setFailure(shouldFail: boolean, message?: string): void {
+    this.shouldFail = shouldFail;
+    if (message) {
+      this.failureMessage = message;
+    }
+  }
+
+  setExecutionDelay(delay: number): void {
+    this.executionDelay = delay;
+  }
+
+  getProcess(pid: string): MockChildProcess | undefined {
+    return this.processes.get(pid);
+  }
+
+  cleanup(): void {
+    for (const process of this.processes.values()) {
+      process.kill();
+    }
+    this.processes.clear();
+  }
+}
+
+/**
+ * Mock ChildProcess for simulating Claude execution
+ */
+class MockChildProcess extends EventEmitter {
+  public readonly pid: number;
+  public readonly stdout: EventEmitter;
+  public readonly stderr: EventEmitter;
+  public killed = false;
+  public exitCode: number | null = null;
+  public signalCode: string | null = null;
+
+  private prompt: string;
+  private executionDelay: number;
+  private timeout?: NodeJS.Timeout;
+
+  constructor(prompt: string, executionDelay = 100) {
+    super();
+    this.pid = Math.floor(Math.random() * 100000);
+    this.stdout = new EventEmitter();
+    this.stderr = new EventEmitter();
+    this.prompt = prompt;
+    this.executionDelay = executionDelay;
+
+    // Make stdout and stderr look like streams
+    (this.stdout as any).pipe = () => this.stdout;
+    (this.stderr as any).pipe = () => this.stderr;
+  }
+
+  execute(): void {
+    if (this.killed) {
+      return;
+    }
+
+    // Simulate different behaviors based on the prompt
+    if (this.prompt.includes('exit 1')) {
+      // Simulate command failure
+      this.timeout = setTimeout(() => {
+        this.stderr.emit('data', Buffer.from('Command failed\n'));
+        this.exitCode = 1;
+        this.emit('exit', 1, null);
+      }, this.executionDelay);
+    } else if (this.prompt.includes('sleep')) {
+      // Extract sleep duration
+      const match = this.prompt.match(/sleep (\d+)/);
+      const sleepDuration = match ? parseInt(match[1]) * 1000 : 1000;
+
+      // Simulate long-running command
+      this.stdout.emit('data', Buffer.from('Starting long task\n'));
+
+      this.timeout = setTimeout(() => {
+        if (!this.killed) {
+          this.stdout.emit('data', Buffer.from('Task completed\n'));
+          this.exitCode = 0;
+          this.emit('exit', 0, null);
+        }
+      }, Math.min(sleepDuration, 5000)); // Cap at 5 seconds for tests
+    } else if (this.prompt.includes('echo')) {
+      // Extract echo content
+      const match = this.prompt.match(/echo ["']?(.+?)["']?(?:\s|$)/);
+      const content = match ? match[1] : 'test output';
+
+      // Simulate echo command
+      this.timeout = setTimeout(() => {
+        this.stdout.emit('data', Buffer.from(`${content}\n`));
+        this.exitCode = 0;
+        this.emit('exit', 0, null);
+      }, this.executionDelay);
+    } else if (this.prompt.includes('pwd')) {
+      // Simulate pwd command
+      this.timeout = setTimeout(() => {
+        this.stdout.emit('data', Buffer.from('/workspace/claudine\n'));
+        this.exitCode = 0;
+        this.emit('exit', 0, null);
+      }, this.executionDelay);
+    } else if (this.prompt.includes('ls')) {
+      // Simulate ls command
+      this.timeout = setTimeout(() => {
+        this.stdout.emit('data', Buffer.from('file1.txt\nfile2.txt\ndir1/\n'));
+        this.exitCode = 0;
+        this.emit('exit', 0, null);
+      }, this.executionDelay);
+    } else if (this.prompt.includes('for')) {
+      // Simulate loop output
+      this.timeout = setTimeout(() => {
+        for (let i = 1; i <= 5; i++) {
+          this.stdout.emit('data', Buffer.from(`Line ${i}\n`));
+        }
+        this.exitCode = 0;
+        this.emit('exit', 0, null);
+      }, this.executionDelay);
+    } else if (this.prompt.includes('kill')) {
+      // Simulate process crash
+      this.timeout = setTimeout(() => {
+        this.stdout.emit('data', Buffer.from('Before crash\n'));
+        this.signalCode = 'SIGKILL';
+        this.emit('exit', null, 'SIGKILL');
+      }, this.executionDelay);
+    } else {
+      // Default simulation
+      this.timeout = setTimeout(() => {
+        this.stdout.emit('data', Buffer.from(`Executed: ${this.prompt}\n`));
+        this.exitCode = 0;
+        this.emit('exit', 0, null);
+      }, this.executionDelay);
+    }
+  }
+
+  kill(signal?: string): boolean {
+    if (this.killed) {
+      return false;
+    }
+
+    this.killed = true;
+
+    if (this.timeout) {
+      clearTimeout(this.timeout);
+    }
+
+    // Emit exit event with signal
+    this.signalCode = signal || 'SIGTERM';
+    setImmediate(() => {
+      this.emit('exit', null, this.signalCode);
+    });
+
+    return true;
+  }
+
+  // Implement other ChildProcess methods as no-ops or minimal implementations
+  ref(): void {}
+  unref(): void {}
+  disconnect(): void {}
+  send(): boolean { return false; }
+}
