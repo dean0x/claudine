@@ -53,27 +53,24 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
 
   // Create test config
   const config: Configuration = {
-    maxWorkers,
     timeout: 30000,
     maxOutputBuffer: 1024 * 1024, // 1MB for tests
-    cpuThreshold: 80,
-    memoryThreshold: 80,
-    minWorkers: 1,
-    scaleUpThreshold: 70,
-    scaleDownThreshold: 30,
-    scaleCheckInterval: 1000,
-    recoveryCheckInterval: 5000,
+    cpuCoresReserved: 1, // Reserve 1 core for tests
+    memoryReserve: 536870912, // 512MB for tests
     logLevel,
-    logDirectory: path.join(__dirname, '..', '..', 'test-logs', randomUUID()),
-    databasePath: database === ':memory:' ? ':memory:' : path.join(__dirname, '..', '..', 'test-db', `${randomUUID()}.db`),
-    testMode
+    maxListenersPerEvent: 100,
+    maxTotalSubscriptions: 1000
   };
+
+  // Create test-specific paths
+  const logDirectory = path.join(__dirname, '..', '..', 'test-logs', randomUUID());
+  const databasePath = database === ':memory:' ? ':memory:' : path.join(__dirname, '..', '..', 'test-db', `${randomUUID()}.db`);
 
   // Ensure directories exist for non-memory databases
   if (database !== ':memory:') {
-    await fs.mkdir(path.dirname(config.databasePath), { recursive: true });
+    await fs.mkdir(path.dirname(databasePath), { recursive: true });
   }
-  await fs.mkdir(config.logDirectory, { recursive: true });
+  await fs.mkdir(logDirectory, { recursive: true });
 
   // Create container
   const container = new Container();
@@ -92,7 +89,7 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
   container.registerValue('eventBus', eventBus);
 
   // Register database
-  const db = new Database(config.databasePath);
+  const db = new Database(databasePath);
   container.registerValue('database', db);
 
   // Register repositories
@@ -248,11 +245,11 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
 
     // Clean up test directories
     try {
-      await fs.rm(config.logDirectory, { recursive: true, force: true });
-      if (config.databasePath !== ':memory:') {
-        await fs.rm(config.databasePath, { force: true });
-        await fs.rm(`${config.databasePath}-shm`, { force: true });
-        await fs.rm(`${config.databasePath}-wal`, { force: true });
+      await fs.rm(logDirectory, { recursive: true, force: true });
+      if (databasePath !== ':memory:') {
+        await fs.rm(databasePath, { force: true });
+        await fs.rm(`${databasePath}-shm`, { force: true });
+        await fs.rm(`${databasePath}-wal`, { force: true });
       }
     } catch {
       // Ignore cleanup errors
