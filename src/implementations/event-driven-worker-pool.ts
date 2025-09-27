@@ -8,7 +8,8 @@ import { promisify } from 'util';
 import path from 'path';
 
 const execAsync = promisify(exec);
-import { WorkerPool, ProcessSpawner, ResourceMonitor, Logger, OutputCapture, EventBus, WorktreeManager, WorktreeInfo, CompletionResult } from '../core/interfaces.js';
+import { WorkerPool, ProcessSpawner, ResourceMonitor, Logger, OutputCapture, WorktreeManager, WorktreeInfo, CompletionResult } from '../core/interfaces.js';
+import { EventBus } from '../core/events/event-bus.js';
 import { Worker, WorkerId, Task, TaskId } from '../core/domain.js';
 import { Result, ok, err, tryCatchAsync } from '../core/result.js';
 import { ClaudineError, ErrorCode, taskTimeout } from '../core/errors.js';
@@ -177,6 +178,8 @@ export class EventDrivenWorkerPool implements WorkerPool {
       pid: worker.pid
     });
 
+    // Note: WorkerSpawned event is emitted by WorkerHandler, not here
+
     return ok(worker);
   }
 
@@ -223,6 +226,13 @@ export class EventDrivenWorkerPool implements WorkerPool {
 
       // Decrement worker count
       this.monitor.decrementWorkerCount();
+
+      // Emit WorkerKilled event
+      await this.eventBus.emit('WorkerKilled', {
+        workerId,
+        taskId: worker.taskId,
+        reason: 'Explicit kill request'
+      });
 
       return ok(undefined);
     } catch (error) {
@@ -391,7 +401,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
     this.taskToWorker.delete(taskId);
     this.monitor.decrementWorkerCount();
 
-    // Emit appropriate event
+    // Emit appropriate events
     if (exitCode === 0) {
       await this.eventBus.emit('TaskCompleted', {
         taskId,

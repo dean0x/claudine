@@ -1,7 +1,8 @@
 import type { Task, TaskSpecification } from '../../src/types/index';
+import { randomUUID } from 'crypto';
 
 export const createTestTask = (overrides?: Partial<Task>): Task => ({
-  id: 'test-task-123',
+  id: overrides?.id || `test-task-${randomUUID()}`,
   prompt: 'Test prompt',
   priority: 'P1',
   status: 'pending',
@@ -77,7 +78,7 @@ export const createMockEventBus = () => {
         try {
           handler({ type: event, payload, timestamp: Date.now() });
         } catch (error) {
-          console.error(`Handler error for ${event}:`, error);
+          // Silently ignore handler errors in test fixture
         }
       });
     },

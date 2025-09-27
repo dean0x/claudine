@@ -168,6 +168,57 @@ export class Container {
   }
 
   /**
+   * Dispose container and trigger graceful shutdown
+   */
+  async dispose(): Promise<void> {
+    // Get EventBus if available to emit shutdown events
+    const eventBusResult = this.get('eventBus');
+    if (eventBusResult.ok) {
+      const eventBus = eventBusResult.value as any;
+      if (eventBus.emit) {
+        await eventBus.emit('ShutdownInitiated', {});
+      }
+    }
+
+    // Kill all workers if worker pool exists
+    const workerPoolResult = this.get('workerPool');
+    if (workerPoolResult.ok) {
+      const workerPool = workerPoolResult.value as any;
+      if (workerPool.killAll) {
+        if (eventBusResult.ok) {
+          const eventBus = eventBusResult.value as any;
+          await eventBus.emit('WorkersTerminating', {});
+        }
+        await workerPool.killAll();
+      }
+    }
+
+    // Close database if exists
+    const dbResult = this.get('database');
+    if (dbResult.ok) {
+      const db = dbResult.value as any;
+      if (db.close) {
+        if (eventBusResult.ok) {
+          const eventBus = eventBusResult.value as any;
+          await eventBus.emit('DatabaseClosing', {});
+        }
+        db.close();
+      }
+    }
+
+    // Final cleanup event
+    if (eventBusResult.ok) {
+      const eventBus = eventBusResult.value as any;
+      if (eventBus.emit) {
+        await eventBus.emit('ShutdownComplete', {});
+      }
+    }
+
+    // Clear all services
+    this.clear();
+  }
+
+  /**
    * Create a child container (inherits registrations)
    */
   createChild(): Container {

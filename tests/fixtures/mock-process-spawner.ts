@@ -14,35 +14,27 @@ export class MockProcessSpawner implements ProcessSpawner {
   private failureMessage = 'Mock failure';
   private executionDelay = 100;
 
-  spawn(command: string, args: string[]): Result<ChildProcess> {
+  spawn(prompt: string, workingDirectory: string, taskId?: string): Result<{ process: ChildProcess; pid: number }> {
     if (this.shouldFail) {
       return err(new ClaudineError(this.failureMessage, 'SPAWN_FAILED'));
     }
 
-    // Parse the command to determine what to simulate
-    const isClaudeCommand = command === 'claude';
-    const prompt = args[args.length - 1]; // Last arg is usually the prompt
+    // Simulate Claude command execution
+    const mockProcess = new MockChildProcess(prompt, this.executionDelay);
+    this.processes.set(mockProcess.pid.toString(), mockProcess);
 
-    if (isClaudeCommand) {
-      // Simulate Claude command execution
-      const mockProcess = new MockChildProcess(prompt, this.executionDelay);
-      this.processes.set(mockProcess.pid.toString(), mockProcess);
-
-      // Start execution after a small delay
-      setTimeout(() => mockProcess.execute(), 10);
-
-      return ok(mockProcess as any);
-    } else {
-      // For non-Claude commands, use real spawn
-      try {
-        const child = spawn(command, args, {
-          stdio: ['ignore', 'pipe', 'pipe']
-        });
-        return ok(child);
-      } catch (error) {
-        return err(new ClaudineError(`Failed to spawn process: ${error}`, 'SPAWN_FAILED'));
-      }
+    // Store taskId association if provided
+    if (taskId) {
+      this.processes.set(taskId, mockProcess);
     }
+
+    // Start execution after a small delay
+    setTimeout(() => mockProcess.execute(), 10);
+
+    return ok({
+      process: mockProcess as any,
+      pid: mockProcess.pid
+    });
   }
 
   // Test helper methods
@@ -66,6 +58,64 @@ export class MockProcessSpawner implements ProcessSpawner {
       process.kill();
     }
     this.processes.clear();
+  }
+
+  // Additional test helper methods for integration tests
+  simulateCompletion(taskId: string, output: string): void {
+    // Try to find process by taskId first
+    const processByTaskId = this.processes.get(taskId);
+    if (processByTaskId && !processByTaskId.killed) {
+      processByTaskId.stdout.emit('data', Buffer.from(output + '\n'));
+      processByTaskId.exitCode = 0;
+      processByTaskId.emit('exit', 0, null);
+      return;
+    }
+
+    // Fallback: complete first active process
+    for (const [pid, process] of this.processes) {
+      if (!process.killed) {
+        process.stdout.emit('data', Buffer.from(output + '\n'));
+        process.exitCode = 0;
+        process.emit('exit', 0, null);
+        break;
+      }
+    }
+  }
+
+  simulateError(taskId: string, error: Error): void {
+    // Try to find process by taskId first
+    const processByTaskId = this.processes.get(taskId);
+    if (processByTaskId && !processByTaskId.killed) {
+      processByTaskId.stderr.emit('data', Buffer.from(error.message + '\n'));
+      processByTaskId.exitCode = 1;
+      processByTaskId.emit('exit', 1, null);
+      return;
+    }
+
+    // Fallback: error first active process
+    for (const [pid, process] of this.processes) {
+      if (!process.killed) {
+        process.stderr.emit('data', Buffer.from(error.message + '\n'));
+        process.exitCode = 1;
+        process.emit('exit', 1, null);
+        break;
+      }
+    }
+  }
+
+  getActiveTasks(): string[] {
+    const active: string[] = [];
+    for (const [pid, process] of this.processes) {
+      if (!process.killed && process.exitCode === null) {
+        active.push(pid); // Use pid as task identifier
+      }
+    }
+    return active;
+  }
+
+  simulateHighCPU(percent: number): void {
+    // This would be handled by mock resource monitor
+    // Just a placeholder for integration tests
   }
 }
 

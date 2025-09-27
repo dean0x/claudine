@@ -3,28 +3,42 @@
  * Tracks CPU, memory, and determines if we can spawn more workers
  */
 
-import os from 'os';
-import { ResourceMonitor, EventBus, Logger } from '../core/interfaces.js';
+import * as os from 'os';
+import { ResourceMonitor, Logger } from '../core/interfaces.js';
+import { EventBus } from '../core/events/event-bus.js';
 import { SystemResources } from '../core/domain.js';
 import { Result, ok, err, tryCatchAsync } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
 
 export class SystemResourceMonitor implements ResourceMonitor {
-  private readonly cpuThreshold: number;
+  private readonly cpuCoresReserved: number;
   private readonly memoryReserve: number;
+  private readonly maxWorkers: number;
   private workerCount = 0;
   private monitoringInterval: NodeJS.Timeout | null = null;
   private isMonitoring = false;
 
+  // Per-worker resource estimates based on measurements
+  private readonly MEMORY_PER_WORKER_MB = 450; // ~410MB observed + buffer
+  private readonly CORES_PER_WORKER = 0.15; // ~11-15% of one core observed
+
   constructor(
-    cpuThreshold = 80, // Max 80% CPU usage
-    memoryReserve = 1_000_000_000, // Keep 1GB free
+    cpuCoresReserved = 2, // Reserve 2 CPU cores for system operations
+    memoryReserve = 2_684_354_560, // Keep 2.5GB free
     private readonly eventBus?: EventBus,
     private readonly logger?: Logger,
     private readonly monitoringIntervalMs = 5000 // Emit events every 5 seconds
   ) {
-    this.cpuThreshold = cpuThreshold;
+    this.cpuCoresReserved = cpuCoresReserved;
     this.memoryReserve = memoryReserve;
+
+    // Dynamic max workers based on system resources
+    const totalCores = os.cpus().length;
+    const availableCores = Math.max(1, totalCores - cpuCoresReserved);
+    const maxWorkersByCores = Math.floor(availableCores / this.CORES_PER_WORKER);
+
+    // Use environment override or calculate based on cores
+    this.maxWorkers = parseInt(process.env.MAX_WORKERS || String(maxWorkersByCores), 10);
   }
 
   async getResources(): Promise<Result<SystemResources>> {
@@ -56,43 +70,82 @@ export class SystemResourceMonitor implements ResourceMonitor {
   }
 
   async canSpawnWorker(): Promise<Result<boolean>> {
+    // Check max workers limit first
+    if (this.workerCount >= this.maxWorkers) {
+      this.logger?.debug('Cannot spawn: Max workers limit reached', {
+        currentWorkers: this.workerCount,
+        maxWorkers: this.maxWorkers
+      });
+      return ok(false);
+    }
+
     const resourcesResult = await this.getResources();
-    
+
     if (!resourcesResult.ok) {
       return resourcesResult;
     }
 
     const resources = resourcesResult.value;
-    
-    // Debug logs removed to avoid interfering with output capture
-    // console.error(`[ResourceMonitor] CPU: ${resources.cpuUsage.toFixed(1)}%, Memory: ${(resources.availableMemory / 1e9).toFixed(1)}GB, Workers: ${resources.workerCount}`);
-    
-    // Check CPU threshold
-    if (resources.cpuUsage >= this.cpuThreshold) {
-      // console.error(`[ResourceMonitor] Cannot spawn: CPU ${resources.cpuUsage.toFixed(1)}% >= ${this.cpuThreshold}% threshold`);
+    const totalCores = os.cpus().length;
+
+    // Calculate available CPU cores based on current usage
+    const usedCores = (resources.cpuUsage / 100) * totalCores;
+    const availableCores = totalCores - usedCores - this.cpuCoresReserved;
+
+    // Check if we have enough cores for another worker
+    if (availableCores < this.CORES_PER_WORKER) {
+      this.logger?.debug('Cannot spawn: Insufficient CPU cores available', {
+        totalCores,
+        usedCores: usedCores.toFixed(2),
+        reservedCores: this.cpuCoresReserved,
+        availableCores: availableCores.toFixed(2),
+        requiredCores: this.CORES_PER_WORKER
+      });
       return ok(false);
     }
 
-    // Check memory reserve
-    if (resources.availableMemory <= this.memoryReserve) {
-      // console.error(`[ResourceMonitor] Cannot spawn: Memory ${(resources.availableMemory / 1e9).toFixed(1)}GB <= ${(this.memoryReserve / 1e9).toFixed(1)}GB reserve`);
+    // Check if we have enough memory for another worker
+    const requiredMemory = this.memoryReserve + (this.MEMORY_PER_WORKER_MB * 1024 * 1024);
+    if (resources.availableMemory <= requiredMemory) {
+      this.logger?.debug('Cannot spawn: Insufficient memory for new worker', {
+        availableMemory: resources.availableMemory,
+        requiredMemory,
+        memoryPerWorkerMB: this.MEMORY_PER_WORKER_MB
+      });
       return ok(false);
     }
 
-    // Check load average (be more permissive)
-    const cpuCount = os.cpus().length;
-    if (resources.loadAverage[0] > cpuCount * 3) {  // Changed from 2x to 3x
-      // console.error(`[ResourceMonitor] Cannot spawn: Load ${resources.loadAverage[0].toFixed(1)} > ${cpuCount * 3} (3x CPU count)`);
+    // Check load average against available cores
+    const maxLoad = totalCores - this.cpuCoresReserved;
+    if (resources.loadAverage[0] > maxLoad) {
+      this.logger?.debug('Cannot spawn: System load too high', {
+        loadAverage: resources.loadAverage[0],
+        maxLoad,
+        totalCores,
+        reservedCores: this.cpuCoresReserved
+      });
       return ok(false);
     }
 
-    // console.error(`[ResourceMonitor] Can spawn worker!`);
+    this.logger?.info('Can spawn worker', {
+      totalCores,
+      usedCores: usedCores.toFixed(2),
+      availableCores: availableCores.toFixed(2),
+      availableMemoryGB: (resources.availableMemory / 1e9).toFixed(2),
+      workerCount: this.workerCount,
+      maxWorkers: this.maxWorkers
+    });
     return ok(true);
   }
 
   getThresholds(): { readonly maxCpuPercent: number; readonly minMemoryBytes: number } {
+    // Convert reserved cores to percentage for backward compatibility
+    const totalCores = os.cpus().length;
+    const maxUsableCores = totalCores - this.cpuCoresReserved;
+    const maxCpuPercent = (maxUsableCores / totalCores) * 100;
+
     return {
-      maxCpuPercent: this.cpuThreshold,
+      maxCpuPercent,
       minMemoryBytes: this.memoryReserve,
     };
   }
@@ -118,7 +171,7 @@ export class SystemResourceMonitor implements ResourceMonitor {
     this.isMonitoring = true;
     this.logger?.info('Starting resource monitoring', {
       intervalMs: this.monitoringIntervalMs,
-      cpuThreshold: this.cpuThreshold,
+      cpuCoresReserved: this.cpuCoresReserved,
       memoryReserve: this.memoryReserve
     });
 

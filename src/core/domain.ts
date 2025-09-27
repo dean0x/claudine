@@ -48,6 +48,13 @@ export interface Task {
   readonly maxOutputBuffer?: number;
 
   // Retry tracking - populated when task is created via retry-task command
+  // RETRY CHAIN DESIGN:
+  // - parentTaskId: Points to the ROOT task of the entire retry chain
+  //   This allows grouping all retries of the same original request
+  // - retryOf: Points to the IMMEDIATE parent being retried
+  //   This allows reconstructing the retry sequence
+  // - retryCount: Increments with each retry (1, 2, 3...)
+  //   This shows how many attempts have been made
   readonly parentTaskId?: TaskId;      // Root task ID in retry chain (original task)
   readonly retryCount?: number;        // Number in retry chain (1 = first retry, 2 = second, etc.)
   readonly retryOf?: TaskId;          // Direct parent task ID (task this is a retry of)
@@ -137,8 +144,8 @@ export const updateTask = (task: Task, update: TaskUpdate): Task => ({
 /**
  * Create a new task
  */
-export const createTask = (request: DelegateRequest): Task => ({
-  id: TaskId(crypto.randomUUID()),
+export const createTask = (request: DelegateRequest): Task => Object.freeze({
+  id: TaskId(`task-${crypto.randomUUID()}`),
   prompt: request.prompt,
   status: TaskStatus.QUEUED,
   priority: request.priority || Priority.P2,

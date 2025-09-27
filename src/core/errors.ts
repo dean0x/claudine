@@ -25,6 +25,8 @@ export enum ErrorCode {
   INSUFFICIENT_RESOURCES = 'INSUFFICIENT_RESOURCES',
   /** Failed to monitor system resources */
   RESOURCE_MONITORING_FAILED = 'RESOURCE_MONITORING_FAILED',
+  /** Resource limit exceeded (e.g., max listeners, subscriptions) */
+  RESOURCE_LIMIT_EXCEEDED = 'RESOURCE_LIMIT_EXCEEDED',
   
   // Process errors
   /** Failed to spawn child process */
@@ -175,6 +177,13 @@ export const systemError = (message: string, originalError?: Error): ClaudineErr
     { originalError: originalError?.message }
   );
 
+export const resourceLimitExceeded = (resourceType: string, limit: number, current: number): ClaudineError =>
+  new ClaudineError(
+    ErrorCode.RESOURCE_LIMIT_EXCEEDED,
+    `Resource limit exceeded for ${resourceType}: limit=${limit}, current=${current}`,
+    { resourceType, limit, current }
+  );
+
 /**
  * Type guard for ClaudineError
  */
@@ -189,10 +198,20 @@ export const toClaudineError = (error: unknown): ClaudineError => {
   if (isClaudineError(error)) {
     return error;
   }
-  
+
   if (error instanceof Error) {
     return systemError(error.message, error);
   }
-  
+
+  // Handle objects with message property
+  if (error && typeof error === 'object' && 'message' in error) {
+    return systemError(String((error as any).message));
+  }
+
+  // Handle null/undefined
+  if (error == null) {
+    return systemError('Unknown error');
+  }
+
   return systemError(String(error));
 };

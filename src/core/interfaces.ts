@@ -15,11 +15,12 @@ export interface TaskQueue {
   enqueue(task: Task): Result<void>;
   dequeue(): Result<Task | null>;
   peek(): Result<Task | null>;
-  remove(taskId: TaskId): Result<void>;
+  remove(taskId: TaskId): Result<boolean>;
   getAll(): Result<readonly Task[]>;
   contains(taskId: TaskId): boolean;
   size(): number;
   clear(): Result<void>;
+  isEmpty(): boolean;
 }
 
 /**
@@ -101,9 +102,11 @@ export interface Logger {
 export interface Config {
   readonly maxOutputBuffer: number;
   readonly taskTimeout: number;
-  readonly cpuThreshold: number;
+  readonly cpuCoresReserved: number; // Number of CPU cores to keep free
   readonly memoryReserve: number;
   readonly logLevel: 'debug' | 'info' | 'warn' | 'error';
+  readonly maxListenersPerEvent?: number; // Configurable EventBus limit
+  readonly maxTotalSubscriptions?: number; // Configurable EventBus limit
 }
 
 /**
@@ -122,17 +125,9 @@ export interface TaskEventEmitter {
   off(event: string, listener: (...args: any[]) => void): void;
 }
 
-/**
- * Event bus for coordinating system events
- */
-export interface EventBus {
-  emit<T extends ClaudineEvent>(type: T['type'], payload: Omit<T, keyof BaseEvent | 'type'>): Promise<Result<void>>;
-  request<T extends ClaudineEvent, R = any>(type: T['type'], payload: Omit<T, keyof BaseEvent | 'type'>): Promise<Result<R>>;
-  subscribe<T extends ClaudineEvent>(eventType: T['type'], handler: EventHandler<T>): Result<void>;
-  unsubscribe<T extends ClaudineEvent>(eventType: T['type'], handler: EventHandler<T>): Result<void>;
-  subscribeAll(handler: EventHandler): Result<void>;
-  unsubscribeAll(handler: EventHandler): Result<void>;
-}
+// EventBus interface has been moved to src/core/events/event-bus.ts
+// Import it from there:
+// import { EventBus } from './events/event-bus.js';
 
 /**
  * Main task manager orchestrator

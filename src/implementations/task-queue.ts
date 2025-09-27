@@ -23,7 +23,7 @@ export class PriorityTaskQueue implements TaskQueue {
     if (this.tasks.length === 0) {
       return ok(null);
     }
-    
+
     const task = this.tasks.shift();
     return ok(task || null);
   }
@@ -32,19 +32,19 @@ export class PriorityTaskQueue implements TaskQueue {
     if (this.tasks.length === 0) {
       return ok(null);
     }
-    
+
     return ok(this.tasks[0]);
   }
 
-  remove(taskId: TaskId): Result<void> {
+  remove(taskId: TaskId): Result<boolean> {
     const index = this.tasks.findIndex(t => t.id === taskId);
-    
+
     if (index === -1) {
-      return err(taskNotFound(taskId));
+      return ok(false);
     }
-    
+
     this.tasks.splice(index, 1);
-    return ok(undefined);
+    return ok(true);
   }
 
   getAll(): Result<readonly Task[]> {
@@ -65,6 +65,10 @@ export class PriorityTaskQueue implements TaskQueue {
     return ok(undefined);
   }
 
+  isEmpty(): boolean {
+    return this.tasks.length === 0;
+  }
+
   private findInsertIndex(task: Task): number {
     // Find the position to insert based on priority
     for (let i = 0; i < this.tasks.length; i++) {
@@ -74,7 +78,7 @@ export class PriorityTaskQueue implements TaskQueue {
         return i;
       }
     }
-    
+
     // Lower or equal priority than all, insert at end
     return this.tasks.length;
   }
@@ -100,15 +104,15 @@ export class FIFOTaskQueue implements TaskQueue {
     return ok(this.tasks[0] || null);
   }
 
-  remove(taskId: TaskId): Result<void> {
+  remove(taskId: TaskId): Result<boolean> {
     const index = this.tasks.findIndex(t => t.id === taskId);
-    
+
     if (index === -1) {
-      return err(taskNotFound(taskId));
+      return ok(false);
     }
-    
+
     this.tasks.splice(index, 1);
-    return ok(undefined);
+    return ok(true);
   }
 
   getAll(): Result<readonly Task[]> {
@@ -126,5 +130,9 @@ export class FIFOTaskQueue implements TaskQueue {
   clear(): Result<void> {
     this.tasks.length = 0;
     return ok(undefined);
+  }
+
+  isEmpty(): boolean {
+    return this.tasks.length === 0;
   }
 }

@@ -17,36 +17,40 @@ import { TaskManagerService } from '../../src/services/task-manager.js';
 import { InMemoryEventBus } from '../../src/core/events/event-bus.js';
 import { SQLiteTaskRepository } from '../../src/implementations/task-repository.js';
 import { Database } from '../../src/implementations/database.js';
-import { ConsoleLogger } from '../../src/implementations/logger.js';
+import { TestLogger } from '../fixtures/test-doubles.js';
 import { Configuration } from '../../src/core/configuration.js';
 import { BufferedOutputCapture } from '../../src/implementations/output-capture.js';
 import { PersistenceHandler } from '../../src/services/handlers/persistence-handler.js';
+import { QueryHandler } from '../../src/services/handlers/query-handler.js';
 import { ok, err } from '../../src/core/result.js';
 import { ErrorCode } from '../../src/core/errors.js';
+import { BUFFER_SIZES, TIMEOUTS } from '../constants.js';
 
 describe('Retry Functionality', () => {
   let taskManager: TaskManagerService;
   let eventBus: InMemoryEventBus;
   let repository: SQLiteTaskRepository;
   let database: Database;
-  let logger: ConsoleLogger;
+  let logger: TestLogger;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Set up dependencies
-    logger = new ConsoleLogger('[Test]', false);
+    logger = new TestLogger();
     eventBus = new InMemoryEventBus(logger);
     database = new Database(':memory:');
     repository = new SQLiteTaskRepository(database);
 
     const config: Configuration = {
-      timeout: 300000,
-      maxOutputBuffer: 10485760,
-      cpuThreshold: 80,
+      timeout: TIMEOUTS.DEFAULT_TASK,
+      maxOutputBuffer: BUFFER_SIZES.MEDIUM,
+      cpuCoresReserved: 2,
       memoryReserve: 1073741824,
       logLevel: 'info',
+      maxListenersPerEvent: 100,
+      maxTotalSubscriptions: 1000
     };
 
-    const outputCapture = new BufferedOutputCapture(10485760, eventBus);
+    const outputCapture = new BufferedOutputCapture(BUFFER_SIZES.MEDIUM, eventBus);
 
     // Initialize task manager
     taskManager = new TaskManagerService(
@@ -57,9 +61,12 @@ describe('Retry Functionality', () => {
       outputCapture
     );
 
-    // Set up event handlers
+    // Set up event handlers (MUST include QueryHandler for pure event-driven architecture)
     const persistenceHandler = new PersistenceHandler(repository, logger);
-    persistenceHandler.setup(eventBus);
+    await persistenceHandler.setup(eventBus);
+
+    const queryHandler = new QueryHandler(repository, outputCapture, eventBus, logger);
+    await queryHandler.setup(eventBus);
   });
 
   afterEach(() => {

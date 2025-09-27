@@ -4,7 +4,8 @@
  */
 
 import { Container } from './core/container.js';
-import { Config, Logger, EventBus, ProcessSpawner, ResourceMonitor, OutputCapture, TaskQueue, WorkerPool, TaskRepository, TaskManager, WorktreeManager } from './core/interfaces.js';
+import { Config, Logger, ProcessSpawner, ResourceMonitor, OutputCapture, TaskQueue, WorkerPool, TaskRepository, TaskManager, WorktreeManager } from './core/interfaces.js';
+import { EventBus } from './core/events/event-bus.js';
 import { Configuration } from './core/configuration.js';
 import { InMemoryEventBus } from './core/events/event-bus.js';
 
@@ -43,9 +44,11 @@ const getConfig = (): Config => {
   return {
     maxOutputBuffer: config.maxOutputBuffer,
     taskTimeout: config.timeout, // Note: renamed from timeout to taskTimeout
-    cpuThreshold: config.cpuThreshold,
+    cpuCoresReserved: config.cpuCoresReserved,
     memoryReserve: config.memoryReserve,
-    logLevel: config.logLevel
+    logLevel: config.logLevel,
+    maxListenersPerEvent: config.maxListenersPerEvent,
+    maxTotalSubscriptions: config.maxTotalSubscriptions
   };
 };
 
@@ -85,12 +88,21 @@ export async function bootstrap() {
   // Register EventBus as singleton - ALL components must use this shared instance
   container.registerSingleton('eventBus', () => {
     const loggerResult = container.get('logger');
-    
+    const configResult = container.get('config');
+
     if (!loggerResult.ok) {
       throw new Error('Logger required for EventBus');
     }
-    
-    return new InMemoryEventBus((loggerResult.value as Logger).child({ module: 'SharedEventBus' }));
+    if (!configResult.ok) {
+      throw new Error('Config required for EventBus');
+    }
+
+    const cfg = configResult.value as Config;
+    return new InMemoryEventBus(
+      (loggerResult.value as Logger).child({ module: 'SharedEventBus' }),
+      cfg.maxListenersPerEvent,
+      cfg.maxTotalSubscriptions
+    );
   });
 
   // Get logger for bootstrap
@@ -136,7 +148,7 @@ export async function bootstrap() {
     }
     
     const monitor = new SystemResourceMonitor(
-      config.cpuThreshold, 
+      config.cpuCoresReserved,
       config.memoryReserve,
       getFromContainer<EventBus>(container, 'eventBus'),
       getFromContainer<Logger>(container, 'logger').child({ module: 'ResourceMonitor' })
@@ -200,7 +212,7 @@ export async function bootstrap() {
     const taskManagerConfig: Configuration = {
       timeout: config.taskTimeout,
       maxOutputBuffer: config.maxOutputBuffer,
-      cpuThreshold: config.cpuThreshold,
+      cpuCoresReserved: config.cpuCoresReserved,
       memoryReserve: config.memoryReserve,
       logLevel: config.logLevel
     };

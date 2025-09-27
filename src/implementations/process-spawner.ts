@@ -11,6 +11,10 @@ import { processSpawnFailed, ClaudineError, ErrorCode } from '../core/errors.js'
 export class ClaudeProcessSpawner implements ProcessSpawner {
   private readonly claudeCommand: string;
   private readonly baseArgs: readonly string[];
+  private readonly killTimeouts = new Map<number, NodeJS.Timeout>();
+
+  // ARCHITECTURE: Time to wait before sending SIGKILL after SIGTERM
+  private readonly KILL_GRACE_PERIOD_MS = 5000;
 
   constructor(
     claudeCommand = 'claude'
@@ -70,22 +74,66 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
   kill(pid: number): Result<void> {
     return tryCatch(
       () => {
+        // Clear any existing timeout for this PID
+        this.clearKillTimeout(pid);
+
         process.kill(pid, 'SIGTERM');
-        
-        // Give it 5 seconds to terminate gracefully
-        setTimeout(() => {
+
+        // Give it time to terminate gracefully before forcing
+        const timeoutId = setTimeout(() => {
           try {
             process.kill(pid, 'SIGKILL');
           } catch {
             // Process might already be dead
+          } finally {
+            // Clean up timeout reference
+            this.killTimeouts.delete(pid);
           }
-        }, 5000);
+        }, this.KILL_GRACE_PERIOD_MS);
+
+        // Track timeout for cleanup
+        this.killTimeouts.set(pid, timeoutId);
       },
       (error) => new ClaudineError(
         ErrorCode.PROCESS_KILL_FAILED,
         `Failed to kill process ${pid}: ${error}`
       )
     );
+  }
+
+  /**
+   * Clear kill timeout for a specific PID
+   * @param pid - Process ID to clear timeout for
+   * @remarks Prevents timeout leaks during cleanup
+   * @internal
+   */
+  private clearKillTimeout(pid: number): void {
+    const timeoutId = this.killTimeouts.get(pid);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      this.killTimeouts.delete(pid);
+    }
+  }
+
+  /**
+   * Clean up all pending kill timeouts and resources
+   * @remarks Must be called during shutdown to prevent timeout leaks
+   * @example
+   * ```typescript
+   * const spawner = new ClaudeProcessSpawner();
+   * try {
+   *   const result = spawner.spawn('test prompt', '/tmp', 'task-123');
+   *   // use the spawned process
+   * } finally {
+   *   spawner.dispose(); // Ensure cleanup
+   * }
+   * ```
+   */
+  public dispose(): void {
+    for (const [pid, timeoutId] of this.killTimeouts) {
+      clearTimeout(timeoutId);
+    }
+    this.killTimeouts.clear();
   }
 }
 

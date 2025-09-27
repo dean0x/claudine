@@ -16,6 +16,10 @@ import { TaskStatus } from '../../core/domain.js';
 import { QueueHandler } from './queue-handler.js';
 
 export class WorkerHandler extends BaseEventHandler {
+  private lastSpawnTime = 0;
+  private readonly MIN_SPAWN_DELAY_MS = 500; // Minimum delay between spawns
+  private readonly SPAWN_BACKOFF_MS = 1000; // Backoff when resources are constrained
+
   constructor(
     private readonly workerPool: WorkerPool,
     private readonly resourceMonitor: ResourceMonitor,
@@ -155,10 +159,33 @@ export class WorkerHandler extends BaseEventHandler {
    */
   private async processNextTask(): Promise<void> {
     try {
+      // Enforce minimum delay between spawns to prevent overwhelming the system
+      const now = Date.now();
+      const timeSinceLastSpawn = now - this.lastSpawnTime;
+
+      if (timeSinceLastSpawn < this.MIN_SPAWN_DELAY_MS) {
+        const delay = this.MIN_SPAWN_DELAY_MS - timeSinceLastSpawn;
+        this.logger.debug('Delaying spawn to prevent system overload', {
+          delay,
+          timeSinceLastSpawn
+        });
+
+        // Schedule retry after delay
+        setTimeout(() => this.processNextTask(), delay);
+        return;
+      }
+
       // Check if we can spawn a worker
       const canSpawnResult = await this.resourceMonitor.canSpawnWorker();
-      
+
       if (!canSpawnResult.ok || !canSpawnResult.value) {
+        // Apply backoff when resources are constrained
+        this.logger.debug('Resources constrained, applying backoff', {
+          backoffMs: this.SPAWN_BACKOFF_MS
+        });
+
+        // Schedule retry with backoff
+        setTimeout(() => this.processNextTask(), this.SPAWN_BACKOFF_MS);
         return; // No resources available
       }
 
@@ -213,6 +240,9 @@ export class WorkerHandler extends BaseEventHandler {
       }
 
       const worker = workerResult.value;
+
+      // Record spawn time for throttling
+      this.lastSpawnTime = Date.now();
 
       // Update resource monitor
       this.resourceMonitor.incrementWorkerCount();

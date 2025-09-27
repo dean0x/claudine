@@ -1,173 +1,223 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { BufferedOutputCapture } from '../../../src/implementations/output-capture';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { tmpdir } from 'os';
+import type { EventBus } from '../../../src/core/interfaces';
+import { TestEventBus } from '../../fixtures/test-doubles';
+import { BUFFER_SIZES, TEST_COUNTS, TIMEOUTS } from '../../constants';
 
 describe('BufferedOutputCapture - REAL Buffer Management', () => {
   let capture: BufferedOutputCapture;
-  let testDir: string;
+  let mockEventBus: EventBus;
 
   beforeEach(() => {
-    testDir = path.join(tmpdir(), `claudine-test-${Date.now()}`);
-    capture = new BufferedOutputCapture(
-      1024,  // 1KB max buffer
-      testDir // Use temp dir for overflow files
-    );
-  });
+    // Use TestEventBus for proper type safety
+    mockEventBus = new TestEventBus();
 
-  afterEach(async () => {
-    // Clean up test files
-    try {
-      await fs.rm(testDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
+    capture = new BufferedOutputCapture(BUFFER_SIZES.TINY, mockEventBus); // 1KB max buffer
   });
 
   describe('Basic capture operations', () => {
-    it('should start and stop capture for a task', () => {
-      const startResult = capture.startCapture('task-123');
-      expect(startResult.ok).toBe(true);
-
-      const stopResult = capture.stopCapture('task-123');
-      expect(stopResult.ok).toBe(true);
-    });
-
-    it('should append output to buffer', () => {
-      capture.startCapture('task-123');
-
-      const result = capture.appendOutput('task-123', 'stdout', 'Hello World\n');
+    it('should capture stdout data for a task', () => {
+      const result = capture.capture('task-123', 'stdout', 'Hello World\n');
       expect(result.ok).toBe(true);
 
       const output = capture.getOutput('task-123');
       expect(output.ok).toBe(true);
       if (output.ok) {
-        expect(output.value.stdout).toEqual(['Hello World']);
+        expect(output.value.stdout).toEqual(['Hello World\n']);
         expect(output.value.stderr).toEqual([]);
+        expect(output.value.taskId).toBe('task-123');
       }
     });
 
     it('should capture both stdout and stderr separately', () => {
-      capture.startCapture('task-123');
-
-      capture.appendOutput('task-123', 'stdout', 'Standard output\n');
-      capture.appendOutput('task-123', 'stderr', 'Error output\n');
-      capture.appendOutput('task-123', 'stdout', 'More stdout\n');
+      capture.capture('task-123', 'stdout', 'Standard output\n');
+      capture.capture('task-123', 'stderr', 'Error output\n');
+      capture.capture('task-123', 'stdout', 'More stdout\n');
 
       const output = capture.getOutput('task-123');
       if (output.ok) {
-        expect(output.value.stdout).toEqual(['Standard output', 'More stdout']);
-        expect(output.value.stderr).toEqual(['Error output']);
+        expect(output.value.stdout).toEqual(['Standard output\n', 'More stdout\n']);
+        expect(output.value.stderr).toEqual(['Error output\n']);
       }
     });
 
     it('should handle output without trailing newlines', () => {
-      capture.startCapture('task-123');
-
-      capture.appendOutput('task-123', 'stdout', 'No newline');
-      capture.appendOutput('task-123', 'stdout', 'Also no newline');
+      capture.capture('task-123', 'stdout', 'No newline');
+      capture.capture('task-123', 'stdout', 'Also no newline');
 
       const output = capture.getOutput('task-123');
       if (output.ok) {
-        expect(output.value.stdout).toEqual(['No newlineAlso no newline']);
+        expect(output.value.stdout).toEqual(['No newline', 'Also no newline']);
       }
     });
 
-    it('should handle multi-line output', () => {
-      capture.startCapture('task-123');
-
-      capture.appendOutput('task-123', 'stdout', 'Line 1\nLine 2\nLine 3\n');
+    it('should handle multi-line output as single capture', () => {
+      capture.capture('task-123', 'stdout', 'Line 1\nLine 2\nLine 3\n');
 
       const output = capture.getOutput('task-123');
       if (output.ok) {
-        expect(output.value.stdout).toEqual(['Line 1', 'Line 2', 'Line 3']);
+        expect(output.value.stdout).toEqual(['Line 1\nLine 2\nLine 3\n']);
       }
     });
 
-    it('should handle empty output', () => {
-      capture.startCapture('task-123');
+    it('should return empty output for non-existent task', () => {
+      const output = capture.getOutput('non-existent');
 
-      const output = capture.getOutput('task-123');
+      expect(output.ok).toBe(true);
       if (output.ok) {
         expect(output.value.stdout).toEqual([]);
         expect(output.value.stderr).toEqual([]);
         expect(output.value.totalSize).toBe(0);
       }
     });
-  });
 
-  describe('Buffer overflow handling', () => {
-    it('should overflow to file when buffer exceeds limit', async () => {
-      capture.startCapture('task-overflow');
+    it('should emit OutputCaptured event', () => {
+      const result = capture.capture('task-123', 'stdout', 'test data');
 
-      // Generate output larger than 1KB buffer
-      const largeOutput = 'x'.repeat(600) + '\n';
+      expect(result.ok).toBe(true);
+      expect(mockEventBus.emit).toHaveBeenCalledWith('OutputCaptured', {
+        taskId: 'task-123',
+        outputType: 'stdout',
+        data: 'test data'
+      });
+      expect(mockEventBus.emit).toHaveBeenCalledTimes(1);
 
-      // Add enough to exceed buffer
-      capture.appendOutput('task-overflow', 'stdout', largeOutput);
-      capture.appendOutput('task-overflow', 'stdout', largeOutput); // This should trigger overflow
-
-      const output = capture.getOutput('task-overflow');
-      if (output.ok) {
-        expect(output.value.totalSize).toBeGreaterThan(1024);
-        expect(output.value.stdout.join('')).toHaveLength(1200); // 2 * 600
-      }
-
-      // Check overflow file exists
-      const overflowPath = path.join(testDir, 'task-overflow-stdout.log');
-      const fileExists = await fs.access(overflowPath).then(() => true).catch(() => false);
-      expect(fileExists).toBe(true);
-    });
-
-    it('should handle multiple tasks with overflow', async () => {
-      const taskCount = 5;
-      const largeOutput = 'data'.repeat(300) + '\n'; // 1200+ bytes
-
-      for (let i = 0; i < taskCount; i++) {
-        const taskId = `task-${i}`;
-        capture.startCapture(taskId);
-        capture.appendOutput(taskId, 'stdout', largeOutput);
-      }
-
-      // Verify all tasks captured correctly
-      for (let i = 0; i < taskCount; i++) {
-        const output = capture.getOutput(`task-${i}`);
-        expect(output.ok).toBe(true);
-        if (output.ok) {
-          expect(output.value.stdout[0]).toHaveLength(1200);
-        }
-      }
-    });
-
-    it('should read from overflow file when retrieving', async () => {
-      capture.startCapture('task-file');
-
-      // Force overflow
-      const chunk = 'chunk'.repeat(250) + '\n'; // 1250+ bytes
-      capture.appendOutput('task-file', 'stdout', chunk);
-
-      // Stop capture (should keep file)
-      capture.stopCapture('task-file');
-
-      // Clear memory buffer to force file read
-      capture.clearOutput('task-file');
-
-      // Should still be able to read from file
-      const output = capture.getOutput('task-file');
+      const output = capture.getOutput('task-123');
       expect(output.ok).toBe(true);
       if (output.ok) {
-        expect(output.value.stdout[0]).toHaveLength(1250);
+        expect(output.value.stdout).toContain('test data');
       }
+    });
+  });
+
+  describe('Buffer size management', () => {
+    it('should track total buffer size', () => {
+      const result1 = capture.capture('task-123', 'stdout', 'Hello');  // 5 bytes
+      const result2 = capture.capture('task-123', 'stderr', 'World'); // 5 bytes
+
+      expect(result1.ok).toBe(true);
+      expect(result2.ok).toBe(true);
+
+      const output = capture.getOutput('task-123');
+      expect(output.ok).toBe(true);
+      if (output.ok) {
+        expect(output.value.totalSize).toBe(10);
+        expect(output.value.stdout).toBe('Hello');
+        expect(output.value.stderr).toBe('World');
+      }
+    });
+
+    it('should reject output when buffer limit exceeded', () => {
+      // Try to add more than 1KB
+      const largeData = 'x'.repeat(1025);
+      const result = capture.capture('task-overflow', 'stdout', largeData);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Output buffer limit exceeded');
+      }
+    });
+
+    it('should allow output up to the limit', () => {
+      // Exactly 1KB
+      const data = 'x'.repeat(1024);
+      const result = capture.capture('task-exact', 'stdout', data);
+
+      expect(result.ok).toBe(true);
+
+      const output = capture.getOutput('task-exact');
+      expect(output.ok).toBe(true);
+      if (output.ok) {
+        expect(output.value.totalSize).toBe(1024);
+        expect(output.value.stdout.length).toBe(1024);
+        expect(output.value.stderr).toBe('');
+        expect(output.value.stdout).toBe(data);
+      }
+    });
+
+    it('should accumulate size across multiple captures', () => {
+      const chunk = 'x'.repeat(500);
+
+      // First chunk should succeed
+      const result1 = capture.capture('task-acc', 'stdout', chunk);
+      expect(result1.ok).toBe(true);
+
+      // Second chunk should succeed (total 1000 < 1024)
+      const result2 = capture.capture('task-acc', 'stdout', chunk);
+      expect(result2.ok).toBe(true);
+
+      // Third chunk should fail (would be 1500 > 1024)
+      const result3 = capture.capture('task-acc', 'stdout', chunk);
+      expect(result3.ok).toBe(false);
+    });
+
+    it('should calculate byte length correctly for UTF-8', () => {
+      // UTF-8 characters can be multiple bytes
+      const emoji = '😀'; // 4 bytes
+      const result = capture.capture('task-utf8', 'stdout', emoji);
+
+      expect(result.ok).toBe(true);
+      const output = capture.getOutput('task-utf8');
+      expect(output.ok).toBe(true);
+      if (output.ok) {
+        expect(output.value.totalSize).toBe(4);
+        expect(output.value.stdout).toBe(emoji);
+        expect(output.value.stderr).toBe('');
+        expect(typeof output.value.stdout).toBe('string');
+      }
+    });
+  });
+
+  describe('Per-task configuration', () => {
+    it('should use per-task buffer limit when configured', () => {
+      // Configure task with smaller limit
+      capture.configureTask('task-small', { maxOutputBuffer: 100 });
+
+      const data = 'x'.repeat(101);
+      const result = capture.capture('task-small', 'stdout', data);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Output buffer limit exceeded');
+      }
+    });
+
+    it('should allow different limits for different tasks', () => {
+      capture.configureTask('task-small', { maxOutputBuffer: 100 });
+      capture.configureTask('task-large', { maxOutputBuffer: 2048 });
+
+      const data150 = 'x'.repeat(150);
+      expect(data150.length).toBe(150);
+
+      // Should fail for small task
+      const result1 = capture.capture('task-small', 'stdout', data150);
+      expect(result1.ok).toBe(false);
+      if (!result1.ok) {
+        expect(result1.error.message).toContain('exceeded');
+      }
+
+      // Should succeed for large task
+      const result2 = capture.capture('task-large', 'stdout', data150);
+      expect(result2.ok).toBe(true);
+      const output = capture.getOutput('task-large');
+      if (output.ok) {
+        expect(output.value.totalSize).toBe(150);
+      }
+    });
+
+    it('should fall back to global limit if not configured', () => {
+      // Global limit is 1024
+      const data = 'x'.repeat(1025);
+      const result = capture.capture('task-default', 'stdout', data);
+
+      expect(result.ok).toBe(false);
     });
   });
 
   describe('Tail functionality', () => {
-    it('should return last N lines with tail', () => {
-      capture.startCapture('task-tail');
-
+    it('should return last N entries with tail', () => {
       for (let i = 1; i <= 10; i++) {
-        capture.appendOutput('task-tail', 'stdout', `Line ${i}\n`);
+        capture.capture('task-tail', 'stdout', `Line ${i}`);
       }
 
       const output = capture.getOutput('task-tail', 5);
@@ -183,10 +233,8 @@ describe('BufferedOutputCapture - REAL Buffer Management', () => {
     });
 
     it('should handle tail larger than output', () => {
-      capture.startCapture('task-tail');
-
-      capture.appendOutput('task-tail', 'stdout', 'Line 1\n');
-      capture.appendOutput('task-tail', 'stdout', 'Line 2\n');
+      capture.capture('task-tail', 'stdout', 'Line 1');
+      capture.capture('task-tail', 'stdout', 'Line 2');
 
       const output = capture.getOutput('task-tail', 10);
       if (output.ok) {
@@ -195,17 +243,30 @@ describe('BufferedOutputCapture - REAL Buffer Management', () => {
     });
 
     it('should tail both stdout and stderr', () => {
-      capture.startCapture('task-tail');
-
       for (let i = 1; i <= 5; i++) {
-        capture.appendOutput('task-tail', 'stdout', `Out ${i}\n`);
-        capture.appendOutput('task-tail', 'stderr', `Err ${i}\n`);
+        capture.capture('task-tail', 'stdout', `Out ${i}`);
+        capture.capture('task-tail', 'stderr', `Err ${i}`);
       }
 
       const output = capture.getOutput('task-tail', 3);
       if (output.ok) {
         expect(output.value.stdout).toEqual(['Out 3', 'Out 4', 'Out 5']);
         expect(output.value.stderr).toEqual(['Err 3', 'Err 4', 'Err 5']);
+      }
+    });
+
+    it('should return all output when tail is 0 or undefined', () => {
+      capture.capture('task-tail', 'stdout', 'Line 1');
+      capture.capture('task-tail', 'stdout', 'Line 2');
+
+      const output1 = capture.getOutput('task-tail', 0);
+      const output2 = capture.getOutput('task-tail');
+
+      if (output1.ok) {
+        expect(output1.value.stdout).toEqual(['Line 1', 'Line 2']);
+      }
+      if (output2.ok) {
+        expect(output2.value.stdout).toEqual(['Line 1', 'Line 2']);
       }
     });
   });
@@ -215,8 +276,7 @@ describe('BufferedOutputCapture - REAL Buffer Management', () => {
       const taskIds = ['task-1', 'task-2', 'task-3'];
 
       taskIds.forEach(id => {
-        capture.startCapture(id);
-        capture.appendOutput(id, 'stdout', `Output for ${id}\n`);
+        capture.capture(id, 'stdout', `Output for ${id}`);
       });
 
       taskIds.forEach(id => {
@@ -228,12 +288,9 @@ describe('BufferedOutputCapture - REAL Buffer Management', () => {
     });
 
     it('should isolate output between tasks', () => {
-      capture.startCapture('task-a');
-      capture.startCapture('task-b');
-
-      capture.appendOutput('task-a', 'stdout', 'A output\n');
-      capture.appendOutput('task-b', 'stdout', 'B output\n');
-      capture.appendOutput('task-a', 'stderr', 'A error\n');
+      capture.capture('task-a', 'stdout', 'A output');
+      capture.capture('task-b', 'stdout', 'B output');
+      capture.capture('task-a', 'stderr', 'A error');
 
       const outputA = capture.getOutput('task-a');
       const outputB = capture.getOutput('task-b');
@@ -249,179 +306,182 @@ describe('BufferedOutputCapture - REAL Buffer Management', () => {
       }
     });
 
-    it('should get all outputs', () => {
-      capture.startCapture('task-1');
-      capture.startCapture('task-2');
+    it('should track buffer size independently per task', () => {
+      capture.capture('task-1', 'stdout', 'x'.repeat(500));
+      capture.capture('task-2', 'stdout', 'y'.repeat(600));
 
-      capture.appendOutput('task-1', 'stdout', 'Task 1\n');
-      capture.appendOutput('task-2', 'stdout', 'Task 2\n');
-
-      const allOutputs = capture.getAllOutput();
-      expect(allOutputs.ok).toBe(true);
-      if (allOutputs.ok) {
-        const outputs = allOutputs.value;
-        expect(outputs.size).toBe(2);
-        expect(outputs.get('task-1')?.stdout).toEqual(['Task 1']);
-        expect(outputs.get('task-2')?.stdout).toEqual(['Task 2']);
-      }
+      expect(capture.getBufferSize('task-1')).toBe(500);
+      expect(capture.getBufferSize('task-2')).toBe(600);
     });
   });
 
   describe('Clear and cleanup', () => {
     it('should clear output for specific task', () => {
-      capture.startCapture('task-clear');
-      capture.appendOutput('task-clear', 'stdout', 'To be cleared\n');
+      capture.capture('task-clear', 'stdout', 'To be cleared');
 
       const beforeClear = capture.getOutput('task-clear');
       expect(beforeClear.ok && beforeClear.value.stdout).toHaveLength(1);
 
-      const clearResult = capture.clearOutput('task-clear');
+      const clearResult = capture.clear('task-clear');
       expect(clearResult.ok).toBe(true);
 
       const afterClear = capture.getOutput('task-clear');
       if (afterClear.ok) {
         expect(afterClear.value.stdout).toEqual([]);
         expect(afterClear.value.stderr).toEqual([]);
+        expect(afterClear.value.totalSize).toBe(0);
       }
     });
 
-    it('should clean up overflow files on clear', async () => {
-      capture.startCapture('task-cleanup');
+    it('should clear task configuration on cleanup', () => {
+      capture.configureTask('task-cleanup', { maxOutputBuffer: 100 });
+      capture.capture('task-cleanup', 'stdout', 'test');
 
-      // Force overflow
-      const largeOutput = 'x'.repeat(2000) + '\n';
-      capture.appendOutput('task-cleanup', 'stdout', largeOutput);
+      const cleanupResult = capture.cleanup('task-cleanup');
+      expect(cleanupResult.ok).toBe(true);
 
-      const overflowPath = path.join(testDir, 'task-cleanup-stdout.log');
+      // After cleanup, should use global limit again
+      const data = 'x'.repeat(150);
+      capture.capture('task-cleanup', 'stdout', data);
 
-      // File should exist after overflow
-      await fs.access(overflowPath); // Will throw if not exists
-
-      // Clear should remove file
-      capture.clearOutput('task-cleanup');
-
-      // File should be gone
-      const fileExists = await fs.access(overflowPath).then(() => true).catch(() => false);
-      expect(fileExists).toBe(false);
+      // Should succeed with global limit (1024)
+      const output = capture.getOutput('task-cleanup');
+      if (output.ok) {
+        expect(output.value.totalSize).toBe(150);
+      }
     });
 
     it('should handle clear for non-existent task', () => {
-      const result = capture.clearOutput('non-existent');
-      expect(result.ok).toBe(true); // Should not error
+      const result = capture.clear('non-existent');
+      expect(result.ok).toBe(true);
+    });
+
+    it('should clear old buffers when limit exceeded', () => {
+      // Create 15 tasks
+      for (let i = 0; i < 15; i++) {
+        capture.capture(`task-${i}`, 'stdout', `Data ${i}`);
+      }
+
+      // Clear old buffers, keeping only 10
+      capture.clearOldBuffers(10);
+
+      // First 5 should be cleared
+      for (let i = 0; i < 5; i++) {
+        expect(capture.getBufferSize(`task-${i}`)).toBe(0);
+      }
+
+      // Last 10 should still exist
+      for (let i = 5; i < 15; i++) {
+        expect(capture.getBufferSize(`task-${i}`)).toBeGreaterThan(0);
+      }
+    });
+
+    it('should not clear buffers when under limit', () => {
+      // Create only 5 tasks
+      for (let i = 0; i < 5; i++) {
+        capture.capture(`task-${i}`, 'stdout', `Data ${i}`);
+      }
+
+      // Try to clear with limit of 10 (no-op)
+      capture.clearOldBuffers(10);
+
+      // All should still exist
+      for (let i = 0; i < 5; i++) {
+        expect(capture.getBufferSize(`task-${i}`)).toBeGreaterThan(0);
+      }
     });
   });
 
-  describe('Error handling', () => {
-    it('should handle appending to non-started task', () => {
-      const result = capture.appendOutput('not-started', 'stdout', 'data\n');
+  describe('Output immutability', () => {
+    it('should return frozen output arrays', () => {
+      capture.capture('task-frozen', 'stdout', 'test');
 
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('not started');
+      const output = capture.getOutput('task-frozen');
+      if (output.ok) {
+        expect(Object.isFrozen(output.value.stdout)).toBe(true);
+        expect(Object.isFrozen(output.value.stderr)).toBe(true);
+
+        // Should not be able to modify
+        expect(() => {
+          output.value.stdout.push('new');
+        }).toThrow();
       }
     });
 
-    it('should handle getting output for non-existent task', () => {
-      const result = capture.getOutput('non-existent');
+    it('should return copies, not references', () => {
+      capture.capture('task-copy', 'stdout', 'original');
 
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value.stdout).toEqual([]);
-        expect(result.value.stderr).toEqual([]);
+      const output1 = capture.getOutput('task-copy');
+      const output2 = capture.getOutput('task-copy');
+
+      if (output1.ok && output2.ok) {
+        expect(output1.value.stdout).not.toBe(output2.value.stdout);
+        expect(output1.value.stdout).toEqual(output2.value.stdout);
       }
-    });
-
-    it('should handle invalid output type', () => {
-      capture.startCapture('task-123');
-
-      // @ts-ignore - Testing invalid type
-      const result = capture.appendOutput('task-123', 'invalid', 'data');
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('Invalid output type');
-      }
-    });
-
-    it('should handle file system errors gracefully', async () => {
-      // Use invalid path for overflow directory
-      const badCapture = new BufferedOutputCapture(
-        100,
-        '/invalid/path/that/does/not/exist'
-      );
-
-      badCapture.startCapture('task-fail');
-
-      // Should handle overflow failure gracefully
-      const largeOutput = 'x'.repeat(200);
-      const result = badCapture.appendOutput('task-fail', 'stdout', largeOutput);
-
-      // Might succeed (keeps in memory) or fail (can't write file)
-      // Either way, should not crash
-      expect(result).toBeDefined();
     });
   });
 
   describe('Performance characteristics', () => {
     it('should handle rapid output efficiently', () => {
-      capture.startCapture('task-perf');
-
-      const iterations = 1000;
+      // Use a larger buffer for performance test
+      const perfCapture = new BufferedOutputCapture(100 * 1024); // 100KB buffer
+      const iterations = TEST_COUNTS.STRESS_TEST;
       const start = performance.now();
 
       for (let i = 0; i < iterations; i++) {
-        capture.appendOutput('task-perf', 'stdout', `Line ${i}\n`);
+        perfCapture.capture('task-perf', 'stdout', `Line ${i}`);
       }
 
       const duration = performance.now() - start;
 
-      expect(duration).toBeLessThan(100); // Should handle 1000 lines in < 100ms
+      expect(duration).toBeLessThan(TIMEOUTS.SHORT); // Should handle stress test captures quickly
 
-      const output = capture.getOutput('task-perf');
+      const output = perfCapture.getOutput('task-perf');
       if (output.ok) {
         expect(output.value.stdout).toHaveLength(iterations);
       }
     });
 
-    it('should handle very long lines', () => {
-      capture.startCapture('task-long');
-
-      const longLine = 'a'.repeat(10000) + '\n';
-      capture.appendOutput('task-long', 'stdout', longLine);
-
-      const output = capture.getOutput('task-long');
-      if (output.ok) {
-        expect(output.value.stdout[0]).toHaveLength(10000);
-      }
-    });
-
     it('should track total size accurately', () => {
-      capture.startCapture('task-size');
-
       const outputs = [
-        'Short\n',           // 6 bytes
-        'Medium line\n',     // 12 bytes
-        'A longer line\n',   // 14 bytes
+        'Short',           // 5 bytes
+        'Medium line',     // 11 bytes
+        'A longer line',   // 13 bytes
       ];
 
       outputs.forEach(out => {
-        capture.appendOutput('task-size', 'stdout', out);
+        capture.capture('task-size', 'stdout', out);
       });
 
       const output = capture.getOutput('task-size');
       if (output.ok) {
-        expect(output.value.totalSize).toBe(32); // 6 + 12 + 14
+        expect(output.value.totalSize).toBe(29); // 5 + 11 + 13
+      }
+    });
+
+    it('should handle large number of tasks', () => {
+      const taskCount = 100;
+
+      for (let i = 0; i < taskCount; i++) {
+        capture.capture(`task-${i}`, 'stdout', `Data for task ${i}`);
+      }
+
+      // Should be able to retrieve all
+      for (let i = 0; i < taskCount; i++) {
+        const output = capture.getOutput(`task-${i}`);
+        expect(output.ok).toBe(true);
+        if (output.ok) {
+          expect(output.value.stdout[0]).toBe(`Data for task ${i}`);
+        }
       }
     });
   });
 
   describe('Real-world patterns', () => {
     it('should handle ANSI escape codes', () => {
-      capture.startCapture('task-ansi');
-
       // Common ANSI codes in terminal output
-      capture.appendOutput('task-ansi', 'stdout', '\x1b[32mGreen text\x1b[0m\n');
-      capture.appendOutput('task-ansi', 'stdout', '\x1b[1;31mBold red\x1b[0m\n');
+      capture.capture('task-ansi', 'stdout', '\x1b[32mGreen text\x1b[0m');
+      capture.capture('task-ansi', 'stdout', '\x1b[1;31mBold red\x1b[0m');
 
       const output = capture.getOutput('task-ansi');
       if (output.ok) {
@@ -432,12 +492,10 @@ describe('BufferedOutputCapture - REAL Buffer Management', () => {
     });
 
     it('should handle carriage returns and progress updates', () => {
-      capture.startCapture('task-progress');
-
       // Simulate progress bar updates
-      capture.appendOutput('task-progress', 'stdout', 'Progress: 0%\r');
-      capture.appendOutput('task-progress', 'stdout', 'Progress: 50%\r');
-      capture.appendOutput('task-progress', 'stdout', 'Progress: 100%\n');
+      capture.capture('task-progress', 'stdout', 'Progress: 0%\r');
+      capture.capture('task-progress', 'stdout', 'Progress: 50%\r');
+      capture.capture('task-progress', 'stdout', 'Progress: 100%\n');
 
       const output = capture.getOutput('task-progress');
       if (output.ok) {
@@ -447,11 +505,9 @@ describe('BufferedOutputCapture - REAL Buffer Management', () => {
     });
 
     it('should handle binary-like output', () => {
-      capture.startCapture('task-binary');
-
       // Simulate binary data in output
       const binaryLike = Buffer.from([0x00, 0x01, 0x02, 0xFF]).toString();
-      capture.appendOutput('task-binary', 'stdout', binaryLike + '\n');
+      capture.capture('task-binary', 'stdout', binaryLike);
 
       const output = capture.getOutput('task-binary');
       expect(output.ok).toBe(true);
@@ -459,41 +515,81 @@ describe('BufferedOutputCapture - REAL Buffer Management', () => {
     });
 
     it('should handle streaming output pattern', () => {
-      capture.startCapture('task-stream');
-
       // Simulate streaming chunks
       const chunks = [
         'Starting',
         ' processing',
         '...',
-        'done!\n'
+        'done!'
       ];
 
       chunks.forEach(chunk => {
-        capture.appendOutput('task-stream', 'stdout', chunk);
+        capture.capture('task-stream', 'stdout', chunk);
       });
 
       const output = capture.getOutput('task-stream');
       if (output.ok) {
-        expect(output.value.stdout).toEqual(['Starting processing...done!']);
+        expect(output.value.stdout).toEqual(['Starting', ' processing', '...', 'done!']);
       }
     });
 
     it('should handle interleaved stdout/stderr', () => {
-      capture.startCapture('task-interleaved');
-
       // Simulate real process output pattern
-      capture.appendOutput('task-interleaved', 'stdout', 'Starting task\n');
-      capture.appendOutput('task-interleaved', 'stderr', 'Warning: deprecated option\n');
-      capture.appendOutput('task-interleaved', 'stdout', 'Processing...\n');
-      capture.appendOutput('task-interleaved', 'stderr', 'Error: minor issue\n');
-      capture.appendOutput('task-interleaved', 'stdout', 'Completed successfully\n');
+      capture.capture('task-interleaved', 'stdout', 'Starting task');
+      capture.capture('task-interleaved', 'stderr', 'Warning: deprecated option');
+      capture.capture('task-interleaved', 'stdout', 'Processing...');
+      capture.capture('task-interleaved', 'stderr', 'Error: minor issue');
+      capture.capture('task-interleaved', 'stdout', 'Completed successfully');
 
       const output = capture.getOutput('task-interleaved');
       if (output.ok) {
         expect(output.value.stdout).toHaveLength(3);
         expect(output.value.stderr).toHaveLength(2);
         expect(output.value.stdout[2]).toBe('Completed successfully');
+      }
+    });
+
+    it('should handle empty strings', () => {
+      capture.capture('task-empty', 'stdout', '');
+      capture.capture('task-empty', 'stdout', 'not empty');
+      capture.capture('task-empty', 'stdout', '');
+
+      const output = capture.getOutput('task-empty');
+      if (output.ok) {
+        expect(output.value.stdout).toEqual(['', 'not empty', '']);
+      }
+    });
+  });
+
+  describe('EventBus integration', () => {
+    it('should handle EventBus errors gracefully', async () => {
+      // Make EventBus emit reject
+      const originalEmit = mockEventBus.emit;
+      mockEventBus.emit = async () => {
+        return { ok: false, error: new Error('EventBus error') };
+      };
+
+      // Should still capture successfully
+      const result = capture.capture('task-eb-error', 'stdout', 'test');
+      expect(result.ok).toBe(true);
+
+      // Output should still be captured
+      const output = capture.getOutput('task-eb-error');
+      if (output.ok) {
+        expect(output.value.stdout).toEqual(['test']);
+      }
+    });
+
+    it('should work without EventBus', () => {
+      // Create capture without EventBus
+      const captureNoEB = new BufferedOutputCapture(1024);
+
+      const result = captureNoEB.capture('task-no-eb', 'stdout', 'test');
+      expect(result.ok).toBe(true);
+
+      const output = captureNoEB.getOutput('task-no-eb');
+      if (output.ok) {
+        expect(output.value.stdout).toEqual(['test']);
       }
     });
   });

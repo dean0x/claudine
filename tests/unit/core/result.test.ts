@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   ok,
   err,
@@ -25,7 +25,14 @@ describe('Result Type - REAL Behavior Tests', () => {
       expect(isErr(result)).toBe(false);
       if (result.ok) {
         expect(result.value).toBe(42);
+        expect(typeof result.value).toBe('number');
+        expect(result.value).toBeGreaterThan(0);
+        expect(result.value).toBeLessThan(100);
       }
+      expect(typeof result.ok).toBe('boolean');
+      expect(result).toHaveProperty('ok');
+      expect(result).toHaveProperty('value');
+      expect(Object.keys(result)).toEqual(['ok', 'value']);
     });
 
     it('should create Err result with error', () => {
@@ -37,7 +44,14 @@ describe('Result Type - REAL Behavior Tests', () => {
       expect(isErr(result)).toBe(true);
       if (!result.ok) {
         expect(result.error).toBe(error);
+        expect(result.error).toBeInstanceOf(Error);
+        expect(result.error.message).toBe('Something went wrong');
+        expect(typeof result.error.message).toBe('string');
       }
+      expect(typeof result.ok).toBe('boolean');
+      expect(result).toHaveProperty('ok');
+      expect(result).toHaveProperty('error');
+      expect(Object.keys(result)).toEqual(['ok', 'error']);
     });
 
     it('should handle null and undefined values in Ok', () => {
@@ -46,7 +60,18 @@ describe('Result Type - REAL Behavior Tests', () => {
 
       expect(isOk(nullResult)).toBe(true);
       expect(isOk(undefinedResult)).toBe(true);
-      if (nullResult.ok) expect(nullResult.value).toBeNull();
+      if (nullResult.ok) {
+        expect(nullResult.value).toBeNull();
+        expect(nullResult.ok).toBe(true);
+        expect(typeof nullResult.ok).toBe('boolean');
+      }
+      if (undefinedResult.ok) {
+        expect(undefinedResult.value).toBeUndefined();
+        expect(undefinedResult.ok).toBe(true);
+        expect(typeof undefinedResult.ok).toBe('boolean');
+      }
+      expect(nullResult).toHaveProperty('ok', true);
+      expect(undefinedResult).toHaveProperty('ok', true);
       if (undefinedResult.ok) expect(undefinedResult.value).toBeUndefined();
     });
 
@@ -506,6 +531,8 @@ describe('Result Type - REAL Behavior Tests', () => {
     });
 
     it('should handle async pipeline with proper error propagation', async () => {
+      vi.useFakeTimers();
+
       const fetchData = async (id: number): Promise<Result<string>> => {
         if (id < 0) {
           return err(new Error('Invalid ID'));
@@ -521,7 +548,9 @@ describe('Result Type - REAL Behavior Tests', () => {
       };
 
       // Success case
-      const successResult = await fetchData(42);
+      const resultPromise = fetchData(42);
+      await vi.runAllTimersAsync();
+      const successResult = await resultPromise;
       const processed = flatMap(successResult, data => processData(data));
 
       expect(isOk(processed)).toBe(true);
@@ -537,6 +566,8 @@ describe('Result Type - REAL Behavior Tests', () => {
       if (!failProcessed.ok) {
         expect(failProcessed.error.message).toBe('Invalid ID');
       }
+
+      vi.useRealTimers();
     });
   });
 

@@ -17,9 +17,9 @@ import {
   TaskManager,
   TaskRepository,
   Logger,
-  EventBus,
   OutputCapture
 } from '../core/interfaces.js';
+import { EventBus } from '../core/events/event-bus.js';
 import { TaskStatusQueryEvent, TaskLogsQueryEvent } from '../core/events/events.js';
 import {
   Task,
@@ -135,6 +135,20 @@ export class TaskManagerService implements TaskManager {
    * Creates a completely new task to avoid side effects from partially executed
    * Claude Code operations (file changes, commits, etc.). The new task maintains
    * a link to the original via retry tracking fields.
+   *
+   * RETRY CHAIN BEHAVIOR:
+   * - Each retry creates a NEW task with a unique ID
+   * - parentTaskId: Points to the root task of the retry chain
+   * - retryOf: Points to the immediate parent being retried
+   * - retryCount: Increments with each retry in the chain
+   *
+   * Example retry chain:
+   * 1. Original task: task-A (parentTaskId: null, retryCount: 0, retryOf: null)
+   * 2. First retry: task-B (parentTaskId: task-A, retryCount: 1, retryOf: task-A)
+   * 3. Second retry: task-C (parentTaskId: task-A, retryCount: 2, retryOf: task-B)
+   *
+   * This allows tracking the full retry history while maintaining a reference
+   * to the original task request.
    *
    * @param taskId - ID of the task to retry (must be in terminal state)
    * @returns New task with retry tracking, or error if task cannot be retried

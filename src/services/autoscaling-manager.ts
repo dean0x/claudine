@@ -7,9 +7,9 @@ import {
   TaskQueue,
   WorkerPool,
   ResourceMonitor,
-  Logger,
-  EventBus
+  Logger
 } from '../core/interfaces.js';
+import { EventBus } from '../core/events/event-bus.js';
 import { Result, ok, err } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
 import { BaseEventHandler } from '../core/events/handlers.js';

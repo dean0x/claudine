@@ -1,21 +1,17 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
 import type { ClaudineEvent } from '../../../../src/core/events/events';
 import type { Logger } from '../../../../src/core/interfaces';
+import { TestLogger } from '../../../fixtures/test-doubles';
+import { TEST_COUNTS, TIMEOUTS } from '../../../constants';
 
 describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
   let eventBus: InMemoryEventBus;
   let logger: Logger;
 
   beforeEach(() => {
-    // Minimal logger to track actual calls
-    logger = {
-      info: vi.fn(),
-      error: vi.fn(),
-      warn: vi.fn(),
-      debug: vi.fn()
-    };
-
+    // Use TestLogger to track actual logging behavior
+    logger = new TestLogger();
     eventBus = new InMemoryEventBus(logger);
   });
 
@@ -60,12 +56,24 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
       // Emit event
       await eventBus.emit('TestEvent', { value: 42 });
 
-      // All subscribers should receive
+      // All subscribers should receive events
       expect(received).toHaveLength(3);
       expect(received[0].subscriber).toBe(1);
       expect(received[0].event.value).toBe(42);
       expect(received[1].subscriber).toBe(2);
+      expect(received[1].event.value).toBe(42);
       expect(received[2].subscriber).toBe(3);
+      expect(received[2].event.value).toBe(42);
+
+      // Verify all events have proper structure
+      received.forEach((item, index) => {
+        expect(item.subscriber).toBe(index + 1);
+        expect(item.event).toHaveProperty('value', 42);
+        expect(typeof item.event).toBe('object');
+      });
+
+      // Verify ordering is maintained
+      expect(received.map(r => r.subscriber)).toEqual([1, 2, 3]);
     });
 
     it('should not deliver events to wrong event type subscribers', async () => {
@@ -94,10 +102,10 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
 
       expect(result.ok).toBe(true);
       // Should log debug message about no subscribers
-      expect(logger.debug).toHaveBeenCalledWith(
-        'No subscribers for event type',
-        expect.objectContaining({ eventType: 'UnsubscribedEvent' })
-      );
+      const testLogger = logger as TestLogger;
+      expect(testLogger.hasLog('debug', 'No subscribers for event type')).toBe(true);
+      const debugLogs = testLogger.getLogsByLevel('debug');
+      expect(debugLogs[0]?.context?.eventType).toBe('UnsubscribedEvent');
     });
   });
 
@@ -105,37 +113,54 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
     it('should receive all event types with subscribeAll', async () => {
       const allEvents: any[] = [];
 
-      eventBus.subscribeAll(async (event) => {
+      const subResult = eventBus.subscribeAll(async (event) => {
         allEvents.push(event);
       });
 
-      // Emit different event types
-      await eventBus.emit('EventA', { type: 'A' });
-      await eventBus.emit('EventB', { type: 'B' });
-      await eventBus.emit('EventC', { type: 'C' });
+      expect(subResult.ok).toBe(true);
+      expect(subResult.ok && typeof subResult.value).toBe('string');
 
+      // Emit different event types
+      const resultA = await eventBus.emit('EventA', { type: 'A' });
+      const resultB = await eventBus.emit('EventB', { type: 'B' });
+      const resultC = await eventBus.emit('EventC', { type: 'C' });
+
+      expect(resultA.ok).toBe(true);
+      expect(resultB.ok).toBe(true);
+      expect(resultC.ok).toBe(true);
       expect(allEvents).toHaveLength(3);
       expect(allEvents[0].type).toBe('A');
       expect(allEvents[1].type).toBe('B');
       expect(allEvents[2].type).toBe('C');
+      expect(Array.isArray(allEvents)).toBe(true);
     });
 
     it('should deliver to both specific and all subscribers', async () => {
       let specificReceived = false;
       let allReceived = false;
+      let specificData: any = null;
+      let allData: any = null;
 
-      eventBus.subscribe('SpecificEvent', async () => {
+      const specificSub = eventBus.subscribe('SpecificEvent', async (data) => {
         specificReceived = true;
+        specificData = data;
       });
 
-      eventBus.subscribeAll(async () => {
+      const allSub = eventBus.subscribeAll(async (data) => {
         allReceived = true;
+        allData = data;
       });
 
-      await eventBus.emit('SpecificEvent', {});
+      expect(specificSub.ok).toBe(true);
+      expect(allSub.ok).toBe(true);
 
+      const result = await eventBus.emit('SpecificEvent', { value: 'test' });
+
+      expect(result.ok).toBe(true);
       expect(specificReceived).toBe(true);
       expect(allReceived).toBe(true);
+      expect(specificData).toEqual({ value: 'test' });
+      expect(allData).toEqual({ value: 'test' });
     });
   });
 
@@ -237,11 +262,8 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
       const result = await eventBus.emit('TestEvent', {});
 
       // Should log error but continue
-      expect(logger.error).toHaveBeenCalledWith(
-        'Event handler failed',
-        expect.any(Error),
-        expect.any(Object)
-      );
+      const testLogger = logger as TestLogger;
+      expect(testLogger.hasLog('error', 'Event handler failures')).toBe(true);
 
       // Good handler should still be called
       expect(goodHandlerCalled).toBe(true);
@@ -249,7 +271,7 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
       // Overall emission should report error
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('1 handlers failed');
+        expect(result.error.message).toContain('Event handler failures for TestEvent');
       }
     });
 
@@ -270,22 +292,32 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('2 handlers failed');
+        expect(result.error.message).toContain('Event handler failures for TestEvent');
+        expect(result.error.message).toContain('Error 1');
+        expect(result.error.message).toContain('Error 2');
       }
 
-      expect(logger.error).toHaveBeenCalledTimes(2);
+      const testLogger = logger as TestLogger;
+      expect(testLogger.getLogsByLevel('error')).toHaveLength(1);
     });
 
     it('should handle async errors in handlers', async () => {
+      vi.useFakeTimers();
+
       eventBus.subscribe('TestEvent', async () => {
         await new Promise(resolve => setTimeout(resolve, 1));
         throw new Error('Async error');
       });
 
-      const result = await eventBus.emit('TestEvent', {});
+      const resultPromise = eventBus.emit('TestEvent', {});
+      await vi.runAllTimersAsync();
+      const result = await resultPromise;
 
       expect(result.ok).toBe(false);
-      expect(logger.error).toHaveBeenCalled();
+      const testLogger = logger as TestLogger;
+      expect(testLogger.getLogsByLevel('error').length).toBeGreaterThan(0);
+
+      vi.useRealTimers();
     });
   });
 
@@ -328,6 +360,7 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
     });
 
     it('should handle slow handlers', async () => {
+      vi.useFakeTimers();
       const results: string[] = [];
 
       // Slow handler
@@ -341,10 +374,14 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
         results.push('fast');
       });
 
-      await eventBus.emit('TestEvent', {});
+      const emitPromise = eventBus.emit('TestEvent', {});
+      await vi.runAllTimersAsync();
+      await emitPromise;
 
       // Both should complete, fast first
       expect(results).toEqual(['fast', 'slow']);
+
+      vi.useRealTimers();
     });
   });
 
@@ -395,7 +432,12 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
 
       await eventBus.emit('ComplexEvent', complexData);
 
-      expect(received).toEqual(complexData);
+      // Event includes base properties, check payload properties
+      expect(received.nested).toEqual(complexData.nested);
+      expect(received.date).toEqual(complexData.date);
+      expect(received.symbol).toEqual(complexData.symbol);
+      expect(received.undefined).toEqual(complexData.undefined);
+      expect(received.null).toEqual(complexData.null);
       expect(received.nested.deep.value).toBe(42);
       expect(received.date).toBeInstanceOf(Date);
       expect(received.symbol).toBe(complexData.symbol);
@@ -498,7 +540,7 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
 
   describe('Performance characteristics', () => {
     it('should handle large number of subscribers efficiently', async () => {
-      const subscriberCount = 1000;
+      const subscriberCount = TEST_COUNTS.STRESS_TEST;
       let callCount = 0;
 
       // Add many subscribers
@@ -523,7 +565,7 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
         receivedCount++;
       });
 
-      const eventCount = 1000;
+      const eventCount = TEST_COUNTS.STRESS_TEST;
       const start = performance.now();
 
       for (let i = 0; i < eventCount; i++) {
@@ -533,7 +575,7 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
       const duration = performance.now() - start;
 
       expect(receivedCount).toBe(eventCount);
-      expect(duration).toBeLessThan(1000); // Should handle 1000 events in under 1 second
+      expect(duration).toBeLessThan(TIMEOUTS.MEDIUM); // Should handle 1000 events in under 1 second
     });
   });
 });
