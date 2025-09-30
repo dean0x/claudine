@@ -7,18 +7,19 @@ import { spawn, ChildProcess } from 'child_process';
 import { ProcessSpawner } from '../core/interfaces.js';
 import { Result, ok, err, tryCatch } from '../core/result.js';
 import { processSpawnFailed, ClaudineError, ErrorCode } from '../core/errors.js';
+import { Configuration } from '../core/configuration.js';
 
 export class ClaudeProcessSpawner implements ProcessSpawner {
   private readonly claudeCommand: string;
   private readonly baseArgs: readonly string[];
   private readonly killTimeouts = new Map<number, NodeJS.Timeout>();
-
-  // ARCHITECTURE: Time to wait before sending SIGKILL after SIGTERM
-  private readonly KILL_GRACE_PERIOD_MS = 5000;
+  private readonly config: Configuration;
 
   constructor(
+    config: Configuration,
     claudeCommand = 'claude'
   ) {
+    this.config = config;
     this.claudeCommand = claudeCommand;
     this.baseArgs = Object.freeze(['--print', '--dangerously-skip-permissions', '--output-format', 'json']);
   }
@@ -89,7 +90,7 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
             // Clean up timeout reference
             this.killTimeouts.delete(pid);
           }
-        }, this.KILL_GRACE_PERIOD_MS);
+        }, this.config.killGracePeriodMs!);
 
         // Track timeout for cleanup
         this.killTimeouts.set(pid, timeoutId);

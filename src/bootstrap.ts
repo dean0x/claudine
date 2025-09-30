@@ -66,7 +66,7 @@ const getFromContainer = <T>(container: Container, key: string): T => {
  */
 export async function bootstrap() {
   const container = new Container();
-  const config = getConfig();
+  const config = loadConfiguration();
 
   // Register configuration
   container.registerValue('config', config);
@@ -97,11 +97,10 @@ export async function bootstrap() {
       throw new Error('Config required for EventBus');
     }
 
-    const cfg = configResult.value as Config;
+    const cfg = configResult.value as Configuration;
     return new InMemoryEventBus(
-      (loggerResult.value as Logger).child({ module: 'SharedEventBus' }),
-      cfg.maxListenersPerEvent,
-      cfg.maxTotalSubscriptions
+      cfg,
+      (loggerResult.value as Logger).child({ module: 'SharedEventBus' })
     );
   });
 
@@ -127,29 +126,33 @@ export async function bootstrap() {
   });
   
   container.registerSingleton('outputRepository', () => {
+    const configResult = container.get<Configuration>('config');
     const dbResult = container.get<Database>('database');
+    if (!configResult.ok) throw new Error('Config required for OutputRepository');
     if (!dbResult.ok) throw new Error('Failed to get database');
-    return new SQLiteOutputRepository(dbResult.value);
+    return new SQLiteOutputRepository(configResult.value, dbResult.value);
   });
 
   // Register core services
   container.registerSingleton('taskQueue', () => new PriorityTaskQueue());
   
-  container.registerSingleton('processSpawner', () => 
-    new ClaudeProcessSpawner('claude')
-  );
+  container.registerSingleton('processSpawner', () => {
+    const configResult = container.get<Configuration>('config');
+    if (!configResult.ok) throw new Error('Config required for ProcessSpawner');
+    return new ClaudeProcessSpawner(configResult.value, 'claude');
+  });
 
   container.registerSingleton('resourceMonitor', () => {
+    const configResult = container.get<Configuration>('config');
     const loggerResult = container.get('logger');
     const eventBusResult = container.get('eventBus');
-    
-    if (!loggerResult.ok || !eventBusResult.ok) {
-      throw new Error('Logger and EventBus required for ResourceMonitor');
+
+    if (!configResult.ok || !loggerResult.ok || !eventBusResult.ok) {
+      throw new Error('Config, Logger and EventBus required for ResourceMonitor');
     }
-    
+
     const monitor = new SystemResourceMonitor(
-      config.cpuCoresReserved,
-      config.memoryReserve,
+      configResult.value,
       getFromContainer<EventBus>(container, 'eventBus'),
       getFromContainer<Logger>(container, 'logger').child({ module: 'ResourceMonitor' })
     );
@@ -207,21 +210,13 @@ export async function bootstrap() {
     const repositoryResult = container.get('taskRepository');
 
     const repository = repositoryResult.ok ? repositoryResult.value as TaskRepository : undefined;
-    
-    // Create Configuration object for TaskManager
-    const taskManagerConfig: Configuration = {
-      timeout: config.taskTimeout,
-      maxOutputBuffer: config.maxOutputBuffer,
-      cpuCoresReserved: config.cpuCoresReserved,
-      memoryReserve: config.memoryReserve,
-      logLevel: config.logLevel
-    };
 
+    // TaskManager uses full configuration (after Zod parse, all fields guaranteed present)
     const taskManager = new TaskManagerService(
       getFromContainer<EventBus>(container, 'eventBus'),
       repository,
       getFromContainer<Logger>(container, 'logger').child({ module: 'TaskManager' }),
-      taskManagerConfig,
+      config, // Pass complete config - no partial objects needed
       getFromContainer<OutputCapture>(container, 'outputCapture')
     );
 
@@ -272,6 +267,7 @@ export async function bootstrap() {
 
     // 4. Worker Handler - manages worker lifecycle
     const workerHandler = new WorkerHandler(
+      config,
       getFromContainer<WorkerPool>(container, 'workerPool'),
       getFromContainer<ResourceMonitor>(container, 'resourceMonitor'),
       queueHandler,

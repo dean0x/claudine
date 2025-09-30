@@ -9,11 +9,13 @@ import { EventBus } from '../core/events/event-bus.js';
 import { SystemResources } from '../core/domain.js';
 import { Result, ok, err, tryCatchAsync } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { Configuration } from '../core/configuration.js';
 
 export class SystemResourceMonitor implements ResourceMonitor {
   private readonly cpuCoresReserved: number;
   private readonly memoryReserve: number;
   private readonly maxWorkers: number;
+  private readonly monitoringIntervalMs: number;
   private workerCount = 0;
   private monitoringInterval: NodeJS.Timeout | null = null;
   private isMonitoring = false;
@@ -23,18 +25,17 @@ export class SystemResourceMonitor implements ResourceMonitor {
   private readonly CORES_PER_WORKER = 0.15; // ~11-15% of one core observed
 
   constructor(
-    cpuCoresReserved = 2, // Reserve 2 CPU cores for system operations
-    memoryReserve = 2_684_354_560, // Keep 2.5GB free
+    config: Configuration,
     private readonly eventBus?: EventBus,
-    private readonly logger?: Logger,
-    private readonly monitoringIntervalMs = 5000 // Emit events every 5 seconds
+    private readonly logger?: Logger
   ) {
-    this.cpuCoresReserved = cpuCoresReserved;
-    this.memoryReserve = memoryReserve;
+    this.cpuCoresReserved = config.cpuCoresReserved;
+    this.memoryReserve = config.memoryReserve;
+    this.monitoringIntervalMs = config.resourceMonitorIntervalMs!;
 
     // Dynamic max workers based on system resources
     const totalCores = os.cpus().length;
-    const availableCores = Math.max(1, totalCores - cpuCoresReserved);
+    const availableCores = Math.max(1, totalCores - this.cpuCoresReserved);
     const maxWorkersByCores = Math.floor(availableCores / this.CORES_PER_WORKER);
 
     // Use environment override or calculate based on cores

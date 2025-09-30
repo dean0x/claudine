@@ -85,7 +85,7 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
   container.registerValue('config', config);
 
   // Register EventBus
-  const eventBus = new InMemoryEventBus(logger);
+  const eventBus = new InMemoryEventBus(config, logger);
   container.registerValue('eventBus', eventBus);
 
   // Register database
@@ -112,9 +112,9 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
 
   // Register services
   container.registerSingleton('processSpawner', async () => {
-    const loggerResult = await container.resolve('logger');
-    return loggerResult.ok
-      ? new ClaudeProcessSpawner(loggerResult.value as Logger)
+    const configResult = await container.resolve('config');
+    return configResult.ok
+      ? new ClaudeProcessSpawner(configResult.value as Configuration)
       : undefined;
   });
 

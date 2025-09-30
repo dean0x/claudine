@@ -472,3 +472,12 @@ export function createWorkerPool(): Worker[] {
     factory.withId('worker-5').idle().withTasksCompleted(10).build()
   ];
 }
+
+/**
+ * Create a test configuration with safe defaults
+ * Used in tests to ensure consistent configuration
+ */
+export function createTestConfiguration(overrides?: Partial<Configuration>): Configuration {
+  const factory = new ConfigFactory().development();
+  return { ...factory.build(), ...overrides };
+}

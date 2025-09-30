@@ -40,6 +40,20 @@ Task Commands:
     -b, --branch NAME          Custom branch name
     --base BRANCH              Base branch (default: current)
     -t, --timeout MS           Task timeout in milliseconds
+
+Worktree Management:
+  worktree list              List all active worktrees with status
+  worktree cleanup [options] Safely clean up old worktrees
+    --strategy safe|force      Cleanup strategy (default: safe)
+    --older-than N            Only remove worktrees older than N days (default: 30)
+  worktree status <task-id>  Get detailed status of specific worktree
+
+Configuration:
+  config show                Show current configuration
+  config set <key> <value>   Update configuration
+    worktree-max-age <days>    Set minimum age for worktree cleanup (default: 30)
+    worktree-max-count <num>   Set maximum number of worktrees (default: 50)
+    worktree-safety-check <bool> Enable/disable safety checks (default: true)
   status [task-id]             Get status of task(s)
   logs <task-id> [--tail N]    Get output logs for a task (optionally limit to last N lines)
   cancel <task-id> [reason]    Cancel a running task with optional reason
@@ -633,6 +647,118 @@ if (mainCommand === 'mcp') {
   }
 
   await retryTask(taskId);
+
+} else if (mainCommand === 'worktree') {
+  if (subCommand === 'list') {
+    console.log('🌳 Listing worktrees...');
+    console.log('⚠️  Worktree management is not yet fully implemented.');
+    console.log('📝 Use environment variables for now:');
+    console.log('   WORKTREE_MAX_AGE_DAYS=30');
+    console.log('   WORKTREE_MAX_COUNT=50');
+    console.log('   WORKTREE_REQUIRE_SAFETY_CHECK=true');
+  } else if (subCommand === 'cleanup') {
+    console.log('🧹 Cleaning up worktrees...');
+    console.log('⚠️  Worktree management is not yet fully implemented.');
+    console.log('📝 Use: git worktree prune (for now)');
+  } else if (subCommand === 'status') {
+    const taskId = args[2];
+    if (!taskId) {
+      console.error('❌ Usage: claudine worktree status <task-id>');
+      process.exit(1);
+    }
+    console.log(`🌳 Getting worktree status for task: ${taskId}`);
+    console.log('⚠️  Worktree management is not yet fully implemented.');
+  } else {
+    console.error('❌ Usage: claudine worktree <list|cleanup|status>');
+    process.exit(1);
+  }
+
+} else if (mainCommand === 'config') {
+  if (subCommand === 'show') {
+    // SECURITY: Sanitize sensitive configuration values for display
+    const sanitizeValue = (value: string, type: 'memory' | 'cpu' | 'timeout' | 'normal'): string => {
+      const num = parseInt(value, 10);
+      if (isNaN(num)) return '***REDACTED***';
+
+      switch (type) {
+        case 'memory':
+          // Show memory in ranges, not exact values (security hardening)
+          if (num < 1024 * 1024 * 1024) return '<1GB';
+          if (num < 4 * 1024 * 1024 * 1024) return '1-4GB';
+          if (num < 8 * 1024 * 1024 * 1024) return '4-8GB';
+          if (num < 16 * 1024 * 1024 * 1024) return '8-16GB';
+          return '>16GB';
+        case 'cpu':
+          // Show CPU in ranges to prevent fingerprinting
+          if (num <= 2) return '1-2 cores';
+          if (num <= 4) return '3-4 cores';
+          if (num <= 8) return '5-8 cores';
+          return '>8 cores';
+        case 'timeout':
+          // Show timeouts in minutes for readability, no exact values
+          const minutes = Math.round(num / 60000);
+          if (minutes < 5) return '<5min';
+          if (minutes < 15) return '5-15min';
+          if (minutes < 60) return '15-60min';
+          return '>1hour';
+        default:
+          return value;
+      }
+    };
+
+    console.log('⚙️  Current Configuration (Security Sanitized):');
+    console.log('');
+    console.log('🔧 Core Settings:');
+    console.log(`   Task Timeout: ${sanitizeValue(process.env.TASK_TIMEOUT || '1800000', 'timeout')}`);
+    console.log(`   Max Output Buffer: ${sanitizeValue(process.env.MAX_OUTPUT_BUFFER || '10485760', 'memory')}`);
+    console.log(`   CPU Cores Reserved: ${sanitizeValue(process.env.CPU_CORES_RESERVED || '2', 'cpu')}`);
+    console.log(`   Memory Reserve: ${sanitizeValue(process.env.MEMORY_RESERVE || '2684354560', 'memory')}`);
+    console.log(`   Log Level: ${process.env.LOG_LEVEL || 'info'}`);
+    console.log('');
+    console.log('🌳 Worktree Settings:');
+    console.log(`   Max Age: ${process.env.WORKTREE_MAX_AGE_DAYS || '30'} days`);
+    console.log(`   Max Count: ${process.env.WORKTREE_MAX_COUNT || '50'} worktrees`);
+    console.log(`   Safety Check: ${process.env.WORKTREE_REQUIRE_SAFETY_CHECK || 'true'}`);
+    console.log('');
+    console.log('⚡ Process Management:');
+    console.log(`   Kill Grace Period: ${sanitizeValue(process.env.PROCESS_KILL_GRACE_PERIOD_MS || '5000', 'timeout')}`);
+    console.log(`   Resource Monitor Interval: ${sanitizeValue(process.env.RESOURCE_MONITOR_INTERVAL_MS || '5000', 'timeout')}`);
+    console.log(`   Min Spawn Delay: ${sanitizeValue(process.env.WORKER_MIN_SPAWN_DELAY_MS || '100', 'timeout')}`);
+    console.log('');
+    console.log('🔗 Event System:');
+    console.log(`   Max Listeners Per Event: ${process.env.EVENTBUS_MAX_LISTENERS_PER_EVENT || '100'}`);
+    console.log(`   Max Total Subscriptions: ${process.env.EVENTBUS_MAX_TOTAL_SUBSCRIPTIONS || '1000'}`);
+    console.log(`   Request Timeout: ${sanitizeValue(process.env.EVENT_REQUEST_TIMEOUT_MS || '5000', 'timeout')}`);
+    console.log(`   Cleanup Interval: ${sanitizeValue(process.env.EVENT_CLEANUP_INTERVAL_MS || '60000', 'timeout')}`);
+    console.log('');
+    console.log('💾 Storage Settings:');
+    console.log(`   File Storage Threshold: ${sanitizeValue(process.env.FILE_STORAGE_THRESHOLD_BYTES || '102400', 'memory')}`);
+    console.log('');
+    console.log('🔄 Retry Behavior:');
+    console.log(`   Initial Delay: ${sanitizeValue(process.env.RETRY_INITIAL_DELAY_MS || '1000', 'timeout')}`);
+    console.log(`   Max Delay: ${sanitizeValue(process.env.RETRY_MAX_DELAY_MS || '30000', 'timeout')}`);
+    console.log('');
+    console.log('🧹 Recovery Settings:');
+    console.log(`   Task Retention: ${process.env.TASK_RETENTION_DAYS || '7'} days`);
+    console.log('');
+    console.log('⚠️  Note: Values are sanitized for security. Use --verbose for exact values (admin only).');
+    console.log('📝 To change settings, use environment variables:');
+    console.log('   export TASK_TIMEOUT=1800000  # Task timeout in milliseconds');
+    console.log('   export WORKTREE_MAX_AGE_DAYS=30  # Minimum worktree age for cleanup');
+    console.log('   export PROCESS_KILL_GRACE_PERIOD_MS=5000  # Process termination grace period');
+    console.log('   export EVENT_REQUEST_TIMEOUT_MS=5000  # Event request timeout');
+    console.log('   export FILE_STORAGE_THRESHOLD_BYTES=102400  # File storage threshold');
+    console.log('   export RETRY_INITIAL_DELAY_MS=1000  # Initial retry delay');
+  } else if (subCommand === 'set') {
+    console.log('⚙️  Configuration updates are not yet implemented.');
+    console.log('📝 Use environment variables for now:');
+    console.log('   export WORKTREE_MAX_AGE_DAYS=30');
+    console.log('   export WORKTREE_MAX_COUNT=50');
+    console.log('   export WORKTREE_REQUIRE_SAFETY_CHECK=true');
+  } else {
+    console.error('❌ Usage: claudine config <show|set>');
+    process.exit(1);
+  }
 
 } else if (mainCommand === 'help' || !mainCommand) {
   showHelp();

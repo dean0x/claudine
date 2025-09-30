@@ -140,10 +140,36 @@ export interface TaskManager {
   retry(taskId: TaskId): Promise<Result<Task>>;
   /** @deprecated Use getStatus() without taskId parameter instead for async task listing */
   listTasks(): Result<readonly Task[]>;
+
+  // Worktree management methods
+  listWorktrees(includeStale?: boolean, olderThanDays?: number): Promise<Result<readonly any[]>>;
+  getWorktreeStatus(taskId: TaskId): Promise<Result<any>>;
+  cleanupWorktrees(strategy?: 'safe' | 'interactive' | 'force', olderThanDays?: number, taskIds?: TaskId[]): Promise<Result<any>>;
 }
 
 /**
  * Git worktree management for isolated task execution
  */
 // Re-export from the actual implementation
-export type { WorktreeManager, WorktreeInfo, CompletionResult } from '../services/worktree-manager.js';
+export type { WorktreeManager, WorktreeInfo, CompletionResult, WorktreeStatus, WorktreeManagerConfig } from '../services/worktree-manager.js';
+
+/**
+ * Result type for worktree cleanup operations
+ */
+export interface WorktreeCleanupResult {
+  success: boolean;
+  summary: {
+    total: number;
+    cleaned: number;
+    kept: number;
+    protected: number;
+  };
+  details: Array<{
+    taskId: string;
+    action: 'cleaned' | 'kept' | 'protected';
+    reason: string;
+    path: string;
+    ageInDays: number;
+  }>;
+  warnings?: string[];
+}

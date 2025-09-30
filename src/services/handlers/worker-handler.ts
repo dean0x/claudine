@@ -7,20 +7,22 @@ import { WorkerPool, ResourceMonitor, Logger, TaskRepository } from '../../core/
 import { Result, ok, err } from '../../core/result.js';
 import { BaseEventHandler } from '../../core/events/handlers.js';
 import { EventBus } from '../../core/events/event-bus.js';
-import { 
+import {
   TaskDelegatedEvent,
   TaskCancelledEvent,
   createEvent
 } from '../../core/events/events.js';
 import { TaskStatus } from '../../core/domain.js';
 import { QueueHandler } from './queue-handler.js';
+import { Configuration } from '../../core/configuration.js';
 
 export class WorkerHandler extends BaseEventHandler {
   private lastSpawnTime = 0;
-  private readonly MIN_SPAWN_DELAY_MS = 500; // Minimum delay between spawns
+  private readonly minSpawnDelayMs: number;
   private readonly SPAWN_BACKOFF_MS = 1000; // Backoff when resources are constrained
 
   constructor(
+    config: Configuration,
     private readonly workerPool: WorkerPool,
     private readonly resourceMonitor: ResourceMonitor,
     private readonly queueHandler: QueueHandler,
@@ -29,6 +31,7 @@ export class WorkerHandler extends BaseEventHandler {
     logger: Logger
   ) {
     super(logger, 'WorkerHandler');
+    this.minSpawnDelayMs = config.minSpawnDelayMs!;
   }
 
   /**
@@ -163,8 +166,8 @@ export class WorkerHandler extends BaseEventHandler {
       const now = Date.now();
       const timeSinceLastSpawn = now - this.lastSpawnTime;
 
-      if (timeSinceLastSpawn < this.MIN_SPAWN_DELAY_MS) {
-        const delay = this.MIN_SPAWN_DELAY_MS - timeSinceLastSpawn;
+      if (timeSinceLastSpawn < this.minSpawnDelayMs) {
+        const delay = this.minSpawnDelayMs - timeSinceLastSpawn;
         this.logger.debug('Delaying spawn to prevent system overload', {
           delay,
           timeSinceLastSpawn

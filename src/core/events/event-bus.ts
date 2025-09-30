@@ -7,6 +7,7 @@ import { Result, ok, err } from '../result.js';
 import { ClaudineError, ErrorCode } from '../errors.js';
 import { Logger } from '../interfaces.js';
 import { ClaudineEvent, EventHandler, createEvent, BaseEvent } from './events.js';
+import { Configuration } from '../configuration.js';
 
 /**
  * Event bus interface for dependency injection
@@ -51,17 +52,19 @@ export class InMemoryEventBus implements EventBus {
   private readonly pendingRequests = new Map<string, PendingRequest>();
   private subscriptionCounter = 0;
   private cleanupInterval?: NodeJS.Timeout;
-  private readonly maxRequestAge = 60000; // 1 minute max age for stale requests
+  private readonly maxRequestAge: number;
+  private readonly defaultRequestTimeoutMs: number;
   private readonly maxListenersPerEvent: number;
   private readonly maxTotalSubscriptions: number;
 
   constructor(
-    private readonly logger: Logger,
-    maxListenersPerEvent = 100, // ARCHITECTURE: Configurable limit to prevent memory leaks
-    maxTotalSubscriptions = 1000 // ARCHITECTURE: Configurable global subscription limit
+    config: Configuration,
+    private readonly logger: Logger
   ) {
-    this.maxListenersPerEvent = maxListenersPerEvent;
-    this.maxTotalSubscriptions = maxTotalSubscriptions;
+    this.maxListenersPerEvent = config.maxListenersPerEvent!;
+    this.maxTotalSubscriptions = config.maxTotalSubscriptions!;
+    this.maxRequestAge = config.eventCleanupIntervalMs!;
+    this.defaultRequestTimeoutMs = config.eventRequestTimeoutMs!;
     // Start cleanup interval to prevent memory leaks
     this.startCleanupInterval();
   }
@@ -72,7 +75,7 @@ export class InMemoryEventBus implements EventBus {
   private startCleanupInterval(): void {
     this.cleanupInterval = setInterval(() => {
       this.cleanupStaleRequests();
-    }, 30000); // Clean up every 30 seconds
+    }, this.maxRequestAge); // Use configured cleanup interval
   }
 
   /**
@@ -197,7 +200,7 @@ export class InMemoryEventBus implements EventBus {
   async request<T extends ClaudineEvent, R = any>(
     type: T['type'],
     payload: Omit<T, keyof BaseEvent | 'type'>,
-    timeoutMs: number = 5000
+    timeoutMs: number = this.defaultRequestTimeoutMs
   ): Promise<Result<R>> {
     const correlationId = crypto.randomUUID();
 
