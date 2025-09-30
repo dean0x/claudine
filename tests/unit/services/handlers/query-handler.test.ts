@@ -11,6 +11,7 @@ import { taskNotFound } from '../../../../src/core/errors';
 import { mkdtemp, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { createTestConfiguration } from '../../../fixtures/factories';
 
 describe('QueryHandler - Behavioral Tests', () => {
   let handler: QueryHandler;
@@ -24,7 +25,8 @@ describe('QueryHandler - Behavioral Tests', () => {
   beforeEach(async () => {
     // Use real implementations instead of mocks
     logger = new TestLogger();
-    eventBus = new InMemoryEventBus(logger);
+    const config = createTestConfiguration();
+    eventBus = new InMemoryEventBus(config, logger);
     outputCapture = new BufferedOutputCapture(10 * 1024 * 1024, eventBus);
 
     // Use real database for testing

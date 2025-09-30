@@ -5,6 +5,7 @@ import type { ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import { createMockChildProcess } from '../../fixtures/test-helpers';
 import { TIMEOUTS, TEST_COUNTS } from '../../constants';
+import { createTestConfiguration } from '../../fixtures/factories';
 
 // Mock child_process module
 let mockSpawnImpl: any = () => null;
@@ -18,7 +19,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
   let mockSpawn: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    spawner = new ClaudeProcessSpawner();
+    spawner = new ClaudeProcessSpawner(createTestConfiguration());
 
     // Create a properly typed mock child process
     mockProcess = createMockChildProcess({

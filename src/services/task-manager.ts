@@ -244,4 +244,54 @@ export class TaskManagerService implements TaskManager {
     return ok([]);
   }
 
+  // ARCHITECTURE: Worktree management methods (placeholder implementation)
+  // TODO: These will be event-driven once WorktreeHandler is implemented
+
+  async listWorktrees(includeStale = false, olderThanDays?: number): Promise<Result<readonly any[]>> {
+    this.logger.info('Listing worktrees (placeholder)', { includeStale, olderThanDays });
+
+    // TODO: Implement proper event-driven worktree listing
+    // For now, return empty array as placeholder
+    return ok([]);
+  }
+
+  async getWorktreeStatus(taskId: TaskId): Promise<Result<any>> {
+    this.logger.info('Getting worktree status (placeholder)', { taskId });
+
+    // TODO: Implement proper event-driven worktree status query
+    // For now, return placeholder status
+    return ok({
+      taskId,
+      path: 'placeholder',
+      branch: 'placeholder',
+      baseBranch: 'main',
+      ageInDays: 0,
+      hasUnpushedChanges: false,
+      safeToRemove: true,
+      exists: false
+    });
+  }
+
+  async cleanupWorktrees(
+    strategy = 'safe' as const,
+    olderThanDays = 7,
+    taskIds?: TaskId[]
+  ): Promise<Result<any>> {
+    this.logger.info('Cleaning up worktrees (placeholder)', { strategy, olderThanDays, taskIds });
+
+    // TODO: Implement proper event-driven worktree cleanup
+    // For now, return placeholder result
+    return ok({
+      success: true,
+      summary: {
+        total: 0,
+        cleaned: 0,
+        kept: 0,
+        protected: 0
+      },
+      details: [],
+      warnings: []
+    });
+  }
+
 }

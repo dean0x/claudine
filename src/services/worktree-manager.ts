@@ -19,6 +19,23 @@ export interface WorktreeInfo {
   baseBranch: string;
 }
 
+export interface WorktreeStatus {
+  taskId: string;
+  path: string;
+  branch: string;
+  baseBranch: string;
+  ageInDays: number;
+  hasUnpushedChanges: boolean;
+  safeToRemove: boolean;
+  exists: boolean;
+}
+
+export interface WorktreeManagerConfig {
+  maxWorktreeAgeDays: number;        // Default: 7
+  requireSafetyCheck: boolean;       // Default: true
+  allowForceRemoval: boolean;        // Default: false
+}
+
 export interface CompletionResult {
   action: 'pr_created' | 'merged' | 'branch_pushed' | 'patch_created';
   prUrl?: string;
@@ -48,9 +65,23 @@ export interface WorktreeManager {
   /**
    * Removes a worktree and cleans up associated resources
    * @param taskId ID of the task whose worktree should be removed
+   * @param force Skip safety checks if true
    * @returns Success or error result
    */
-  removeWorktree(taskId: TaskId): Promise<Result<void>>;
+  removeWorktree(taskId: TaskId, force?: boolean): Promise<Result<void>>;
+
+  /**
+   * Get status information for all worktrees
+   * @returns Array of worktree status information
+   */
+  getWorktreeStatuses(): Promise<Result<WorktreeStatus[]>>;
+
+  /**
+   * Get status information for a specific worktree
+   * @param taskId Task ID to get status for
+   * @returns Worktree status information
+   */
+  getWorktreeStatus(taskId: TaskId): Promise<Result<WorktreeStatus>>;
   
   /**
    * Cleans up all active worktrees
@@ -67,20 +98,29 @@ export class GitWorktreeManager implements WorktreeManager {
   private readonly baseDir: string;
   private readonly activeWorktrees = new Map<TaskId, WorktreeInfo>();
   private readonly git: SimpleGit;
+  private readonly config: WorktreeManagerConfig;
 
   /**
    * Creates a new GitWorktreeManager
    * @param logger Logger for operation tracking
    * @param githubIntegration Optional GitHub integration for PR creation
    * @param baseDir Base directory for worktrees (defaults to .claudine-worktrees)
+   * @param config Configuration for worktree safety and behavior
    */
   constructor(
     private readonly logger: Logger,
     private readonly githubIntegration?: GitHubIntegration,
-    baseDir?: string
+    baseDir?: string,
+    config?: Partial<WorktreeManagerConfig>
   ) {
     this.baseDir = baseDir || path.join(process.cwd(), '.claudine-worktrees');
     this.git = simpleGit();
+    this.config = {
+      maxWorktreeAgeDays: 30, // Default: 30 days is safer for developers
+      requireSafetyCheck: true,
+      allowForceRemoval: false,
+      ...config
+    };
     this.ensureBaseDirectory();
   }
 
@@ -398,25 +438,47 @@ export class GitWorktreeManager implements WorktreeManager {
 
   /**
    * Removes a worktree and cleans up associated resources
-   * Handles both git worktree removal and filesystem cleanup
+   * Handles both git worktree removal and filesystem cleanup with safety checks
    * @param taskId ID of the task whose worktree should be removed
+   * @param force Skip safety checks if true
    * @returns Success or error result
    */
-  async removeWorktree(taskId: TaskId): Promise<Result<void>> {
+  async removeWorktree(taskId: TaskId, force = false): Promise<Result<void>> {
     const info = this.activeWorktrees.get(taskId);
     if (!info) {
       return ok(undefined); // Already removed
     }
 
+    // Safety check: only auto-remove old worktrees unless forced
+    if (!force && this.config.requireSafetyCheck) {
+      const safetyCheck = await this.isWorktreeSafeToRemove(info.path);
+      if (!safetyCheck.ok) {
+        this.logger.warn('Worktree not removed - safety check failed', {
+          taskId,
+          path: info.path,
+          reason: safetyCheck.error.message
+        });
+        return safetyCheck;
+      }
+    }
+
+    // Log the removal action
+    this.logger.info('Removing worktree', {
+      taskId,
+      path: info.path,
+      forced: force,
+      safetyChecked: this.config.requireSafetyCheck && !force
+    });
+
     try {
       await this.git.raw(['worktree', 'remove', info.path, '--force']);
       this.activeWorktrees.delete(taskId);
-      
-      this.logger.info('Removed worktree', { 
+
+      this.logger.info('Successfully removed worktree', {
         taskId,
-        path: info.path 
+        path: info.path
       });
-      
+
       return ok(undefined);
     } catch (error) {
       // Fallback to direct removal
@@ -424,7 +486,12 @@ export class GitWorktreeManager implements WorktreeManager {
         await fs.rm(info.path, { recursive: true, force: true });
         await this.git.raw(['worktree', 'prune']);
         this.activeWorktrees.delete(taskId);
-        
+
+        this.logger.info('Removed worktree via fallback method', {
+          taskId,
+          path: info.path
+        });
+
         return ok(undefined);
       } catch (fallbackError) {
         return err(new ClaudineError(
@@ -436,14 +503,171 @@ export class GitWorktreeManager implements WorktreeManager {
   }
 
   /**
+   * Checks if a worktree is safe to remove based on age and other criteria
+   * @param worktreePath Path to the worktree directory
+   * @returns Success if safe to remove, error otherwise
+   */
+  private async isWorktreeSafeToRemove(worktreePath: string): Promise<Result<void>> {
+    try {
+      // Check if worktree directory exists
+      const stats = await fs.stat(worktreePath);
+      const ageInDays = (Date.now() - stats.mtime.getTime()) / (1000 * 60 * 60 * 24);
+
+      // Age-based safety check
+      if (ageInDays < this.config.maxWorktreeAgeDays) {
+        return err(new ClaudineError(
+          ErrorCode.SYSTEM_ERROR,
+          `Worktree too recent (${ageInDays.toFixed(1)} days old, minimum ${this.config.maxWorktreeAgeDays} days)`
+        ));
+      }
+
+      // Check for unpushed changes
+      const hasUnpushedChanges = await this.hasUnpushedChanges(worktreePath);
+      if (hasUnpushedChanges) {
+        return err(new ClaudineError(
+          ErrorCode.SYSTEM_ERROR,
+          'Worktree has unpushed changes - would lose developer work'
+        ));
+      }
+
+      return ok(undefined);
+    } catch (error) {
+      // If we can't stat the worktree, it probably doesn't exist, so it's safe to remove
+      if ((error as any).code === 'ENOENT') {
+        return ok(undefined);
+      }
+      return err(new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Cannot assess worktree safety: ${error instanceof Error ? error.message : String(error)}`
+      ));
+    }
+  }
+
+  /**
+   * Checks if a worktree has unpushed changes
+   * @param worktreePath Path to the worktree
+   * @returns True if there are unpushed changes
+   */
+  private async hasUnpushedChanges(worktreePath: string): Promise<boolean> {
+    try {
+      const gitInWorktree = simpleGit(worktreePath);
+      const status = await gitInWorktree.status();
+
+      // Check for uncommitted changes
+      if (!status.isClean()) {
+        return true;
+      }
+
+      // Check for unpushed commits
+      try {
+        const result = await gitInWorktree.raw(['rev-list', '--count', '@{u}..HEAD']);
+        const unpushedCount = parseInt(result.trim(), 10);
+        return unpushedCount > 0;
+      } catch {
+        // If we can't check upstream, assume there might be unpushed changes
+        return true;
+      }
+    } catch (error) {
+      this.logger.warn('Could not check for unpushed changes', {
+        worktreePath,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      // If we can't check, assume there might be unpushed changes to be safe
+      return true;
+    }
+  }
+
+  /**
+   * Get status information for all worktrees
+   * @returns Array of worktree status information
+   */
+  async getWorktreeStatuses(): Promise<Result<WorktreeStatus[]>> {
+    const statuses: WorktreeStatus[] = [];
+
+    for (const [taskId, info] of this.activeWorktrees) {
+      const statusResult = await this.getWorktreeStatus(taskId);
+      if (statusResult.ok) {
+        statuses.push(statusResult.value);
+      }
+    }
+
+    return ok(statuses);
+  }
+
+  /**
+   * Get status information for a specific worktree
+   * @param taskId Task ID to get status for
+   * @returns Worktree status information
+   */
+  async getWorktreeStatus(taskId: TaskId): Promise<Result<WorktreeStatus>> {
+    const info = this.activeWorktrees.get(taskId);
+    if (!info) {
+      return err(new ClaudineError(
+        ErrorCode.TASK_NOT_FOUND,
+        `Worktree not found for task ${taskId}`
+      ));
+    }
+
+    try {
+      let ageInDays = 0;
+      let exists = false;
+
+      try {
+        const stats = await fs.stat(info.path);
+        ageInDays = (Date.now() - stats.mtime.getTime()) / (1000 * 60 * 60 * 24);
+        exists = true;
+      } catch {
+        // Worktree directory doesn't exist
+        exists = false;
+      }
+
+      const hasUnpushedChanges = exists ? await this.hasUnpushedChanges(info.path) : false;
+      const safetyCheck = exists ? await this.isWorktreeSafeToRemove(info.path) : ok(undefined);
+
+      const status: WorktreeStatus = {
+        taskId,
+        path: info.path,
+        branch: info.branch,
+        baseBranch: info.baseBranch,
+        ageInDays,
+        hasUnpushedChanges,
+        safeToRemove: safetyCheck.ok,
+        exists
+      };
+
+      return ok(status);
+    } catch (error) {
+      return err(new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Failed to get worktree status: ${error instanceof Error ? error.message : String(error)}`
+      ));
+    }
+  }
+
+  /**
    * Cleans up all active worktrees
    * Called during shutdown to ensure no orphaned worktrees
+   * @param force Skip safety checks for all worktrees
    * @returns Success or error result
    */
-  async cleanup(): Promise<Result<void>> {
+  async cleanup(force = false): Promise<Result<void>> {
+    let errors: string[] = [];
+
     for (const [taskId, _] of this.activeWorktrees) {
-      await this.removeWorktree(taskId);
+      const result = await this.removeWorktree(taskId, force);
+      if (!result.ok) {
+        errors.push(`${taskId}: ${result.error.message}`);
+      }
     }
+
+    if (errors.length > 0) {
+      this.logger.warn('Some worktrees could not be cleaned up', { errors });
+      return err(new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Failed to cleanup some worktrees: ${errors.join(', ')}`
+      ));
+    }
+
     return ok(undefined);
   }
 }
