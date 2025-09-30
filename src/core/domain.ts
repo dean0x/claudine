@@ -30,8 +30,8 @@ export interface Task {
   readonly priority: Priority;
   readonly workingDirectory?: string;
 
-  // Worktree control (replaces old cleanupWorktree boolean)
-  readonly useWorktree: boolean;       // default: true (disabled via --no-worktree)
+  // Worktree control (EXPERIMENTAL - opt-in only)
+  readonly useWorktree: boolean;       // default: false (enabled via --use-worktree or config)
   readonly worktreeCleanup?: 'auto' | 'keep' | 'delete'; // default: 'auto'
 
   // Merge strategy fields (only applies when useWorktree is true)
@@ -99,8 +99,8 @@ export interface DelegateRequest {
   readonly priority?: Priority;
   readonly workingDirectory?: string;
 
-  // Worktree control
-  readonly useWorktree?: boolean;      // default: true
+  // Worktree control (EXPERIMENTAL - opt-in)
+  readonly useWorktree?: boolean;      // default: from config (false unless USE_WORKTREES_BY_DEFAULT=true)
   readonly worktreeCleanup?: 'auto' | 'keep' | 'delete'; // default: 'auto'
 
   // Merge strategy fields
@@ -151,12 +151,12 @@ export const createTask = (request: DelegateRequest): Task => Object.freeze({
   priority: request.priority || Priority.P2,
   workingDirectory: request.workingDirectory,
 
-  // Worktree configuration
-  useWorktree: request.useWorktree !== false, // Default to true
+  // Worktree configuration (EXPERIMENTAL - default false, applied in TaskManager from config)
+  useWorktree: request.useWorktree ?? false, // Default false (TaskManager applies config default)
   worktreeCleanup: request.worktreeCleanup !== undefined ? request.worktreeCleanup : 'auto',
 
   // Merge strategy configuration
-  mergeStrategy: request.useWorktree === false ? undefined : (request.mergeStrategy || 'pr'),
+  mergeStrategy: request.useWorktree ? (request.mergeStrategy || 'pr') : undefined,
   branchName: request.branchName,
   baseBranch: request.baseBranch,
   autoCommit: request.autoCommit !== false, // Default to true

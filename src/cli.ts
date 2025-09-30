@@ -30,23 +30,26 @@ MCP Server Commands:
   mcp config             Show MCP configuration for Claude
 
 Task Commands:
-  delegate <prompt> [options]  Delegate a task to Claude Code (with git worktree by default)
+  delegate <prompt> [options]  Delegate a task to Claude Code (runs in current directory by default)
     -p, --priority P0|P1|P2    Task priority (P0=critical, P1=high, P2=normal)
     -w, --working-directory D  Working directory for task execution
-    --no-worktree              Run directly without worktree isolation
-    --keep-worktree            Always preserve worktree after completion
-    --delete-worktree          Always cleanup worktree after completion
+    --use-worktree             [EXPERIMENTAL] Use git worktree for isolation (opt-in)
+    --keep-worktree            Always preserve worktree after completion (requires --use-worktree)
+    --delete-worktree          Always cleanup worktree after completion (requires --use-worktree)
     -s, --strategy STRATEGY    Merge strategy: pr|auto|manual|patch (default: pr)
     -b, --branch NAME          Custom branch name
     --base BRANCH              Base branch (default: current)
     -t, --timeout MS           Task timeout in milliseconds
 
-Worktree Management:
+⚠️  EXPERIMENTAL Worktree Features (advanced users only):
   worktree list              List all active worktrees with status
   worktree cleanup [options] Safely clean up old worktrees
     --strategy safe|force      Cleanup strategy (default: safe)
     --older-than N            Only remove worktrees older than N days (default: 30)
   worktree status <task-id>  Get detailed status of specific worktree
+
+  Note: Worktrees are complex and most users don't need them. Tasks run in your
+        current directory by default. Use --use-worktree to opt-in to isolation.
 
 Configuration:
   config show                Show current configuration

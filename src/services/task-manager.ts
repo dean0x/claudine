@@ -59,6 +59,8 @@ export class TaskManagerService implements TaskManager {
       ...request,
       timeout: request.timeout ?? this.config.timeout,
       maxOutputBuffer: request.maxOutputBuffer ?? this.config.maxOutputBuffer,
+      // Apply worktree default from configuration (default: false)
+      useWorktree: request.useWorktree ?? this.config.useWorktreesByDefault,
     };
 
     // Create task using pure function with defaults applied
