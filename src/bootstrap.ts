@@ -6,8 +6,9 @@
 import { Container } from './core/container.js';
 import { Config, Logger, ProcessSpawner, ResourceMonitor, OutputCapture, TaskQueue, WorkerPool, TaskRepository, TaskManager, WorktreeManager } from './core/interfaces.js';
 import { EventBus } from './core/events/event-bus.js';
-import { Configuration } from './core/configuration.js';
+import { Configuration, loadConfiguration } from './core/configuration.js';
 import { InMemoryEventBus } from './core/events/event-bus.js';
+import { validateConfiguration } from './core/config-validator.js';
 
 // Implementations
 import { PriorityTaskQueue } from './implementations/task-queue.js';
@@ -36,7 +37,6 @@ import { OutputHandler } from './services/handlers/output-handler.js';
 
 // Adapter
 import { MCPAdapter } from './adapters/mcp-adapter.js';
-import { loadConfiguration } from './core/configuration.js';
 
 // Convert new configuration format to existing Config interface
 const getConfig = (): Config => {
@@ -84,6 +84,23 @@ export async function bootstrap() {
       return new ConsoleLogger('[Claudine]', true);
     }
   });
+
+  // Validate configuration against system (component-level validation)
+  const bootstrapLogger = getFromContainer<Logger>(container, 'logger');
+  const validationWarnings = validateConfiguration(config, bootstrapLogger);
+
+  // Log summary if warnings exist
+  if (validationWarnings.length > 0) {
+    const warningCount = validationWarnings.filter(w => w.severity === 'warning').length;
+    const infoCount = validationWarnings.filter(w => w.severity === 'info').length;
+    bootstrapLogger.warn('Configuration validation complete', {
+      warnings: warningCount,
+      info: infoCount,
+      total: validationWarnings.length,
+    });
+  } else {
+    bootstrapLogger.debug('Configuration validation passed - no warnings');
+  }
 
   // Register EventBus as singleton - ALL components must use this shared instance
   container.registerSingleton('eventBus', () => {
