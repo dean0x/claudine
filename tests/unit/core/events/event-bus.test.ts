@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
 import type { ClaudineEvent } from '../../../../src/core/events/events';
 import type { Logger } from '../../../../src/core/interfaces';
 import { TestLogger } from '../../../fixtures/test-doubles';
 import { TEST_COUNTS, TIMEOUTS } from '../../../constants';
+import { createTestConfiguration } from '../../../fixtures/factories';
 
 describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
   let eventBus: InMemoryEventBus;
@@ -12,7 +13,13 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
   beforeEach(() => {
     // Use TestLogger to track actual logging behavior
     logger = new TestLogger();
-    eventBus = new InMemoryEventBus(logger);
+    // FIXED: Pass config as first parameter, logger as second
+    eventBus = new InMemoryEventBus(createTestConfiguration(), logger);
+  });
+
+  afterEach(() => {
+    // ARCHITECTURE: Clean up EventBus resources to prevent memory leaks
+    eventBus.dispose();
   });
 
   describe('Event subscription and emission', () => {
@@ -141,14 +148,14 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
       let specificData: any = null;
       let allData: any = null;
 
-      const specificSub = eventBus.subscribe('SpecificEvent', async (data) => {
+      const specificSub = eventBus.subscribe('SpecificEvent', async (event) => {
         specificReceived = true;
-        specificData = data;
+        specificData = event;
       });
 
-      const allSub = eventBus.subscribeAll(async (data) => {
+      const allSub = eventBus.subscribeAll(async (event) => {
         allReceived = true;
-        allData = data;
+        allData = event;
       });
 
       expect(specificSub.ok).toBe(true);
@@ -159,8 +166,22 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
       expect(result.ok).toBe(true);
       expect(specificReceived).toBe(true);
       expect(allReceived).toBe(true);
-      expect(specificData).toEqual({ value: 'test' });
-      expect(allData).toEqual({ value: 'test' });
+
+      // FIXED: Handlers receive full event with metadata, not just payload
+      expect(specificData).toMatchObject({
+        type: 'SpecificEvent',
+        value: 'test',
+        eventId: expect.any(String),
+        timestamp: expect.any(Number),
+        source: 'claudine'
+      });
+      expect(allData).toMatchObject({
+        type: 'SpecificEvent',
+        value: 'test',
+        eventId: expect.any(String),
+        timestamp: expect.any(Number),
+        source: 'claudine'
+      });
     });
   });
 

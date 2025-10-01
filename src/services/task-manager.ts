@@ -87,7 +87,8 @@ export class TaskManagerService implements TaskManager {
 
   async getStatus(taskId?: TaskId): Promise<Result<Task | readonly Task[]>> {
     // ARCHITECTURE: Pure event-driven query - no direct repository access
-    const result = await this.eventBus.request<TaskStatusQueryEvent, Task | readonly Task[]>(
+    // FIXED: QueryHandler returns Task | null for single task, readonly Task[] for all tasks
+    const result = await this.eventBus.request<TaskStatusQueryEvent, Task | null | readonly Task[]>(
       'TaskStatusQuery',
       { taskId }
     );
@@ -95,6 +96,11 @@ export class TaskManagerService implements TaskManager {
     if (!result.ok) {
       this.logger.error('Task status query failed', result.error, { taskId });
       return result;
+    }
+
+    // Handle null case when specific task not found
+    if (result.value === null) {
+      return err(taskNotFound(taskId!));
     }
 
     return ok(result.value);
@@ -164,13 +170,19 @@ export class TaskManagerService implements TaskManager {
    */
   async retry(taskId: TaskId): Promise<Result<Task>> {
     // ARCHITECTURE: Use event-driven query to get task
-    const taskResult = await this.eventBus.request<TaskStatusQueryEvent, Task>('TaskStatusQuery', { taskId });
+    // FIXED: QueryHandler now returns Task | null for not-found tasks
+    const taskResult = await this.eventBus.request<TaskStatusQueryEvent, Task | null>('TaskStatusQuery', { taskId });
 
     if (!taskResult.ok) {
       return err(taskResult.error);
     }
 
-    const originalTask = taskResult.value as Task;
+    // FIXED: Check for null task (not found)
+    if (taskResult.value === null) {
+      return err(taskNotFound(taskId));
+    }
+
+    const originalTask = taskResult.value; // Now safely Task, not null
 
     // Only retry tasks that are in terminal states
     if (!isTerminalState(originalTask.status)) {

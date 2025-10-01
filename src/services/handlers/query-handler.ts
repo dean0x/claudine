@@ -68,7 +68,7 @@ export class QueryHandler extends BaseEventHandler {
     });
 
     try {
-      let result: Task | readonly Task[];
+      let result: Task | readonly Task[] | null;
 
       if (event.taskId) {
         // Query single task
@@ -78,10 +78,8 @@ export class QueryHandler extends BaseEventHandler {
           throw taskResult.error;
         }
 
-        if (!taskResult.value) {
-          throw taskNotFound(event.taskId);
-        }
-
+        // FIXED: Return null for not-found instead of throwing
+        // This provides graceful handling for non-existent tasks
         result = taskResult.value;
       } else {
         // Query all tasks

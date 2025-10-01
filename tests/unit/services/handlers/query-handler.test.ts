@@ -58,7 +58,8 @@ describe('QueryHandler - Behavioral Tests', () => {
       await repository.save(task);
 
       // Act - Query for the task
-      const result = await eventBus.request<{ taskId: string }, { task: Task | null }>(
+      // FIXED: Response is Task directly, not wrapped in {task: ...}
+      const result = await eventBus.request<{ taskId: string }, Task>(
         'TaskStatusQuery',
         { taskId: task.id }
       );
@@ -66,16 +67,17 @@ describe('QueryHandler - Behavioral Tests', () => {
       // Assert - Verify behavior, not mocks
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.task).toBeDefined();
-        expect(result.value.task?.id).toBe(task.id);
-        expect(result.value.task?.prompt).toBe('test task');
-        expect(result.value.task?.status).toBe('pending');
+        expect(result.value).toBeDefined();
+        expect(result.value.id).toBe(task.id);
+        expect(result.value.prompt).toBe('test task');
+        expect(result.value.status).toBe('pending');
       }
     });
 
     it('should return null for non-existent task', async () => {
       // Act - Query for non-existent task
-      const result = await eventBus.request<{ taskId: string }, { task: Task | null }>(
+      // FIXED: Response is Task | null directly, not wrapped
+      const result = await eventBus.request<{ taskId: string }, Task | null>(
         'TaskStatusQuery',
         { taskId: 'non-existent-id' }
       );
@@ -83,7 +85,7 @@ describe('QueryHandler - Behavioral Tests', () => {
       // Assert - Should handle gracefully
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.task).toBeNull();
+        expect(result.value).toBeNull();
       }
     });
 
@@ -92,7 +94,8 @@ describe('QueryHandler - Behavioral Tests', () => {
       database.close();
 
       // Act - Try to query
-      const result = await eventBus.request<{ taskId: string }, { task: Task | null }>(
+      // FIXED: Response is Task | null directly
+      const result = await eventBus.request<{ taskId: string }, Task | null>(
         'TaskStatusQuery',
         { taskId: 'any-id' }
       );
@@ -121,18 +124,19 @@ describe('QueryHandler - Behavioral Tests', () => {
       }
 
       // Act - Query all tasks
-      const result = await eventBus.request<{}, { tasks: Task[] }>(
-        'TaskListQuery',
+      // FIXED: Use TaskStatusQuery with no taskId (returns Task[])
+      const result = await eventBus.request<{}, readonly Task[]>(
+        'TaskStatusQuery',
         {}
       );
 
       // Assert - Verify we get all tasks
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.tasks).toHaveLength(5);
+        expect(result.value).toHaveLength(5);
 
         // Verify status distribution
-        const statuses = result.value.tasks.map(t => t.status);
+        const statuses = result.value.map(t => t.status);
         expect(statuses.filter(s => s === 'pending')).toHaveLength(2);
         expect(statuses.filter(s => s === 'running')).toHaveLength(1);
         expect(statuses.filter(s => s === 'completed')).toHaveLength(1);
@@ -142,16 +146,17 @@ describe('QueryHandler - Behavioral Tests', () => {
 
     it('should return empty array when no tasks exist', async () => {
       // Act - Query empty database
-      const result = await eventBus.request<{}, { tasks: Task[] }>(
-        'TaskListQuery',
+      // FIXED: Use TaskStatusQuery with no taskId
+      const result = await eventBus.request<{}, readonly Task[]>(
+        'TaskStatusQuery',
         {}
       );
 
       // Assert
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.tasks).toEqual([]);
-        expect(Array.isArray(result.value.tasks)).toBe(true);
+        expect(result.value).toEqual([]);
+        expect(Array.isArray(result.value)).toBe(true);
       }
     });
 
@@ -169,8 +174,9 @@ describe('QueryHandler - Behavioral Tests', () => {
 
       // Act - Query all tasks
       const startTime = Date.now();
-      const result = await eventBus.request<{}, { tasks: Task[] }>(
-        'TaskListQuery',
+      // FIXED: Use TaskStatusQuery with no taskId
+      const result = await eventBus.request<{}, readonly Task[]>(
+        'TaskStatusQuery',
         {}
       );
       const queryTime = Date.now() - startTime;
@@ -178,7 +184,7 @@ describe('QueryHandler - Behavioral Tests', () => {
       // Assert - Should be fast and complete
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.tasks).toHaveLength(taskCount);
+        expect(result.value).toHaveLength(taskCount);
         expect(queryTime).toBeLessThan(1000); // Should complete in < 1 second
       }
     });
@@ -300,7 +306,8 @@ describe('QueryHandler - Behavioral Tests', () => {
 
       // Act - Make concurrent queries
       const promises = tasks.map(task =>
-        eventBus.request<{ taskId: string }, { task: Task | null }>(
+        // FIXED: Response is Task | null directly
+        eventBus.request<{ taskId: string }, Task | null>(
           'TaskStatusQuery',
           { taskId: task.id }
         )
@@ -312,8 +319,9 @@ describe('QueryHandler - Behavioral Tests', () => {
       results.forEach((result, index) => {
         expect(result.ok).toBe(true);
         if (result.ok) {
-          expect(result.value.task?.id).toBe(tasks[index].id);
-          expect(result.value.task?.prompt).toContain(`concurrent task ${index}`);
+          // FIXED: result.value IS the task directly
+          expect(result.value?.id).toBe(tasks[index].id);
+          expect(result.value?.prompt).toContain(`concurrent task ${index}`);
         }
       });
     });
@@ -326,16 +334,17 @@ describe('QueryHandler - Behavioral Tests', () => {
       await repository.save(task2);
 
       // Act - Concurrent different queries
+      // FIXED: Use correct response types
       const [result1, result2, listResult] = await Promise.all([
-        eventBus.request<{ taskId: string }, any>('TaskStatusQuery', { taskId: task1.id }),
-        eventBus.request<{ taskId: string }, any>('TaskStatusQuery', { taskId: task2.id }),
-        eventBus.request<{}, any>('TaskListQuery', {})
+        eventBus.request<{ taskId: string }, Task>('TaskStatusQuery', { taskId: task1.id }),
+        eventBus.request<{ taskId: string }, Task>('TaskStatusQuery', { taskId: task2.id }),
+        eventBus.request<{}, readonly Task[]>('TaskStatusQuery', {})
       ]);
 
       // Assert - Each query gets correct results
-      expect(result1.ok && result1.value.task?.id).toBe(task1.id);
-      expect(result2.ok && result2.value.task?.id).toBe(task2.id);
-      expect(listResult.ok && listResult.value.tasks).toHaveLength(2);
+      expect(result1.ok && result1.value.id).toBe(task1.id);
+      expect(result2.ok && result2.value.id).toBe(task2.id);
+      expect(listResult.ok && listResult.value).toHaveLength(2);
     });
   });
 
