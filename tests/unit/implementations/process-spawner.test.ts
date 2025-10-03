@@ -16,7 +16,7 @@ vi.mock('child_process', () => ({
 describe('ClaudeProcessSpawner - Behavioral Tests', () => {
   let spawner: ClaudeProcessSpawner;
   let mockProcess: ChildProcess & EventEmitter;
-  let mockSpawn: ReturnType<typeof vi.fn>;
+  let spawnSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     spawner = new ClaudeProcessSpawner(createTestConfiguration());
@@ -26,7 +26,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
       kill: function(this: ChildProcess, signal?: string) {
         // Simulate real process.kill behavior
         if (signal === 'SIGTERM' || signal === 'SIGKILL') {
-          process.nextTick(() => {
+          setImmediate(() => {
             this.emit('exit', 0, signal);
           });
           return true;
@@ -35,8 +35,9 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
       }
     }) as ChildProcess & EventEmitter;
 
-    mockSpawnImpl = () => mockProcess;
-    mockSpawn = spawn;
+    // Create a spy function that tracks calls
+    spawnSpy = vi.fn((...args: any[]) => mockProcess);
+    mockSpawnImpl = spawnSpy;
   });
 
   afterEach(() => {
@@ -75,9 +76,9 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
     });
 
     it('should handle spawn failures gracefully and return error', () => {
-      mockSpawnImpl = () => {
+      spawnSpy.mockImplementation(() => {
         throw new Error('Command not found: claude');
-      };
+      });
 
       const result = spawner.spawn('test', '/dir');
 
@@ -87,7 +88,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
         expect(result.error).toBeInstanceOf(Error);
         expect(result.error.message).toContain('Command not found');
         expect(typeof result.error.message).toBe('string');
-        expect(result.error.name).toBe('Error');
+        expect(result.error.name).toBe('ClaudineError');
         expect(result.error.stack).toBeDefined();
       }
       if (!result.ok) {
@@ -111,42 +112,46 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
       }
     });
 
-    it('should emit stdout data from spawned process', (done) => {
+    it('should emit stdout data from spawned process', () => {
       const result = spawner.spawn('echo test', '/tmp');
 
       expect(result.ok).toBe(true);
       if (result.ok) {
         const { process } = result.value;
 
-        // Test that we can receive output
-        process.stdout?.on('data', (data) => {
-          expect(data).toBeDefined();
-          done();
-        });
+        // Test that we can receive output - use promise instead of done()
+        return new Promise<void>((resolve) => {
+          process.stdout?.on('data', (data) => {
+            expect(data).toBeDefined();
+            resolve();
+          });
 
-        // Simulate process output
-        process.nextTick(() => {
-          (process.stdout as EventEmitter).emit('data', Buffer.from('test output'));
+          // Simulate process output
+          setImmediate(() => {
+            (process.stdout as EventEmitter).emit('data', Buffer.from('test output'));
+          });
         });
       }
     });
 
-    it('should emit stderr data from spawned process', (done) => {
+    it('should emit stderr data from spawned process', () => {
       const result = spawner.spawn('echo error', '/tmp');
 
       expect(result.ok).toBe(true);
       if (result.ok) {
         const { process } = result.value;
 
-        // Test that we can receive errors
-        process.stderr?.on('data', (data) => {
-          expect(data).toBeDefined();
-          done();
-        });
+        // Test that we can receive errors - use promise instead of done()
+        return new Promise<void>((resolve) => {
+          process.stderr?.on('data', (data) => {
+            expect(data).toBeDefined();
+            resolve();
+          });
 
-        // Simulate process error output
-        process.nextTick(() => {
-          (process.stderr as EventEmitter).emit('data', Buffer.from('error output'));
+          // Simulate process error output
+          setImmediate(() => {
+            (process.stderr as EventEmitter).emit('data', Buffer.from('error output'));
+          });
         });
       }
     });
@@ -156,12 +161,12 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
       const simpleCommands = ['ls', 'pwd', 'echo test', 'cat file.txt'];
 
       simpleCommands.forEach(cmd => {
-        mockSpawn.mockClear();
+        spawnSpy.mockClear();
         const result = spawner.spawn(cmd, '/dir');
 
         expect(result.ok).toBe(true);
         // Verify the command was processed (wrapped)
-        const lastArg = mockSpawn.mock.calls[0]?.[1]?.slice(-1)[0];
+        const lastArg = spawnSpy.mock.calls[0]?.[1]?.slice(-1)[0];
         expect(lastArg).toContain('Execute the following bash command:');
         expect(lastArg).toContain(cmd);
       });
@@ -177,28 +182,30 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
       ];
 
       complexPrompts.forEach(prompt => {
-        mockSpawn.mockClear();
+        spawnSpy.mockClear();
         const result = spawner.spawn(prompt, '/dir');
 
         expect(result.ok).toBe(true);
         // Verify complex prompts are passed as-is
-        const lastArg = mockSpawn.mock.calls[0]?.[1]?.slice(-1)[0];
+        const lastArg = spawnSpy.mock.calls[0]?.[1]?.slice(-1)[0];
         expect(lastArg).toBe(prompt);
       });
     });
   });
 
   describe('Process killing behavior', () => {
+    let processKillSpy: ReturnType<typeof vi.fn>;
+
     beforeEach(() => {
       vi.useFakeTimers();
-      // Mock process.kill for testing
-      const originalKill = process.kill;
-      process.kill = (pid: number, signal?: string): boolean => {
+      // Mock process.kill with a spy
+      processKillSpy = vi.fn((pid: number, signal?: string): boolean => {
         if (pid === 99999) {
           throw new Error('No such process');
         }
         return true;
-      };
+      });
+      process.kill = processKillSpy as any;
     });
 
     afterEach(() => {
@@ -210,12 +217,12 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
       const result = spawner.kill(pid);
 
       expect(result.ok).toBe(true);
-      expect(process.kill).toHaveBeenCalledWith(pid, 'SIGTERM');
-      expect(process.kill).toHaveBeenCalledTimes(1);
+      expect(processKillSpy).toHaveBeenCalledWith(pid, 'SIGTERM');
+      expect(processKillSpy).toHaveBeenCalledTimes(1);
       if (result.ok) {
         expect(result.value).toBeUndefined();
       }
-      expect(process.kill).not.toHaveBeenCalledWith(pid, 'SIGKILL');
+      expect(processKillSpy).not.toHaveBeenCalledWith(pid, 'SIGKILL');
       expect(typeof pid).toBe('number');
       expect(pid).toBeGreaterThan(0);
     });
@@ -226,15 +233,15 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
 
       expect(result.ok).toBe(true);
       // Initially only SIGTERM
-      expect(process.kill).toHaveBeenCalledTimes(1);
-      expect(process.kill).toHaveBeenCalledWith(pid, 'SIGTERM');
-      expect(process.kill).toHaveBeenNthCalledWith(1, pid, 'SIGTERM');
+      expect(processKillSpy).toHaveBeenCalledTimes(1);
+      expect(processKillSpy).toHaveBeenCalledWith(pid, 'SIGTERM');
+      expect(processKillSpy).toHaveBeenNthCalledWith(1, pid, 'SIGTERM');
 
       // After grace period, SIGKILL
       vi.advanceTimersByTime(TIMEOUTS.LONG);
-      expect(process.kill).toHaveBeenCalledTimes(2);
-      expect(process.kill).toHaveBeenCalledWith(pid, 'SIGKILL');
-      expect(process.kill).toHaveBeenNthCalledWith(2, pid, 'SIGKILL');
+      expect(processKillSpy).toHaveBeenCalledTimes(2);
+      expect(processKillSpy).toHaveBeenCalledWith(pid, 'SIGKILL');
+      expect(processKillSpy).toHaveBeenNthCalledWith(2, pid, 'SIGKILL');
       expect(vi.getTimerCount()).toBeGreaterThanOrEqual(0);
     });
 
@@ -282,7 +289,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
       expect(result.ok).toBe(true);
 
       // Verify process would run in correct directory
-      const spawnCall = mockSpawn.mock.calls[0];
+      const spawnCall = spawnSpy.mock.calls[0];
       expect(spawnCall[2].cwd).toBe(testDir);
     });
 
@@ -290,11 +297,11 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
       const paths = ['.', '..', '/absolute/path', './relative', '../parent'];
 
       paths.forEach(path => {
-        mockSpawn.mockClear();
+        spawnSpy.mockClear();
         const result = spawner.spawn('pwd', path);
 
         expect(result.ok).toBe(true);
-        const spawnCall = mockSpawn.mock.calls[0];
+        const spawnCall = spawnSpy.mock.calls[0];
         expect(spawnCall[2].cwd).toBe(path);
       });
     });
@@ -309,7 +316,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
       const result = spawner.spawn('echo $CUSTOM_VAR', '/tmp');
 
       expect(result.ok).toBe(true);
-      const spawnCall = mockSpawn.mock.calls[0];
+      const spawnCall = spawnSpy.mock.calls[0];
       expect(spawnCall[2].env.CUSTOM_VAR).toBe('test-value');
       expect(spawnCall[2].env.PATH).toBe('/usr/bin:/bin');
       expect(spawnCall[2].env.CLAUDINE_WORKER).toBe('true');
@@ -322,7 +329,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
       const result = spawner.spawn('test', '/tmp', taskId);
 
       expect(result.ok).toBe(true);
-      const spawnCall = mockSpawn.mock.calls[0];
+      const spawnCall = spawnSpy.mock.calls[0];
       expect(spawnCall[2].env.CLAUDINE_TASK_ID).toBe(taskId);
       expect(spawnCall[2].env.CLAUDINE_WORKER).toBe('true');
     });
@@ -340,7 +347,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
       ];
 
       errors.forEach(error => {
-        mockSpawn.mockImplementation(() => {
+        spawnSpy.mockImplementation(() => {
           throw error;
         });
 
@@ -356,21 +363,24 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
       });
     });
 
-    it('should handle process crash after successful spawn', (done) => {
+    it('should handle process crash after successful spawn', () => {
       const result = spawner.spawn('test', '/dir');
 
       expect(result.ok).toBe(true);
       if (result.ok) {
         const { process } = result.value;
 
-        process.on('error', (err) => {
-          expect(err.message).toBe('Process crashed');
-          done();
-        });
+        // Use promise instead of done()
+        return new Promise<void>((resolve) => {
+          process.on('error', (err) => {
+            expect(err.message).toBe('Process crashed');
+            resolve();
+          });
 
-        // Simulate crash after spawn
-        process.nextTick(() => {
-          process.emit('error', new Error('Process crashed'));
+          // Simulate crash after spawn
+          setImmediate(() => {
+            process.emit('error', new Error('Process crashed'));
+          });
         });
       }
     });

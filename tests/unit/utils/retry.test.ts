@@ -162,12 +162,16 @@ describe('retryWithBackoff - Exponential Backoff Strategy', () => {
     };
 
     const resultPromise = retryWithBackoff(trackingFn, options);
-    await vi.runAllTimersAsync();
 
-    try {
-      await resultPromise;
-    } catch {
-      // Expected to fail after max retries
+    // Run timers and await rejection together to avoid unhandled promises
+    const [rejection] = await Promise.allSettled([
+      resultPromise,
+      vi.runAllTimersAsync()
+    ]);
+
+    expect(rejection.status).toBe('rejected');
+    if (rejection.status === 'rejected') {
+      expect(rejection.reason.message).toContain('ECONNRESET');
     }
 
     // Check actual call count
@@ -185,9 +189,18 @@ describe('retryWithBackoff - Exponential Backoff Strategy', () => {
       .willFailTimes(10, 'ECONNREFUSED'); // Always fails
 
     const resultPromise = retryWithBackoff(testFn.fn, { maxRetries: 2 });
-    await vi.runAllTimersAsync();
 
-    await expect(resultPromise).rejects.toThrow('ECONNREFUSED');
+    // Run timers and await rejection together
+    const [rejection] = await Promise.allSettled([
+      resultPromise,
+      vi.runAllTimersAsync()
+    ]);
+
+    expect(rejection.status).toBe('rejected');
+    if (rejection.status === 'rejected') {
+      expect(rejection.reason.message).toContain('ECONNREFUSED');
+    }
+
     // Check actual call count
     expect(testFn.calls).toBe(3); // Initial + 2 retries
   });
@@ -197,9 +210,18 @@ describe('retryWithBackoff - Exponential Backoff Strategy', () => {
       .willFailWith('Authentication failed');
 
     const resultPromise = retryWithBackoff(testFn.fn);
-    await vi.runAllTimersAsync();
 
-    await expect(resultPromise).rejects.toThrow('Authentication failed');
+    // Run timers and await rejection together
+    const [rejection] = await Promise.allSettled([
+      resultPromise,
+      vi.runAllTimersAsync()
+    ]);
+
+    expect(rejection.status).toBe('rejected');
+    if (rejection.status === 'rejected') {
+      expect(rejection.reason.message).toContain('Authentication failed');
+    }
+
     expect(testFn.wasCalledTimes(1)).toBe(true);
   });
 

@@ -97,7 +97,8 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
       },
       (error) => new ClaudineError(
         ErrorCode.PROCESS_KILL_FAILED,
-        `Failed to kill process ${pid}: ${error}`
+        `Failed to kill process ${pid}: ${error}`,
+        { pid, error }
       )
     );
   }

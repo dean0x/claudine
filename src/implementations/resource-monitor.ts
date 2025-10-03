@@ -161,6 +161,14 @@ export class SystemResourceMonitor implements ResourceMonitor {
     }
   }
 
+  getCurrentWorkerCount(): number {
+    return this.workerCount;
+  }
+
+  setWorkerCount(count: number): void {
+    this.workerCount = Math.max(0, count);
+  }
+
   /**
    * Start periodic resource monitoring and event publishing
    */
@@ -257,10 +265,16 @@ export class SystemResourceMonitor implements ResourceMonitor {
     // Use load average as primary metric (more stable than instant CPU)
     const loadAverage = os.loadavg()[0];
     const cpuCount = os.cpus().length;
+
+    // Handle edge case: no CPUs detected
+    if (cpuCount === 0) {
+      return 0;
+    }
+
     const loadPercent = (loadAverage / cpuCount) * 100;
 
-    // Return load percentage
-    return loadPercent;
+    // Cap at 100% to avoid misleading values
+    return Math.min(100, loadPercent);
   }
 }
 
@@ -268,26 +282,41 @@ export class SystemResourceMonitor implements ResourceMonitor {
  * Test implementation with configurable resources
  */
 export class TestResourceMonitor implements ResourceMonitor {
-  private cpuUsage = 20;
+  private cpuUsage = 30;
   private availableMemory = 8_000_000_000;
+  private totalMemory = 16_000_000_000;
+  private loadAvg: readonly [number, number, number] = [1.2, 1.0, 0.8];
   private workerCount = 0;
+  private cpuThreshold = 80;
+  private memoryReserve = 1_000_000_000;
+  private canSpawn = true;
+  private spawnCheckCount = 0;
 
   constructor(
-    private readonly cpuThreshold = 80,
-    private readonly memoryReserve = 1_000_000_000
-  ) {}
+    private readonly eventBus?: EventBus,
+    private readonly logger?: Logger,
+    cpuThreshold = 80,
+    memoryReserve = 1_000_000_000
+  ) {
+    this.cpuThreshold = cpuThreshold;
+    this.memoryReserve = memoryReserve;
+  }
 
   async getResources(): Promise<Result<SystemResources>> {
     return ok({
       cpuUsage: this.cpuUsage,
       availableMemory: this.availableMemory,
-      totalMemory: 16_000_000_000,
-      loadAverage: [1.5, 1.2, 1.0],
+      totalMemory: this.totalMemory,
+      loadAverage: this.loadAvg,
       workerCount: this.workerCount,
     });
   }
 
   async canSpawnWorker(): Promise<Result<boolean>> {
+    this.spawnCheckCount++;
+    if (!this.canSpawn) {
+      return ok(false);
+    }
     return ok(
       this.cpuUsage < this.cpuThreshold &&
       this.availableMemory > this.memoryReserve
@@ -302,6 +331,14 @@ export class TestResourceMonitor implements ResourceMonitor {
   }
 
   // Test helpers
+  setResources(resources: Partial<SystemResources>): void {
+    if (resources.cpuUsage !== undefined) this.cpuUsage = resources.cpuUsage;
+    if (resources.availableMemory !== undefined) this.availableMemory = resources.availableMemory;
+    if (resources.totalMemory !== undefined) this.totalMemory = resources.totalMemory;
+    if (resources.loadAverage !== undefined) this.loadAvg = resources.loadAverage;
+    if (resources.workerCount !== undefined) this.workerCount = resources.workerCount;
+  }
+
   setCpuUsage(percent: number): void {
     this.cpuUsage = percent;
   }
@@ -311,16 +348,48 @@ export class TestResourceMonitor implements ResourceMonitor {
   }
 
   setWorkerCount(count: number): void {
-    this.workerCount = count;
+    this.workerCount = Math.max(0, count);
   }
-  
+
+  getCurrentWorkerCount(): number {
+    return this.workerCount;
+  }
+
   incrementWorkerCount(): void {
     this.workerCount++;
   }
-  
+
   decrementWorkerCount(): void {
     if (this.workerCount > 0) {
       this.workerCount--;
     }
+  }
+
+  setCanSpawn(canSpawn: boolean): void {
+    this.canSpawn = canSpawn;
+  }
+
+  getSpawnCheckCount(): number {
+    return this.spawnCheckCount;
+  }
+
+  resetSpawnCheckCount(): void {
+    this.spawnCheckCount = 0;
+  }
+
+  getCpuThreshold(): number {
+    return this.cpuThreshold;
+  }
+
+  setCpuThreshold(threshold: number): void {
+    this.cpuThreshold = threshold;
+  }
+
+  getMemoryReserve(): number {
+    return this.memoryReserve;
+  }
+
+  setMemoryReserve(reserve: number): void {
+    this.memoryReserve = reserve;
   }
 }
