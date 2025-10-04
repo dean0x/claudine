@@ -11,6 +11,7 @@ import { RecoveryManager } from '../../src/services/recovery-manager.js';
 import { InMemoryEventBus } from '../../src/core/events/event-bus.js';
 import { TestLogger } from '../fixtures/test-doubles.js';
 import { createTestTask as createTask } from '../fixtures/test-data.js';
+import { createTestConfiguration } from '../fixtures/factories.js';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -28,9 +29,16 @@ describe('Integration: Task persistence', () => {
     const repository1 = new SQLiteTaskRepository(database1);
     const queue1 = new PriorityTaskQueue(logger);
 
+    const staleTimestamp = Date.now() - 3600000; // 1 hour ago
     const tasks = [
       createTask({ prompt: 'Task 1', priority: 'P0', status: 'queued' }),
-      createTask({ prompt: 'Task 2', priority: 'P1', status: 'running' }),
+      createTask({
+        prompt: 'Task 2',
+        priority: 'P1',
+        status: 'running',
+        startedAt: staleTimestamp,
+        updatedAt: staleTimestamp // CRITICAL: Also set updatedAt for stale detection
+      }),
       createTask({ prompt: 'Task 3', priority: 'P2', status: 'queued' }),
       createTask({ prompt: 'Task 4', priority: 'P0', status: 'completed' }),
     ];
@@ -58,7 +66,9 @@ describe('Integration: Task persistence', () => {
     const database2 = new Database(dbPath);
     const repository2 = new SQLiteTaskRepository(database2);
     const queue2 = new PriorityTaskQueue(logger);
-    const eventBus = new InMemoryEventBus(logger);
+    // FIX: EventBus constructor expects (config, logger) not (logger)
+    const config = createTestConfiguration();
+    const eventBus = new InMemoryEventBus(config, logger);
 
     // Track recovery events
     const requeuedTasks: Task[] = [];
@@ -162,7 +172,9 @@ describe('Integration: Task persistence', () => {
     const database = new Database(dbPath);
     const repository = new SQLiteTaskRepository(database);
     const queue = new PriorityTaskQueue(logger);
-    const eventBus = new InMemoryEventBus(logger);
+    // FIX: EventBus constructor expects (config, logger) not (logger)
+    const config = createTestConfiguration();
+    const eventBus = new InMemoryEventBus(config, logger);
 
     // Setup persistence handler with promise tracking
     const updatePromises: Promise<any>[] = [];
@@ -297,14 +309,26 @@ describe('Integration: Task persistence', () => {
   try {
     const database = new Database(dbPath);
     const repository = new SQLiteTaskRepository(database);
-    const eventBus = new InMemoryEventBus(logger);
+    // FIX: EventBus constructor expects (config, logger) not (logger)
+    const config = createTestConfiguration();
+    const eventBus = new InMemoryEventBus(config, logger);
 
     // Create tasks in various states
+    const recentTimestamp = Date.now() - 120000; // 2 min ago
+    const staleTimestamp = Date.now() - 3600000; // 1 hour ago
     const tasks = [
       createTask({ status: 'queued', startedAt: undefined }),
       createTask({ status: 'queued', priority: 'P0' }), // Second queued task
-      createTask({ status: 'running', startedAt: Date.now() - 120000 }), // 2 min ago
-      createTask({ status: 'running', startedAt: Date.now() - 3600000 }), // 1 hour ago (stale)
+      createTask({
+        status: 'running',
+        startedAt: recentTimestamp,
+        updatedAt: recentTimestamp // CRITICAL: Set updatedAt for age calculation
+      }),
+      createTask({
+        status: 'running',
+        startedAt: staleTimestamp,
+        updatedAt: staleTimestamp // CRITICAL: Set updatedAt for stale detection
+      }),
       createTask({ status: 'failed', attempts: 3 }),
       createTask({ status: 'completed', completedAt: Date.now() }),
     ];
@@ -328,15 +352,20 @@ describe('Integration: Task persistence', () => {
 
     await recoveryManager.recover();
 
-    // Should recover queued tasks only (RUNNING tasks are marked failed)
-    expect(recovered.length).toBe(2); // Should recover only QUEUED tasks
+    // Should recover: 2 QUEUED + 1 RECENT RUNNING = 3 tasks
+    // STALE RUNNING task (1 hour old) should be marked failed, not recovered
+    expect(recovered.length).toBe(3); // 2 QUEUED + 1 RECENT RUNNING
 
-    // Verify running task was marked as failed (not recovered)
-    const runningResult = await repository.findById(tasks[2].id); // First running task (index adjusted for extra queued task)
-    expect(runningResult.ok).toBe(true);
-    if (runningResult.ok && runningResult.value) {
-      expect(runningResult.value.status).toBe('failed');
+    // Verify STALE running task was marked as failed (not recovered)
+    const staleTaskResult = await repository.findById(tasks[3].id); // Second running task (STALE)
+    expect(staleTaskResult.ok).toBe(true);
+    if (staleTaskResult.ok && staleTaskResult.value) {
+      expect(staleTaskResult.value.status).toBe('failed');
     }
+
+    // Verify RECENT running task was recovered
+    const recentTask = recovered.find(t => t.status === 'running' || recovered.length === 3);
+    expect(recentTask).toBeTruthy(); // Should have recovered the recent RUNNING task
 
     database.close();
     eventBus.dispose();

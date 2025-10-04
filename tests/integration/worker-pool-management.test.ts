@@ -13,6 +13,7 @@ import { TestLogger } from '../fixtures/test-doubles.js';
 import { MockProcessSpawner } from '../fixtures/mock-process-spawner.js';
 import { BufferedOutputCapture } from '../../src/implementations/output-capture.js';
 import { createTestTask as createTask } from '../fixtures/test-data.js';
+import { createTestConfiguration } from '../fixtures/factories.js';
 import { TestWorktreeManager } from '../fixtures/test-doubles.js';
 import { randomUUID } from 'crypto';
 import type { Task } from '../../src/core/domain.js';
@@ -20,7 +21,8 @@ import type { Task } from '../../src/core/domain.js';
 describe('Integration: Worker pool management', () => {
   it('should handle worker pool lifecycle management', async () => {
     const logger = new TestLogger();
-    const eventBus = new InMemoryEventBus(logger);
+    const config = createTestConfiguration();
+    const eventBus = new InMemoryEventBus(config, logger);
   const processSpawner = new MockProcessSpawner();
   const outputCapture = new BufferedOutputCapture(10 * 1024 * 1024, eventBus);
   const resourceMonitor = new MockResourceMonitor();
@@ -158,7 +160,8 @@ describe('Integration: Worker pool management', () => {
 
   it('should handle autoscaling with resource monitoring', async () => {
     const logger = new TestLogger();
-    const eventBus = new InMemoryEventBus(logger);
+    const config = createTestConfiguration();
+    const eventBus = new InMemoryEventBus(config, logger);
   const queue = new PriorityTaskQueue(logger);
   const resourceMonitor = new MockResourceMonitor();
   const processSpawner = new MockProcessSpawner();
@@ -288,7 +291,8 @@ describe('Integration: Worker pool management', () => {
 
   it('should handle output capture and streaming', async () => {
     const logger = new TestLogger();
-    const eventBus = new InMemoryEventBus(logger);
+    const config = createTestConfiguration();
+    const eventBus = new InMemoryEventBus(config, logger);
     const outputCapture = new BufferedOutputCapture(10 * 1024 * 1024, eventBus); // 10MB buffer to allow large output
 
     try {

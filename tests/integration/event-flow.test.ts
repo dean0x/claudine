@@ -15,6 +15,7 @@ import { TestLogger } from '../fixtures/test-doubles.js';
 import { MockProcessSpawner } from '../fixtures/mock-process-spawner.js';
 import { BufferedOutputCapture } from '../../src/implementations/output-capture.js';
 import { createTestTask as createTask } from '../fixtures/test-data.js';
+import { createTestConfiguration } from '../fixtures/factories.js';
 import { randomUUID } from 'crypto';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
@@ -29,7 +30,8 @@ describe('Integration: Event-driven task delegation flow', () => {
 
   // Initialize components
   const logger = new TestLogger(); // Quiet for tests
-  const eventBus = new InMemoryEventBus(logger);
+  const busConfig = createTestConfiguration();
+  const eventBus = new InMemoryEventBus(busConfig, logger);
   // Database constructor automatically initializes the database
   const database = new Database(dbPath);
   const repository = new SQLiteTaskRepository(database);
@@ -57,14 +59,12 @@ describe('Integration: Event-driven task delegation flow', () => {
     outputCapture     // outputCapture
   );
 
-  // Initialize task manager with all required parameters
+  // Initialize task manager with new signature: (eventBus, logger, config)
   const config = loadConfiguration();
   const taskManager = new TaskManagerService(
     eventBus,
-    repository,  // repository for backwards compatibility
-    logger,      // logger is required
-    config,      // config is required
-    outputCapture // optional output capture
+    logger,
+    config
   );
 
   // Track events
@@ -215,7 +215,8 @@ describe('Integration: Event-driven task delegation flow', () => {
 describe('Integration: Request-response pattern with timeout', () => {
   it('should handle timeouts correctly', async () => {
   const logger = new TestLogger();
-  const eventBus = new InMemoryEventBus(logger);
+  const busConfig = createTestConfiguration();
+  const eventBus = new InMemoryEventBus(busConfig, logger);
 
   // Setup handler that responds slowly
   eventBus.onRequest('SlowQuery', async () => {
@@ -250,7 +251,8 @@ describe('Integration: Request-response pattern with timeout', () => {
 describe('Integration: Event handler registration and cleanup', () => {
   it('should manage event handlers correctly', async () => {
   const logger = new TestLogger();
-  const eventBus = new InMemoryEventBus(logger);
+  const busConfig = createTestConfiguration();
+  const eventBus = new InMemoryEventBus(busConfig, logger);
   const received: number[] = [];
 
   // Register multiple handlers
