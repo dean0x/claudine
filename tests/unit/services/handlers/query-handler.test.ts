@@ -70,7 +70,7 @@ describe('QueryHandler - Behavioral Tests', () => {
         expect(result.value).toBeDefined();
         expect(result.value.id).toBe(task.id);
         expect(result.value.prompt).toBe('test task');
-        expect(result.value.status).toBe('pending');
+        expect(result.value.status).toBe('queued'); // FIX: Domain defaults to QUEUED
       }
     });
 
@@ -110,18 +110,22 @@ describe('QueryHandler - Behavioral Tests', () => {
 
   describe('Task list queries', () => {
     it('should return all tasks with correct status filtering', async () => {
-      // Arrange - Create tasks with different statuses
-      const tasks = [
-        createTask({ prompt: 'task1', status: 'pending' }),
-        createTask({ prompt: 'task2', status: 'running' }),
-        createTask({ prompt: 'task3', status: 'completed' }),
-        createTask({ prompt: 'task4', status: 'failed' }),
-        createTask({ prompt: 'task5', status: 'pending' })
-      ];
+      // Arrange - Create tasks, all start as QUEUED, then update status
+      const task1 = createTask({ prompt: 'task1' });
+      const task2 = createTask({ prompt: 'task2' });
+      const task3 = createTask({ prompt: 'task3' });
+      const task4 = createTask({ prompt: 'task4' });
+      const task5 = createTask({ prompt: 'task5' });
 
-      for (const task of tasks) {
-        await repository.save(task);
-      }
+      // Save and update statuses (domain enforces QUEUED on creation)
+      await repository.save(task1);
+      await repository.save(task2);
+      await repository.save({ ...task2, status: 'running' as const });
+      await repository.save(task3);
+      await repository.save({ ...task3, status: 'completed' as const });
+      await repository.save(task4);
+      await repository.save({ ...task4, status: 'failed' as const });
+      await repository.save(task5);
 
       // Act - Query all tasks
       // FIXED: Use TaskStatusQuery with no taskId (returns Task[])
@@ -135,9 +139,9 @@ describe('QueryHandler - Behavioral Tests', () => {
       if (result.ok) {
         expect(result.value).toHaveLength(5);
 
-        // Verify status distribution
+        // Verify status distribution (2 queued, 1 running, 1 completed, 1 failed)
         const statuses = result.value.map(t => t.status);
-        expect(statuses.filter(s => s === 'pending')).toHaveLength(2);
+        expect(statuses.filter(s => s === 'queued')).toHaveLength(2);
         expect(statuses.filter(s => s === 'running')).toHaveLength(1);
         expect(statuses.filter(s => s === 'completed')).toHaveLength(1);
         expect(statuses.filter(s => s === 'failed')).toHaveLength(1);
@@ -193,17 +197,16 @@ describe('QueryHandler - Behavioral Tests', () => {
   describe('Task output queries', () => {
     it('should return captured output for task', async () => {
       // Arrange - Create task and capture output
-      const task = createTask({ prompt: 'echo test', status: 'running' });
+      const task = createTask({ prompt: 'echo test' });
       await repository.save(task);
 
-      // Start capture and add output
-      outputCapture.startCapture(task.id, 12345);
-      outputCapture.handleStdout(task.id, Buffer.from('Hello World\n'));
-      outputCapture.handleStderr(task.id, Buffer.from('Error occurred\n'));
+      // FIX: Use correct capture() API instead of old startCapture/handleStdout
+      outputCapture.capture(task.id, 'stdout', 'Hello World\n');
+      outputCapture.capture(task.id, 'stderr', 'Error occurred\n');
 
-      // Act - Query output
+      // Act - Query output using correct event name
       const result = await eventBus.request<{ taskId: string }, any>(
-        'TaskOutputQuery',
+        'TaskLogsQuery', // FIX: Use TaskLogsQuery not TaskOutputQuery
         { taskId: task.id }
       );
 
@@ -212,7 +215,6 @@ describe('QueryHandler - Behavioral Tests', () => {
       if (result.ok) {
         expect(result.value.stdout).toEqual(['Hello World\n']);
         expect(result.value.stderr).toEqual(['Error occurred\n']);
-        expect(result.value.pid).toBe(12345);
       }
     });
 
@@ -221,9 +223,9 @@ describe('QueryHandler - Behavioral Tests', () => {
       const task = createTask({ prompt: 'test' });
       await repository.save(task);
 
-      // Act
+      // Act - FIX: Use TaskLogsQuery not TaskOutputQuery
       const result = await eventBus.request<{ taskId: string }, any>(
-        'TaskOutputQuery',
+        'TaskLogsQuery',
         { taskId: task.id }
       );
 
@@ -232,26 +234,24 @@ describe('QueryHandler - Behavioral Tests', () => {
       if (result.ok) {
         expect(result.value.stdout).toEqual([]);
         expect(result.value.stderr).toEqual([]);
-        expect(result.value.exitCode).toBeUndefined();
       }
     });
 
     it('should handle large output efficiently', async () => {
       // Arrange - Task with large output
-      const task = createTask({ prompt: 'generate output', status: 'running' });
+      const task = createTask({ prompt: 'generate output' });
       await repository.save(task);
 
-      outputCapture.startCapture(task.id, 12345);
-
+      // FIX: Use correct capture() API
       // Generate 1MB of output
       const largeData = 'x'.repeat(1024);
       for (let i = 0; i < 1024; i++) {
-        outputCapture.handleStdout(task.id, Buffer.from(largeData));
+        outputCapture.capture(task.id, 'stdout', largeData);
       }
 
-      // Act
+      // Act - FIX: Use TaskLogsQuery not TaskOutputQuery
       const result = await eventBus.request<{ taskId: string }, any>(
-        'TaskOutputQuery',
+        'TaskLogsQuery',
         { taskId: task.id }
       );
 
@@ -259,7 +259,7 @@ describe('QueryHandler - Behavioral Tests', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         const totalOutput = result.value.stdout.join('').length;
-        expect(totalOutput).toBeGreaterThan(1024 * 1024);
+        expect(totalOutput).toBeGreaterThanOrEqual(1024 * 1024); // FIX: Use >= not > (exactly 1MB)
       }
     });
   });
@@ -354,23 +354,34 @@ describe('QueryHandler - Behavioral Tests', () => {
       const task = createTask({ prompt: 'test recovery' });
       await repository.save(task);
 
-      // Temporarily break then fix database
+      // Temporarily break database
       const dbPath = database['db']['name'];
       database.close();
 
-      // First query should fail
+      // First query should fail (database closed)
       const failResult = await eventBus.request<{ taskId: string }, any>(
         'TaskStatusQuery',
         { taskId: task.id }
       );
       expect(failResult.ok).toBe(false);
 
-      // Reconnect database
+      // FIX: Recovery means reopening same database and querying again
+      // Must dispose old handler first to avoid duplicate listeners
+      eventBus.dispose();
+
+      // Recreate everything with same database path
+      const config = createTestConfiguration();
+      eventBus = new InMemoryEventBus(config, logger);
       database = new Database(dbPath);
       repository = new SQLiteTaskRepository(database);
-      handler = new QueryHandler(repository, outputCapture, logger, eventBus);
+      handler = new QueryHandler(repository, outputCapture, eventBus, logger);
 
-      // Second query should succeed
+      const setupResult = await handler.setup(eventBus);
+      if (!setupResult.ok) {
+        throw new Error(`Failed to setup QueryHandler: ${setupResult.error.message}`);
+      }
+
+      // Second query should succeed (database recovered)
       const successResult = await eventBus.request<{ taskId: string }, any>(
         'TaskStatusQuery',
         { taskId: task.id }
@@ -378,7 +389,7 @@ describe('QueryHandler - Behavioral Tests', () => {
 
       expect(successResult.ok).toBe(true);
       if (successResult.ok) {
-        expect(successResult.value.task?.id).toBe(task.id);
+        expect(successResult.value?.id).toBe(task.id);
       }
     });
   });
