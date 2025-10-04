@@ -149,7 +149,7 @@ After each test run, update `/workspace/claudine/tests/e2e/RESULTS_TABLE.md`:
 **Solution**: Use rollback plan, remove `.claudine/claudine.db`, restart clean
 
 ### Issue: Worktrees not cleaned up
-**Solution**: Run `git worktree prune` and remove `.claudine-worktrees/`
+**Solution**: Run `git worktree prune` and remove `.worktrees/`
 
 ### Issue: Port conflicts with MCP server
 **Solution**: Check for running instances, use different port configuration

@@ -125,7 +125,7 @@ Reusable test data and mocks:
 ### Temporary Files
 Tests create temporary artifacts in:
 - `.claudine/` - Temporary databases
-- `.claudine-worktrees/` - Test git worktrees
+- `.worktrees/` - Test git worktrees
 
 **Cleanup**: Tests automatically clean up after execution
 

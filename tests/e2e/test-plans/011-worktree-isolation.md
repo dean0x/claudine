@@ -35,7 +35,7 @@ git config user.name "Claudine Test" || true
 ### Step 2: Clean Worktree State
 **Action:** Remove any existing worktrees
 ```bash
-rm -rf .claudine-worktrees/
+rm -rf .worktrees/
 git worktree prune
 git worktree list
 ```
@@ -69,7 +69,7 @@ node dist/cli.js delegate "echo 'Testing in worktree' > test-file.txt && cat tes
 ```bash
 sleep 2
 git worktree list | grep -v "bare"
-ls -la .claudine-worktrees/ 2>/dev/null || echo "No worktrees directory yet"
+ls -la .worktrees/ 2>/dev/null || echo "No worktrees directory yet"
 ```
 **Expected:** New worktree exists
 **Verify:**
@@ -111,7 +111,7 @@ node dist/cli.js delegate "echo 'Keep strategy test' > keep-test.txt" --branch t
 ```bash
 sleep 5
 git worktree list | grep test-keep && echo "✓ Worktree kept" || echo "❌ Worktree removed"
-ls .claudine-worktrees/*/keep-test.txt 2>/dev/null && echo "✓ File exists in worktree" || echo "⚠ File not found"
+ls .worktrees/*/keep-test.txt 2>/dev/null && echo "✓ File exists in worktree" || echo "⚠ File not found"
 ```
 **Expected:** Worktree persists
 **Verify:**
@@ -157,7 +157,7 @@ wait
 ```bash
 sleep 3
 git worktree list | grep -c concurrent || echo "0"
-ls -la .claudine-worktrees/
+ls -la .worktrees/
 ```
 **Expected:** 3+ concurrent worktrees
 **Verify:**
@@ -185,7 +185,7 @@ node dist/cli.js delegate "ls base-file.txt && echo 'From base' >> base-file.txt
 **Action:** Check worktree has base content
 ```bash
 sleep 3
-cat .claudine-worktrees/*/base-file.txt 2>/dev/null | grep "Base branch content" && echo "✓ Base content present" || echo "❌ Base content missing"
+cat .worktrees/*/base-file.txt 2>/dev/null | grep "Base branch content" && echo "✓ Base content present" || echo "❌ Base content missing"
 ```
 **Expected:** Base file exists
 **Verify:**
@@ -201,7 +201,7 @@ git worktree prune
 # Clean branches
 git branch -D test-worktree-1 test-keep test-delete concurrent-1 concurrent-2 concurrent-3 from-base test-base 2>/dev/null || true
 # Clean directories
-rm -rf .claudine-worktrees/ .claudine/
+rm -rf .worktrees/ .claudine/
 pkill -f "claudine" || true
 ```
 **Expected:** Cleanup successful
@@ -224,7 +224,7 @@ If test fails:
 1. Force remove worktrees: `git worktree remove --force`
 2. Prune worktrees: `git worktree prune`
 3. Clean branches: `git branch -D test-*`
-4. Remove directories: `rm -rf .claudine-worktrees/`
+4. Remove directories: `rm -rf .worktrees/`
 
 ## Notes
 - Worktrees provide complete isolation
