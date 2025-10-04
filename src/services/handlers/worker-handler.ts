@@ -3,20 +3,49 @@
  * Manages worker spawning, monitoring, and cleanup through events
  */
 
-import { WorkerPool, ResourceMonitor, Logger, TaskRepository } from '../../core/interfaces.js';
+import { WorkerPool, ResourceMonitor, Logger } from '../../core/interfaces.js';
 import { Result, ok, err } from '../../core/result.js';
 import { BaseEventHandler } from '../../core/events/handlers.js';
 import { EventBus } from '../../core/events/event-bus.js';
 import {
   TaskDelegatedEvent,
   TaskCancelledEvent,
+  TaskStatusQueryEvent,
+  NextTaskQueryEvent,
   createEvent
 } from '../../core/events/events.js';
-import { TaskStatus } from '../../core/domain.js';
-import { QueueHandler } from './queue-handler.js';
+import { Task, TaskStatus } from '../../core/domain.js';
 import { Configuration } from '../../core/configuration.js';
 
 export class WorkerHandler extends BaseEventHandler {
+  /**
+   * CRITICAL: Spawn burst protection - DO NOT REMOVE without proper justification
+   *
+   * WHY THIS EXISTS:
+   * Process creation (fork/exec) is expensive at the OS level. Spawning multiple
+   * claude-code processes simultaneously causes:
+   * 1. CPU spike from fork/exec system calls
+   * 2. Memory spike from loading multiple Node.js runtimes
+   * 3. I/O spike from loading code from disk
+   *
+   * The resource monitor checks happen BEFORE processes spawn, so they can't detect
+   * the spike caused by the spawning itself. This creates a race condition where
+   * all pending tasks pass the resource check and spawn simultaneously.
+   *
+   * WHAT IT DOES:
+   * Enforces a minimum 50ms delay between worker spawns to prevent burst spawning.
+   * This gives each process time to register its resource usage before the next
+   * spawn check occurs.
+   *
+   * REMOVAL CRITERIA:
+   * Only remove this if you have implemented one of these alternatives:
+   * 1. Sequential spawn queue (only spawn one worker at a time)
+   * 2. Post-spawn resource monitoring (wait for process to fully initialize)
+   * 3. Dynamic spawn throttling based on failed spawn attempts
+   *
+   * INCIDENT REFERENCE: 2025-10-04
+   * Without this delay, recovery re-queued 7 tasks → all spawned simultaneously → fork bomb
+   */
   private lastSpawnTime = 0;
   private readonly minSpawnDelayMs: number;
   private readonly SPAWN_BACKOFF_MS = 1000; // Backoff when resources are constrained
@@ -25,13 +54,12 @@ export class WorkerHandler extends BaseEventHandler {
     config: Configuration,
     private readonly workerPool: WorkerPool,
     private readonly resourceMonitor: ResourceMonitor,
-    private readonly queueHandler: QueueHandler,
-    private readonly taskRepository: TaskRepository,
     private readonly eventBus: EventBus,
     logger: Logger
   ) {
     super(logger, 'WorkerHandler');
-    this.minSpawnDelayMs = config.minSpawnDelayMs!;
+    // Use configured delay, default to 50ms (reduced from 100ms for better responsiveness)
+    this.minSpawnDelayMs = config.minSpawnDelayMs || 50;
   }
 
   /**
@@ -87,37 +115,38 @@ export class WorkerHandler extends BaseEventHandler {
 
   /**
    * Handle task cancellation - validate and kill worker if running
-   * ARCHITECTURE: Validation moved here from TaskManager for pure event-driven pattern
+   * ARCHITECTURE: Pure event-driven - uses TaskStatusQuery instead of direct repository access
    */
   private async handleTaskCancellation(event: any): Promise<void> {
     await this.handleEvent(event, async (event) => {
       const { taskId, reason } = event;
 
-      // First validate that task can be cancelled
-      if (this.taskRepository) {
-        const taskResult = await this.taskRepository.findById(taskId);
+      // First validate that task can be cancelled using event-driven query
+      const taskResult = await this.eventBus.request<TaskStatusQueryEvent, Task | null>(
+        'TaskStatusQuery',
+        { taskId }
+      );
 
-        if (!taskResult.ok) {
-          this.logger.error('Failed to find task for cancellation', taskResult.error, { taskId });
-          throw taskResult.error;
-        }
+      if (!taskResult.ok) {
+        this.logger.error('Failed to find task for cancellation', taskResult.error, { taskId });
+        throw taskResult.error;
+      }
 
-        if (!taskResult.value) {
-          this.logger.error('Task not found for cancellation', undefined, { taskId });
-          throw new Error(`Task ${taskId} not found`);
-        }
+      if (!taskResult.value) {
+        this.logger.error('Task not found for cancellation', undefined, { taskId });
+        throw new Error(`Task ${taskId} not found`);
+      }
 
-        const task = taskResult.value;
+      const task = taskResult.value;
 
-        // Check if task can be cancelled (must be QUEUED or RUNNING)
-        if (task.status !== 'queued' && task.status !== 'running') {
-          this.logger.warn('Cannot cancel task in current state', {
-            taskId,
-            status: task.status,
-            reason
-          });
-          throw new Error(`Task ${taskId} cannot be cancelled in state ${task.status}`);
-        }
+      // Check if task can be cancelled (must be QUEUED or RUNNING)
+      if (task.status !== 'queued' && task.status !== 'running') {
+        this.logger.warn('Cannot cancel task in current state', {
+          taskId,
+          status: task.status,
+          reason
+        });
+        throw new Error(`Task ${taskId} cannot be cancelled in state ${task.status}`);
       }
 
       // Check if we have a worker for this task
@@ -159,6 +188,8 @@ export class WorkerHandler extends BaseEventHandler {
 
   /**
    * Process next task if resources available
+   * ARCHITECTURE: Enforces spawn delay to prevent burst fork-bomb scenarios
+   * See class-level documentation for justification
    */
   private async processNextTask(): Promise<void> {
     try {
@@ -168,9 +199,10 @@ export class WorkerHandler extends BaseEventHandler {
 
       if (timeSinceLastSpawn < this.minSpawnDelayMs) {
         const delay = this.minSpawnDelayMs - timeSinceLastSpawn;
-        this.logger.debug('Delaying spawn to prevent system overload', {
+        this.logger.debug('Delaying spawn to prevent burst overload', {
           delay,
-          timeSinceLastSpawn
+          timeSinceLastSpawn,
+          reason: 'fork-bomb prevention'
         });
 
         // Schedule retry after delay
@@ -178,7 +210,7 @@ export class WorkerHandler extends BaseEventHandler {
         return;
       }
 
-      // Check if we can spawn a worker
+      // Check if we can spawn a worker based on CPU/memory resources
       const canSpawnResult = await this.resourceMonitor.canSpawnWorker();
 
       if (!canSpawnResult.ok || !canSpawnResult.value) {
@@ -192,9 +224,12 @@ export class WorkerHandler extends BaseEventHandler {
         return; // No resources available
       }
 
-      // Get next task from queue
-      const taskResult = await this.queueHandler.getNextTask();
-      
+      // Get next task from queue using event-driven query
+      const taskResult = await this.eventBus.request<NextTaskQueryEvent, Task | null>(
+        'NextTaskQuery',
+        {}
+      );
+
       if (!taskResult.ok || !taskResult.value) {
         return; // No tasks or error getting task
       }
@@ -215,9 +250,9 @@ export class WorkerHandler extends BaseEventHandler {
         this.logger.error('Failed to emit TaskStarting event', startingResult.error, {
           taskId: task.id
         });
-        
-        // Put task back in queue
-        await this.queueHandler.requeueTask(task);
+
+        // Put task back in queue using event
+        await this.eventBus.emit('RequeueTask', { task });
         return;
       }
 
@@ -229,16 +264,16 @@ export class WorkerHandler extends BaseEventHandler {
           taskId: task.id
         });
 
-        // Put task back in queue
-        await this.queueHandler.requeueTask(task);
-        
+        // Put task back in queue using event
+        await this.eventBus.emit('RequeueTask', { task });
+
         // Emit task failed event
         await this.eventBus.emit('TaskFailed', {
           taskId: task.id,
           error: workerResult.error,
           exitCode: 1
         });
-        
+
         return;
       }
 
@@ -281,9 +316,12 @@ export class WorkerHandler extends BaseEventHandler {
       // Update resource monitor
       this.resourceMonitor.decrementWorkerCount();
 
-      // Calculate duration using task startedAt timestamp
+      // Calculate duration using task startedAt timestamp via event query
       let duration = 0;
-      const taskResult = await this.taskRepository.findById(taskId);
+      const taskResult = await this.eventBus.request<TaskStatusQueryEvent, Task | null>(
+        'TaskStatusQuery',
+        { taskId }
+      );
       if (taskResult.ok && taskResult.value?.startedAt) {
         duration = Date.now() - taskResult.value.startedAt;
       }
