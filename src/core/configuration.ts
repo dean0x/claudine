@@ -29,7 +29,7 @@ export const ConfigurationSchema = z.object({
   // Process management configuration
   killGracePeriodMs: z.number().min(1000).max(60000).default(5000), // Default: 5 second grace period
   resourceMonitorIntervalMs: z.number().min(1000).max(60000).default(5000), // Default: check every 5 seconds
-  minSpawnDelayMs: z.number().min(100).max(10000).default(100), // Default: minimum delay between spawns
+  minSpawnDelayMs: z.number().min(10).max(10000).default(50), // Default: 50ms burst protection (reduced from 100ms for better responsiveness)
   // Event system configuration
   eventRequestTimeoutMs: z.number().min(1000).max(300000).default(5000), // Default: 5 second timeout
   eventCleanupIntervalMs: z.number().min(10000).max(600000).default(60000), // Default: cleanup every minute
@@ -66,7 +66,7 @@ const DEFAULT_CONFIG: Configuration = {
   // Process management defaults
   killGracePeriodMs: 5000, // Default: 5 seconds grace period for process termination
   resourceMonitorIntervalMs: 5000, // Default: check resources every 5 seconds
-  minSpawnDelayMs: 100, // Default: minimum delay between worker spawns
+  minSpawnDelayMs: 50, // Default: 50ms burst protection between worker spawns
   // Event system defaults
   eventRequestTimeoutMs: 5000, // Default: 5 second timeout for event requests
   eventCleanupIntervalMs: 60000, // Default: cleanup event history every minute
