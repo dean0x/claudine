@@ -23,7 +23,7 @@ config/mcp-config-snippet.json
 config/mcp-config-ready.json
 
 # Runtime directories
-.claudine-worktrees/
+.worktrees/
 task-outputs/
 data/
 

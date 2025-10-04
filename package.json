@@ -61,20 +61,18 @@
   },
   "type": "module",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.17.3",
-    "better-sqlite3": "^12.2.0",
+    "@modelcontextprotocol/sdk": "^1.19.1",
+    "better-sqlite3": "^12.4.1",
     "simple-git": "^3.28.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.3.0",
-    "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^3.2.4",
     "@vitest/ui": "^3.2.4",
     "tsx": "^4.20.4",
     "typescript": "^5.9.2",
-    "vitest": "^3.2.4",
-    "ws": "^8.18.3"
+    "vitest": "^3.2.4"
   }
 }
