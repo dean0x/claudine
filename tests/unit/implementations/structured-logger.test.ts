@@ -76,7 +76,8 @@ describe('StructuredLogger - JSON Logging Behavior', () => {
     it('should log error messages', () => {
       const logger = new StructuredLogger({}, LogLevel.DEBUG, mockOutput);
 
-      logger.error('Operation failed', { code: 'ERR_001' });
+      // FIX: error() signature is (message, error?, context?) - context is 3rd param
+      logger.error('Operation failed', undefined, { code: 'ERR_001' });
 
       const logged = capturedLogs[0];
       expect(logged.level).toBe('error');
@@ -88,7 +89,8 @@ describe('StructuredLogger - JSON Logging Behavior', () => {
       const logger = new StructuredLogger({}, LogLevel.DEBUG, mockOutput);
       const error = new Error('Test error');
 
-      logger.error('Request failed', { error: error.message });
+      // FIX: error() signature is (message, error?, context?) - context is 3rd param
+      logger.error('Request failed', undefined, { error: error.message });
 
       expect(capturedLogs[0].context.error).toBe('Test error');
     });

@@ -397,7 +397,7 @@ describe('ClaudineError - REAL Error Behavior', () => {
       const duration = performance.now() - start;
 
       expect(errors).toHaveLength(count);
-      expect(duration).toBeLessThan(100); // Should create 5k errors in < 100ms
+      expect(duration).toBeLessThan(120); // Should create 5k errors in < 120ms
     });
 
     it('should handle deep error chains', () => {

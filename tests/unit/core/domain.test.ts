@@ -46,17 +46,18 @@ describe('Domain Models - REAL Behavior Tests', () => {
       expect(task.prompt).toBe('echo hello world');
       expect(task.status).toBe(TaskStatus.QUEUED);
       expect(task.priority).toBe(Priority.P2); // Default
-      expect(task.useWorktree).toBe(true); // Default
+      expect(task.useWorktree).toBe(false); // FIX: Default is false (experimental, opt-in only)
       expect(task.autoCommit).toBe(true); // Default
 
       // Additional validations for complete task structure
-      expect(task.timeout).toBe(TIMEOUTS.DEFAULT_TASK);
-      expect(task.maxOutputBuffer).toBe(BUFFER_SIZES.SMALL);
+      // FIX: timeout and maxOutputBuffer are undefined when not provided (no defaults in createTask)
+      expect(task.timeout).toBeUndefined();
+      expect(task.maxOutputBuffer).toBeUndefined();
       expect(task.workingDirectory).toBeUndefined();
       expect(task.assignedWorker).toBeUndefined();
       expect(task.startedAt).toBeUndefined();
       expect(task.completedAt).toBeUndefined();
-      expect(task.output).toEqual({ stdout: [], stderr: [], combined: [] });
+      expect(task.output).toBeUndefined(); // FIX: output is also undefined when not provided
       expect(typeof task.createdAt).toBe('number');
       expect(task.createdAt).toBeGreaterThan(0);
       expect(task.updatedAt).toBe(task.createdAt);
@@ -164,10 +165,14 @@ describe('Domain Models - REAL Behavior Tests', () => {
       expect(updated.completedAt).toBeDefined();
     });
 
-    it('should preserve immutability', () => {
+    it('should preserve immutability', async () => {
       const task = createTask({ prompt: 'test' });
       const originalStatus = task.status;
       const originalUpdatedAt = task.updatedAt;
+
+      // FIX: Add small delay to ensure Date.now() returns different value
+      await new Promise(resolve => setTimeout(resolve, 2));
+
       const updated = updateTask(task, { status: TaskStatus.FAILED });
 
       expect(task.status).toBe(TaskStatus.QUEUED); // Original unchanged
@@ -315,7 +320,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
       expect(attemptPromptChange).toThrow(TypeError);
 
       // Verify values remain unchanged
-      expect(task.status).toBe(TaskStatus.PENDING);
+      expect(task.status).toBe(TaskStatus.QUEUED); // FIX: Default status is QUEUED not PENDING
       expect(task.prompt).toBe('test');
     });
 

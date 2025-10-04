@@ -36,9 +36,6 @@ describe('Retry Functionality', () => {
   beforeEach(async () => {
     // Set up dependencies
     logger = new TestLogger();
-    eventBus = new InMemoryEventBus(logger);
-    database = new Database(':memory:');
-    repository = new SQLiteTaskRepository(database);
 
     const config: Configuration = {
       timeout: TIMEOUTS.DEFAULT_TASK,
@@ -50,15 +47,18 @@ describe('Retry Functionality', () => {
       maxTotalSubscriptions: 1000
     };
 
+    // FIX: EventBus constructor expects (config, logger) not (logger)
+    eventBus = new InMemoryEventBus(config, logger);
+    database = new Database(':memory:');
+    repository = new SQLiteTaskRepository(database);
+
     const outputCapture = new BufferedOutputCapture(BUFFER_SIZES.MEDIUM, eventBus);
 
-    // Initialize task manager
+    // Initialize task manager with new signature: (eventBus, logger, config)
     taskManager = new TaskManagerService(
       eventBus,
-      repository,
       logger,
-      config,
-      outputCapture
+      config
     );
 
     // Set up event handlers (MUST include QueryHandler for pure event-driven architecture)

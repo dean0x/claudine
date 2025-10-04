@@ -90,7 +90,8 @@ describe('Database - REAL Database Operations (In-Memory)', () => {
       expect(taskIdCol).toBeDefined();
       expect(taskIdCol?.type).toBe('TEXT');
       expect(taskIdCol?.pk).toBe(1);
-      expect(taskIdCol?.notnull).toBe(1);
+      // FIX: SQLite doesn't add NOT NULL to TEXT PRIMARY KEY automatically
+      expect(taskIdCol?.notnull).toBe(0);
     });
 
     it('should create indexes for performance', () => {
@@ -148,9 +149,8 @@ describe('Database - REAL Database Operations (In-Memory)', () => {
       expect(task?.prompt).toBe('test prompt');
       expect(task?.id).toBe('test-id');
       expect(task?.status).toBe('queued');
-      expect(task?.priority).toBe('P2');
-      expect(task.status).toBe('queued');
-      expect(task.priority).toBe('P1');
+      // FIX: We inserted P1, not P2
+      expect(task?.priority).toBe('P1');
     });
 
     it('should handle transactions', () => {
@@ -167,10 +167,12 @@ describe('Database - REAL Database Operations (In-Memory)', () => {
         }
       });
 
+      // FIX: Don't use TaskFactory.build() here - creates frozen objects
+      // Transaction expects plain objects with just id and prompt
       insertMany([
-        new TaskFactory().withId('task-1' as TaskId).withPrompt('prompt 1').build(),
-        new TaskFactory().withId('task-2' as TaskId).withPrompt('prompt 2').build(),
-        new TaskFactory().withId('task-3' as TaskId).withPrompt('prompt 3').build()
+        { id: 'task-1', prompt: 'prompt 1' },
+        { id: 'task-2', prompt: 'prompt 2' },
+        { id: 'task-3', prompt: 'prompt 3' }
       ]);
 
       const count = sqliteDb.prepare('SELECT COUNT(*) as count FROM tasks').get() as { count: number };
