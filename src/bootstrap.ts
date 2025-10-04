@@ -224,45 +224,34 @@ export async function bootstrap() {
 
   // Register task manager
   container.registerSingleton('taskManager', async () => {
-    const repositoryResult = container.get('taskRepository');
-
-    const repository = repositoryResult.ok ? repositoryResult.value as TaskRepository : undefined;
-
-    // TaskManager uses full configuration (after Zod parse, all fields guaranteed present)
+    // ARCHITECTURE: Pure event-driven TaskManager - no direct repository or outputCapture access
     const taskManager = new TaskManagerService(
       getFromContainer<EventBus>(container, 'eventBus'),
-      repository,
       getFromContainer<Logger>(container, 'logger').child({ module: 'TaskManager' }),
-      config, // Pass complete config - no partial objects needed
-      getFromContainer<OutputCapture>(container, 'outputCapture')
+      config // Pass complete config - no partial objects needed
     );
 
     // Wire up event handlers - this is critical for event-driven architecture
     const logger = getFromContainer<Logger>(container, 'logger');
     const eventBus = getFromContainer<EventBus>(container, 'eventBus');
-    
+
+    // Get repository for handlers
+    const repository = getFromContainer<TaskRepository>(container, 'taskRepository');
+
     // 1. Persistence Handler - manages database operations
-    if (repositoryResult.ok) {
-      const persistenceHandler = new PersistenceHandler(
-        repositoryResult.value as TaskRepository,
-        logger.child({ module: 'PersistenceHandler' })
-      );
-      const persistenceSetup = await persistenceHandler.setup(eventBus);
-      if (!persistenceSetup.ok) {
-        throw new Error(`Failed to setup PersistenceHandler: ${persistenceSetup.error.message}`);
-      }
+    const persistenceHandler = new PersistenceHandler(
+      repository,
+      logger.child({ module: 'PersistenceHandler' })
+    );
+    const persistenceSetup = await persistenceHandler.setup(eventBus);
+    if (!persistenceSetup.ok) {
+      throw new Error(`Failed to setup PersistenceHandler: ${persistenceSetup.error.message}`);
     }
 
     // 2. Query Handler - handles read operations for pure event-driven architecture
     // ARCHITECTURE: Critical for pure event-driven pattern - processes all queries
-    const repositoryForQueries = repositoryResult.ok ? repositoryResult.value as TaskRepository : undefined;
-
-    if (!repositoryForQueries) {
-      throw new Error('Repository is required for QueryHandler in pure event-driven architecture');
-    }
-
     const queryHandler = new QueryHandler(
-      repositoryForQueries,
+      repository,
       getFromContainer<OutputCapture>(container, 'outputCapture'),
       eventBus,
       logger.child({ module: 'QueryHandler' })
@@ -283,12 +272,11 @@ export async function bootstrap() {
     }
 
     // 4. Worker Handler - manages worker lifecycle
+    // ARCHITECTURE: Pure event-driven - uses events for queue and repository access
     const workerHandler = new WorkerHandler(
       config,
       getFromContainer<WorkerPool>(container, 'workerPool'),
       getFromContainer<ResourceMonitor>(container, 'resourceMonitor'),
-      queueHandler,
-      getFromContainer<TaskRepository>(container, 'taskRepository'),
       eventBus,
       logger.child({ module: 'WorkerHandler' })
     );

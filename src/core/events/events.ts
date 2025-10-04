@@ -147,6 +147,18 @@ export interface TaskLogsResponseEvent extends BaseEvent {
 }
 
 /**
+ * Queue query events - for pure event-driven queue operations
+ */
+export interface NextTaskQueryEvent extends BaseEvent {
+  type: 'NextTaskQuery';
+}
+
+export interface RequeueTaskEvent extends BaseEvent {
+  type: 'RequeueTask';
+  task: Task;
+}
+
+/**
  * System events
  */
 export interface SystemResourcesUpdatedEvent extends BaseEvent {
@@ -187,6 +199,9 @@ export type ClaudineEvent =
   | TaskStatusResponseEvent
   | TaskLogsQueryEvent
   | TaskLogsResponseEvent
+  // Queue query events
+  | NextTaskQueryEvent
+  | RequeueTaskEvent
   // Worker events
   | WorkerSpawnedEvent
   | WorkerKilledEvent

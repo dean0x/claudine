@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { TaskManager, Logger } from '../core/interfaces.js';
 import { DelegateRequest, Priority, TaskId } from '../core/domain.js';
 import { match } from '../core/result.js';
+import { validatePath } from '../utils/validation.js';
 import pkg from '../../package.json' with { type: 'json' };
 
 // Zod schemas for MCP protocol validation
@@ -15,7 +16,7 @@ const DelegateTaskSchema = z.object({
   prompt: z.string().min(1).max(4000),
   priority: z.enum(['P0', 'P1', 'P2']).optional(),
   workingDirectory: z.string().optional(),
-  useWorktree: z.boolean().optional().default(true), // Changed default to true
+  useWorktree: z.boolean().optional().default(false), // Default: false - worktrees are opt-in (safer default)
   worktreeCleanup: z.enum(['auto', 'keep', 'delete']).optional().default('auto'),
   mergeStrategy: z.enum(['pr', 'auto', 'manual', 'patch']).optional().default('pr'),
   branchName: z.string().optional(),
@@ -291,11 +292,29 @@ export class MCPAdapter {
 
     const data = parseResult.data;
 
-    // Create request with all new fields
+    // SECURITY: Validate workingDirectory to prevent path traversal attacks
+    let validatedWorkingDirectory: string | undefined;
+    if (data.workingDirectory) {
+      const pathValidation = validatePath(data.workingDirectory);
+      if (!pathValidation.ok) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Invalid working directory: ${pathValidation.error.message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      validatedWorkingDirectory = pathValidation.value;
+    }
+
+    // Create request with all new fields and validated paths
     const request: DelegateRequest = {
       prompt: data.prompt,
       priority: data.priority as Priority,
-      workingDirectory: data.workingDirectory,
+      workingDirectory: validatedWorkingDirectory,
       useWorktree: data.useWorktree,
       worktreeCleanup: data.worktreeCleanup,
       mergeStrategy: data.mergeStrategy,

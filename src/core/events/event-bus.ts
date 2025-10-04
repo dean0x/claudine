@@ -154,19 +154,52 @@ export class InMemoryEventBus implements EventBus {
         this.logger.debug('No subscribers for event type', { eventType: type });
       }
 
-      // Execute all handlers in parallel
-      const results = await Promise.allSettled(
-        allHandlers.map(handler => handler(event))
-      );
+      // Execute all handlers in parallel with performance profiling
+      const startTime = Date.now();
+      const handlerPromises = allHandlers.map(async (handler, index) => {
+        const handlerStart = Date.now();
+        try {
+          const result = await handler(event);
+          const duration = Date.now() - handlerStart;
+
+          // PERFORMANCE: Warn about slow handlers (>100ms)
+          if (duration > 100) {
+            this.logger.warn('Slow event handler detected', {
+              eventType: type,
+              handlerIndex: index,
+              duration,
+              threshold: 100
+            });
+          }
+
+          return { status: 'fulfilled' as const, value: result, duration };
+        } catch (error) {
+          const duration = Date.now() - handlerStart;
+          return { status: 'rejected' as const, reason: error, duration };
+        }
+      });
+
+      const results = await Promise.all(handlerPromises);
+      const totalDuration = Date.now() - startTime;
+
+      // Log performance metrics for all handlers
+      this.logger.debug('Event handlers completed', {
+        eventType: type,
+        eventId: event.eventId,
+        handlerCount: allHandlers.length,
+        totalDuration,
+        slowHandlers: results.filter(r => r.duration > 100).length
+      });
 
       // Check for handler failures
-      const failures = results.filter(result => result.status === 'rejected') as PromiseRejectedResult[];
-      
+      const failures = results.filter(result => result.status === 'rejected');
+
       if (failures.length > 0) {
         this.logger.error('Event handler failures', undefined, {
           eventType: type,
           eventId: event.eventId,
-          failures: failures.map(f => f.reason)
+          failures: failures.map(f => f.reason),
+          durations: failures.map(f => f.duration)
         });
 
         // Return error if any handler failed

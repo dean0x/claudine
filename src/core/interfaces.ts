@@ -138,10 +138,8 @@ export interface TaskManager {
   getLogs(taskId: TaskId, tail?: number): Promise<Result<TaskOutput>>;
   cancel(taskId: TaskId, reason?: string): Promise<Result<void>>;
   retry(taskId: TaskId): Promise<Result<Task>>;
-  /** @deprecated Use getStatus() without taskId parameter instead for async task listing */
-  listTasks(): Result<readonly Task[]>;
 
-  // Worktree management methods
+  // Worktree management methods (not yet implemented in event-driven architecture)
   listWorktrees(includeStale?: boolean, olderThanDays?: number): Promise<Result<readonly any[]>>;
   getWorktreeStatus(taskId: TaskId): Promise<Result<any>>;
   cleanupWorktrees(strategy?: 'safe' | 'interactive' | 'force', olderThanDays?: number, taskIds?: TaskId[]): Promise<Result<any>>;
@@ -150,8 +148,82 @@ export interface TaskManager {
 /**
  * Git worktree management for isolated task execution
  */
-// Re-export from the actual implementation
-export type { WorktreeManager, WorktreeInfo, CompletionResult, WorktreeStatus, WorktreeManagerConfig } from '../services/worktree-manager.js';
+export interface WorktreeInfo {
+  path: string;
+  branch: string;
+  baseBranch: string;
+}
+
+export interface WorktreeStatus {
+  taskId: string;
+  path: string;
+  branch: string;
+  baseBranch: string;
+  ageInDays: number;
+  hasUnpushedChanges: boolean;
+  safeToRemove: boolean;
+  exists: boolean;
+}
+
+export interface WorktreeManagerConfig {
+  maxWorktreeAgeDays: number;        // Default: 7
+  requireSafetyCheck: boolean;       // Default: true
+  allowForceRemoval: boolean;        // Default: false
+}
+
+export interface CompletionResult {
+  action: 'pr_created' | 'merged' | 'branch_pushed' | 'patch_created';
+  prUrl?: string;
+  patchPath?: string;
+  branch?: string;
+}
+
+/**
+ * Manages git worktrees for isolated task execution
+ */
+export interface WorktreeManager {
+  /**
+   * Creates a new worktree with a named branch for task isolation
+   * @param task The task requiring a worktree
+   * @returns Worktree information including path and branch name
+   */
+  createWorktree(task: Task): Promise<Result<WorktreeInfo>>;
+
+  /**
+   * Completes a task by executing the configured merge strategy
+   * @param task The task to complete
+   * @param info Worktree information from createWorktree
+   * @returns Result of the merge strategy execution
+   */
+  completeTask(task: Task, info: WorktreeInfo): Promise<Result<CompletionResult>>;
+
+  /**
+   * Removes a worktree and cleans up associated resources
+   * @param taskId ID of the task whose worktree should be removed
+   * @param force Skip safety checks if true
+   * @returns Success or error result
+   */
+  removeWorktree(taskId: TaskId, force?: boolean): Promise<Result<void>>;
+
+  /**
+   * Get status information for all worktrees
+   * @returns Array of worktree status information
+   */
+  getWorktreeStatuses(): Promise<Result<WorktreeStatus[]>>;
+
+  /**
+   * Get status information for a specific worktree
+   * @param taskId Task ID to get status for
+   * @returns Worktree status information
+   */
+  getWorktreeStatus(taskId: TaskId): Promise<Result<WorktreeStatus>>;
+
+  /**
+   * Cleans up all active worktrees
+   * @returns Success or error result
+   */
+  cleanup(): Promise<Result<void>>;
+}
 
 /**
  * Result type for worktree cleanup operations

@@ -37,16 +37,11 @@ import { Configuration } from '../core/configuration.js';
 export class TaskManagerService implements TaskManager {
   constructor(
     private readonly eventBus: EventBus,
-    private readonly repository: TaskRepository | undefined, // DEPRECATED: Will be removed in v3.0
     private readonly logger: Logger,
-    private readonly config: Configuration,
-    private readonly outputCapture?: OutputCapture // DEPRECATED: Will be removed in v3.0
+    private readonly config: Configuration
   ) {
-    // ARCHITECTURE: Repository is passed for backwards compatibility only
-    // All new code MUST use event-driven patterns via eventBus
-    if (repository) {
-      this.logger.warn('TaskManager initialized with direct repository - migration to pure events pending');
-    }
+    // ARCHITECTURE: Pure event-driven - ALL operations go through EventBus
+    this.logger.debug('TaskManager initialized with pure event-driven architecture');
   }
 
   /**
@@ -248,42 +243,22 @@ export class TaskManagerService implements TaskManager {
     return ok(newTask);
   }
 
-  listTasks(): Result<readonly Task[]> {
-    // DEPRECATED: This method is deprecated due to synchronous interface incompatibility
-    // Use getStatus() without taskId parameter for async task listing
-    this.logger.warn(
-      'listTasks() is deprecated and returns empty array. ' +
-      'Use getStatus() without taskId parameter for proper async task listing.'
-    );
-    return ok([]);
-  }
-
-  // ARCHITECTURE: Worktree management methods (placeholder implementation)
+  // ARCHITECTURE: Worktree management methods not yet implemented
   // TODO: These will be event-driven once WorktreeHandler is implemented
+  // For now, delegate to WorktreeManager directly (not event-driven yet)
 
   async listWorktrees(includeStale = false, olderThanDays?: number): Promise<Result<readonly any[]>> {
-    this.logger.info('Listing worktrees (placeholder)', { includeStale, olderThanDays });
-
-    // TODO: Implement proper event-driven worktree listing
-    // For now, return empty array as placeholder
-    return ok([]);
+    return err(new ClaudineError(
+      ErrorCode.INVALID_OPERATION,
+      'Worktree management not yet implemented in event-driven architecture. Use GitWorktreeManager directly if needed.'
+    ));
   }
 
   async getWorktreeStatus(taskId: TaskId): Promise<Result<any>> {
-    this.logger.info('Getting worktree status (placeholder)', { taskId });
-
-    // TODO: Implement proper event-driven worktree status query
-    // For now, return placeholder status
-    return ok({
-      taskId,
-      path: 'placeholder',
-      branch: 'placeholder',
-      baseBranch: 'main',
-      ageInDays: 0,
-      hasUnpushedChanges: false,
-      safeToRemove: true,
-      exists: false
-    });
+    return err(new ClaudineError(
+      ErrorCode.INVALID_OPERATION,
+      'Worktree management not yet implemented in event-driven architecture. Use GitWorktreeManager directly if needed.'
+    ));
   }
 
   async cleanupWorktrees(
@@ -291,21 +266,10 @@ export class TaskManagerService implements TaskManager {
     olderThanDays = 7,
     taskIds?: TaskId[]
   ): Promise<Result<any>> {
-    this.logger.info('Cleaning up worktrees (placeholder)', { strategy, olderThanDays, taskIds });
-
-    // TODO: Implement proper event-driven worktree cleanup
-    // For now, return placeholder result
-    return ok({
-      success: true,
-      summary: {
-        total: 0,
-        cleaned: 0,
-        kept: 0,
-        protected: 0
-      },
-      details: [],
-      warnings: []
-    });
+    return err(new ClaudineError(
+      ErrorCode.INVALID_OPERATION,
+      'Worktree management not yet implemented in event-driven architecture. Use GitWorktreeManager directly if needed.'
+    ));
   }
 
 }
