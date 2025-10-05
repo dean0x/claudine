@@ -26,10 +26,14 @@ describe('Integration: Service initialization', () => {
       // Set test database path
       process.env.CLAUDINE_DATABASE_PATH = join(tempDir, 'test.db');
 
-      // Bootstrap returns a container
-      const container = await bootstrap();
+      // Bootstrap returns Result<Container>
+      const result = await bootstrap();
 
-      // Verify container is created
+      // Verify bootstrap succeeded
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('Bootstrap failed');
+
+      const container = result.value;
       expect(container).toBeDefined();
       expect(container).toBeInstanceOf(Container);
 
@@ -147,8 +151,11 @@ describe('Integration: Service initialization', () => {
       process.env.CLAUDINE_DATABASE_PATH = join(tempDir, 'test.db');
 
       // Bootstrap the system
-      const container = await bootstrap();
+      const result = await bootstrap();
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('Bootstrap failed');
 
+      const container = result.value;
       const eventBusResult = container.get('eventBus');
       const taskManagerResult = await container.resolve('taskManager'); // async factory
 
@@ -207,8 +214,11 @@ describe('Integration: Service initialization', () => {
     try {
       process.env.CLAUDINE_DATABASE_PATH = join(tempDir, 'test.db');
 
-      const container = await bootstrap();
+      const result = await bootstrap();
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('Bootstrap failed');
 
+      const container = result.value;
       const eventBusResult = container.get('eventBus');
       const repoResult = container.get('taskRepository');
       const queueResult = container.get('taskQueue');
@@ -273,8 +283,11 @@ describe('Integration: Service initialization', () => {
     try {
       process.env.CLAUDINE_DATABASE_PATH = join(tempDir, 'test.db');
 
-      const container = await bootstrap();
+      const result = await bootstrap();
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('Bootstrap failed');
 
+      const container = result.value;
       const eventBusResult = container.get('eventBus');
       const workerPoolResult = container.get('workerPool');
       const dbResult = container.get('database');

@@ -102,6 +102,11 @@ export class TaskFactory {
     return this;
   }
 
+  withStartedAt(timestamp: number): this {
+    this.overrides.startedAt = timestamp;
+    return this;
+  }
+
   completed(exitCode: number = 0): this {
     const now = Date.now();
     this.overrides.status = 'completed' as TaskStatus;
@@ -196,6 +201,12 @@ export class WorkerFactory {
     if (taskId) {
       this.worker.status = 'busy';
     }
+    return this;
+  }
+
+  withTaskId(taskId: string): this {
+    this.worker.currentTask = createTaskId(taskId);
+    this.worker.status = 'busy';
     return this;
   }
 

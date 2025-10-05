@@ -95,6 +95,13 @@ export class TestEventBus implements EventBus {
     eventType: string,
     payload: TRequest
   ): Promise<Result<TResponse, Error>> {
+    // Track request events for testing
+    this.emittedEvents.push({
+      type: `request:${eventType}`,
+      payload,
+      timestamp: Date.now()
+    });
+
     const handler = this.requestHandlers.get(eventType);
     if (!handler) {
       return err(new Error(`No handler for request type: ${eventType}`));
@@ -118,7 +125,7 @@ export class TestEventBus implements EventBus {
   }
 
   // Test-specific methods
-  getEmittedEvents(): Array<{ type: string; payload: any; timestamp: number }> {
+  getAllEmittedEvents(): Array<{ type: string; payload: any; timestamp: number }> {
     return [...this.emittedEvents];
   }
 
@@ -145,6 +152,31 @@ export class TestEventBus implements EventBus {
     this.subscribe(eventType, asyncHandler);
     return () => this.unsubscribe(`mock-unsub`);
   }
+
+  // Additional test helpers for worker-handler tests
+  setRequestResponse<TRequest, TResponse>(
+    eventType: string,
+    response: Result<TResponse, Error>
+  ): void {
+    this.requestHandlers.set(eventType, async (payload: TRequest) => response);
+  }
+
+  hasSubscription(eventType: string): boolean {
+    return this.handlers.has(eventType) && this.handlers.get(eventType)!.size > 0;
+  }
+
+  getEmittedEvents(eventType: string): any[] {
+    return this.emittedEvents
+      .filter(e => e.type === eventType)
+      .map(e => e.payload);
+  }
+
+  getRequestedEvents(eventType: string): any[] {
+    // Track requested events (simplified for testing)
+    return this.emittedEvents
+      .filter(e => e.type === `request:${eventType}`)
+      .map(e => e.payload);
+  }
 }
 
 /**
@@ -154,32 +186,32 @@ export class TestLogger implements Logger {
   public logs: Array<{
     level: string;
     message: string;
-    context?: any;
+    context?: Record<string, unknown>;
     timestamp: number;
   }> = [];
 
-  info(message: string, context?: any): void {
+  info(message: string, context?: Record<string, unknown>): void {
     this.logs.push({ level: 'info', message, context, timestamp: Date.now() });
   }
 
-  error(message: string, error?: Error, context?: any): void {
+  error(message: string, error?: Error, context?: Record<string, unknown>): void {
     this.logs.push({
       level: 'error',
       message,
-      context: { ...context, error },
+      context: { ...context, error } as Record<string, unknown>,
       timestamp: Date.now()
     });
   }
 
-  warn(message: string, context?: any): void {
+  warn(message: string, context?: Record<string, unknown>): void {
     this.logs.push({ level: 'warn', message, context, timestamp: Date.now() });
   }
 
-  debug(message: string, context?: any): void {
+  debug(message: string, context?: Record<string, unknown>): void {
     this.logs.push({ level: 'debug', message, context, timestamp: Date.now() });
   }
 
-  child(context: any): Logger {
+  child(context: Record<string, unknown>): Logger {
     const childLogger = new TestLogger();
     childLogger.logs = this.logs; // Share logs with parent
     return childLogger;
