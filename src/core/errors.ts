@@ -27,6 +27,8 @@ export enum ErrorCode {
   RESOURCE_MONITORING_FAILED = 'RESOURCE_MONITORING_FAILED',
   /** Resource limit exceeded (e.g., max listeners, subscriptions) */
   RESOURCE_LIMIT_EXCEEDED = 'RESOURCE_LIMIT_EXCEEDED',
+  /** Resource exhausted (e.g., queue full, memory limit) - DoS protection */
+  RESOURCE_EXHAUSTED = 'RESOURCE_EXHAUSTED',
   
   // Process errors
   /** Failed to spawn child process */
@@ -61,6 +63,8 @@ export enum ErrorCode {
   SYSTEM_ERROR = 'SYSTEM_ERROR',
   /** Configuration validation or loading failed */
   CONFIGURATION_ERROR = 'CONFIGURATION_ERROR',
+  /** Dependency injection failed - required component not found in container */
+  DEPENDENCY_INJECTION_FAILED = 'DEPENDENCY_INJECTION_FAILED',
   /**
    * Operation not allowed in current context
    * @example Attempting to retry a task that is not in a terminal state (QUEUED, RUNNING)

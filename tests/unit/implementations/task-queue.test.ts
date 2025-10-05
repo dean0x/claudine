@@ -487,24 +487,23 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
       expect(remaining).toBe(enqueued - dequeued);
     });
 
-    it('should handle very large queues', () => {
-      const count = TEST_COUNTS.STRESS_TEST * 5; // REDUCED: From 10k to 5k to prevent memory exhaustion
-      const batchSize = 500; // Process in batches to reduce memory pressure
+    it('should handle queue up to max size limit', () => {
+      // SECURITY: Queue has max size of 1000 for DoS protection
+      const maxQueueSize = 1000;
       const start = performance.now();
 
-      // Enqueue many tasks in batches
-      for (let batch = 0; batch < count / batchSize; batch++) {
-        for (let i = batch * batchSize; i < Math.min((batch + 1) * batchSize, count); i++) {
-          queue.enqueue(createTask({
-            prompt: `task ${i}`,
-            priority: [Priority.P0, Priority.P1, Priority.P2][i % 3]
-          }));
-        }
+      // Enqueue up to max capacity
+      for (let i = 0; i < maxQueueSize; i++) {
+        const result = queue.enqueue(createTask({
+          prompt: `task ${i}`,
+          priority: [Priority.P0, Priority.P1, Priority.P2][i % 3]
+        }));
+        expect(result.ok).toBe(true);
       }
 
       const enqueueTime = performance.now() - start;
-      expect(queue.size()).toBe(count);
-      expect(enqueueTime).toBeLessThan(3000); // Allow 3 seconds for 5k priority queue items
+      expect(queue.size()).toBe(maxQueueSize);
+      expect(enqueueTime).toBeLessThan(1000); // Should be fast for 1k items
 
       // Verify priority ordering still works (sample check, not full dequeue)
       let lastPriority = Priority.P0;
@@ -525,6 +524,26 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
       while (!queue.isEmpty()) {
         queue.dequeue();
       }
+    });
+
+    it('should reject tasks when queue is full (DoS protection)', () => {
+      // Fill queue to max capacity
+      const maxQueueSize = 1000;
+      for (let i = 0; i < maxQueueSize; i++) {
+        const result = queue.enqueue(createTask({ prompt: `task ${i}` }));
+        expect(result.ok).toBe(true);
+      }
+
+      // Try to add one more - should be rejected
+      const overflowResult = queue.enqueue(createTask({ prompt: 'overflow task' }));
+      expect(overflowResult.ok).toBe(false);
+      if (!overflowResult.ok) {
+        expect(overflowResult.error.code).toBe('RESOURCE_EXHAUSTED');
+        expect(overflowResult.error.message).toContain('Queue is full');
+      }
+
+      // Queue size should remain at max
+      expect(queue.size()).toBe(maxQueueSize);
     });
 
     it('should handle tasks with same timestamp correctly', () => {
