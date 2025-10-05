@@ -9,6 +9,8 @@ import { EventBus } from './core/events/event-bus.js';
 import { Configuration, loadConfiguration } from './core/configuration.js';
 import { InMemoryEventBus } from './core/events/event-bus.js';
 import { validateConfiguration } from './core/config-validator.js';
+import { Result, ok, err } from './core/result.js';
+import { ClaudineError, ErrorCode } from './core/errors.js';
 
 // Implementations
 import { PriorityTaskQueue } from './implementations/task-queue.js';
@@ -52,7 +54,20 @@ const getConfig = (): Config => {
   };
 };
 
-// Helper functions for safe container type casting
+/**
+ * Helper for dependency injection in factory functions
+ *
+ * ARCHITECTURE NOTE: This function throws instead of returning Result
+ * because it's used inside registerSingleton() factory callbacks.
+ *
+ * Factory functions execute LAZILY when a service is first resolved,
+ * not during bootstrap. Throwing here is acceptable because:
+ * 1. Errors are caught by the DI container's resolve() method
+ * 2. The container.resolve() already returns Result<T>
+ * 3. This keeps factory function code clean and synchronous
+ *
+ * For the main bootstrap flow, use getFromContainerSafe() instead.
+ */
 const getFromContainer = <T>(container: Container, key: string): T => {
   const result = container.get(key);
   if (!result.ok) {
@@ -61,10 +76,24 @@ const getFromContainer = <T>(container: Container, key: string): T => {
   return result.value as T;
 };
 
+// Safe version for use in async bootstrap flow
+const getFromContainerSafe = <T>(container: Container, key: string): Result<T> => {
+  const result = container.get(key);
+  if (!result.ok) {
+    return err(new ClaudineError(
+      ErrorCode.DEPENDENCY_INJECTION_FAILED,
+      `Failed to get ${key} from container`,
+      { key, error: result.error.message }
+    ));
+  }
+  return ok(result.value as T);
+};
+
 /**
  * Bootstrap the application with all dependencies
+ * ARCHITECTURE: Returns Result instead of throwing - follows Result pattern
  */
-export async function bootstrap() {
+export async function bootstrap(): Promise<Result<Container>> {
   const container = new Container();
   const config = loadConfiguration();
 
@@ -86,7 +115,12 @@ export async function bootstrap() {
   });
 
   // Validate configuration against system (component-level validation)
-  const bootstrapLogger = getFromContainer<Logger>(container, 'logger');
+  const bootstrapLoggerResult = getFromContainerSafe<Logger>(container, 'logger');
+  if (!bootstrapLoggerResult.ok) {
+    return bootstrapLoggerResult;
+  }
+  const bootstrapLogger = bootstrapLoggerResult.value;
+
   const validationWarnings = validateConfiguration(config, bootstrapLogger);
 
   // Log summary if warnings exist
@@ -107,11 +141,9 @@ export async function bootstrap() {
     const loggerResult = container.get('logger');
     const configResult = container.get('config');
 
-    if (!loggerResult.ok) {
-      throw new Error('Logger required for EventBus');
-    }
-    if (!configResult.ok) {
-      throw new Error('Config required for EventBus');
+    // These should always succeed since we registered them above
+    if (!loggerResult.ok || !configResult.ok) {
+      throw new Error('FATAL: Logger or Config not found in container during EventBus creation');
     }
 
     const cfg = configResult.value as Configuration;
@@ -124,8 +156,11 @@ export async function bootstrap() {
   // Get logger for bootstrap
   const loggerResult = container.get<Logger>('logger');
   if (!loggerResult.ok) {
-    console.error('Failed to create logger:', loggerResult.error);
-    throw loggerResult.error;
+    return err(new ClaudineError(
+      ErrorCode.DEPENDENCY_INJECTION_FAILED,
+      'Failed to create logger',
+      { error: loggerResult.error.message }
+    ));
   }
   const logger = loggerResult.value;
 
@@ -232,11 +267,18 @@ export async function bootstrap() {
     );
 
     // Wire up event handlers - this is critical for event-driven architecture
-    const logger = getFromContainer<Logger>(container, 'logger');
-    const eventBus = getFromContainer<EventBus>(container, 'eventBus');
+    const loggerResult2 = getFromContainerSafe<Logger>(container, 'logger');
+    if (!loggerResult2.ok) return loggerResult2;
+    const logger = loggerResult2.value;
+
+    const eventBusResult = getFromContainerSafe<EventBus>(container, 'eventBus');
+    if (!eventBusResult.ok) return eventBusResult;
+    const eventBus = eventBusResult.value;
 
     // Get repository for handlers
-    const repository = getFromContainer<TaskRepository>(container, 'taskRepository');
+    const repositoryResult = getFromContainerSafe<TaskRepository>(container, 'taskRepository');
+    if (!repositoryResult.ok) return repositoryResult;
+    const repository = repositoryResult.value;
 
     // 1. Persistence Handler - manages database operations
     const persistenceHandler = new PersistenceHandler(
@@ -245,54 +287,89 @@ export async function bootstrap() {
     );
     const persistenceSetup = await persistenceHandler.setup(eventBus);
     if (!persistenceSetup.ok) {
-      throw new Error(`Failed to setup PersistenceHandler: ${persistenceSetup.error.message}`);
+      return err(new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Failed to setup PersistenceHandler: ${persistenceSetup.error.message}`,
+        { error: persistenceSetup.error }
+      ));
     }
 
     // 2. Query Handler - handles read operations for pure event-driven architecture
     // ARCHITECTURE: Critical for pure event-driven pattern - processes all queries
+    const outputCaptureResult = getFromContainerSafe<OutputCapture>(container, 'outputCapture');
+    if (!outputCaptureResult.ok) return outputCaptureResult;
+
     const queryHandler = new QueryHandler(
       repository,
-      getFromContainer<OutputCapture>(container, 'outputCapture'),
+      outputCaptureResult.value,
       eventBus,
       logger.child({ module: 'QueryHandler' })
     );
     const querySetup = await queryHandler.setup(eventBus);
     if (!querySetup.ok) {
-      throw new Error(`Failed to setup QueryHandler: ${querySetup.error.message}`);
+      return err(new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Failed to setup QueryHandler: ${querySetup.error.message}`,
+        { error: querySetup.error }
+      ));
     }
 
     // 3. Queue Handler - manages task queue operations
+    const taskQueueResult = getFromContainerSafe<TaskQueue>(container, 'taskQueue');
+    if (!taskQueueResult.ok) return taskQueueResult;
+
     const queueHandler = new QueueHandler(
-      getFromContainer<TaskQueue>(container, 'taskQueue'),
+      taskQueueResult.value,
       logger.child({ module: 'QueueHandler' })
     );
     const queueSetup = await queueHandler.setup(eventBus);
     if (!queueSetup.ok) {
-      throw new Error(`Failed to setup QueueHandler: ${queueSetup.error.message}`);
+      return err(new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Failed to setup QueueHandler: ${queueSetup.error.message}`,
+        { error: queueSetup.error }
+      ));
     }
 
     // 4. Worker Handler - manages worker lifecycle
     // ARCHITECTURE: Pure event-driven - uses events for queue and repository access
+    const workerPoolResult = getFromContainerSafe<WorkerPool>(container, 'workerPool');
+    if (!workerPoolResult.ok) return workerPoolResult;
+
+    const resourceMonitorResult = getFromContainerSafe<ResourceMonitor>(container, 'resourceMonitor');
+    if (!resourceMonitorResult.ok) return resourceMonitorResult;
+
     const workerHandler = new WorkerHandler(
       config,
-      getFromContainer<WorkerPool>(container, 'workerPool'),
-      getFromContainer<ResourceMonitor>(container, 'resourceMonitor'),
+      workerPoolResult.value,
+      resourceMonitorResult.value,
       eventBus,
       logger.child({ module: 'WorkerHandler' })
     );
     const workerSetup = await workerHandler.setup(eventBus);
     if (!workerSetup.ok) {
-      throw new Error(`Failed to setup WorkerHandler: ${workerSetup.error.message}`);
+      return err(new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Failed to setup WorkerHandler: ${workerSetup.error.message}`,
+        { error: workerSetup.error }
+      ));
     }
 
     // 5. Output Handler - manages output and logs
+    const outputCapture2Result = getFromContainerSafe<OutputCapture>(container, 'outputCapture');
+    if (!outputCapture2Result.ok) return outputCapture2Result;
+
     const outputHandler = new OutputHandler(
-      getFromContainer<OutputCapture>(container, 'outputCapture'),
+      outputCapture2Result.value,
       logger.child({ module: 'OutputHandler' })
     );
     const outputSetup = await outputHandler.setup(eventBus);
     if (!outputSetup.ok) {
-      throw new Error(`Failed to setup OutputHandler: ${outputSetup.error.message}`);
+      return err(new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Failed to setup OutputHandler: ${outputSetup.error.message}`,
+        { error: outputSetup.error }
+      ));
     }
 
     // Note: Retry functionality is now handled directly in TaskManager.retry()
@@ -363,6 +440,6 @@ export async function bootstrap() {
 
   logger.info('Bootstrap complete');
 
-  return container;
+  return ok(container);
 }
 
