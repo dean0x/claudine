@@ -8,6 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { bootstrap } from './bootstrap.js';
 import { validatePath, validateBufferSize, validateTimeout } from './utils/validation.js';
+import { Task } from './core/domain.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -142,7 +143,12 @@ async function delegateTask(prompt: string, options?: {
 }) {
   try {
     console.log('🚀 Bootstrapping Claudine...');
-    const container = await bootstrap();
+    const containerResult = await bootstrap();
+    if (!containerResult.ok) {
+      console.error('❌ Bootstrap failed:', containerResult.error.message);
+      process.exit(1);
+    }
+    const container = containerResult.value;
     
     const taskManagerResult = await container.resolve('taskManager');
     if (!taskManagerResult.ok) {
@@ -189,7 +195,12 @@ async function delegateTask(prompt: string, options?: {
 async function getTaskStatus(taskId?: string) {
   try {
     console.log('🚀 Bootstrapping Claudine...');
-    const container = await bootstrap();
+    const containerResult = await bootstrap();
+    if (!containerResult.ok) {
+      console.error('❌ Bootstrap failed:', containerResult.error.message);
+      process.exit(1);
+    }
+    const container = containerResult.value;
     
     const taskManagerResult = await container.resolve('taskManager');
     if (!taskManagerResult.ok) {
@@ -224,7 +235,7 @@ async function getTaskStatus(taskId?: string) {
       const result = await taskManager.getStatus();
       if (result.ok && Array.isArray(result.value) && result.value.length > 0) {
         console.log(`📋 Found ${result.value.length} tasks:\n`);
-        result.value.forEach((task: any) => {
+        result.value.forEach((task: Task) => {
           console.log(`${task.id} - ${task.status} - ${task.prompt.substring(0, 50)}...`);
         });
       } else if (result.ok) {
@@ -244,7 +255,12 @@ async function getTaskStatus(taskId?: string) {
 async function getTaskLogs(taskId: string, tail?: number) {
   try {
     console.log('🚀 Bootstrapping Claudine...');
-    const container = await bootstrap();
+    const containerResult = await bootstrap();
+    if (!containerResult.ok) {
+      console.error('❌ Bootstrap failed:', containerResult.error.message);
+      process.exit(1);
+    }
+    const container = containerResult.value;
     
     const taskManagerResult = await container.resolve('taskManager');
     if (!taskManagerResult.ok) {
@@ -293,7 +309,12 @@ async function getTaskLogs(taskId: string, tail?: number) {
 async function cancelTask(taskId: string, reason?: string) {
   try {
     console.log('🚀 Bootstrapping Claudine...');
-    const container = await bootstrap();
+    const containerResult = await bootstrap();
+    if (!containerResult.ok) {
+      console.error('❌ Bootstrap failed:', containerResult.error.message);
+      process.exit(1);
+    }
+    const container = containerResult.value;
 
     const taskManagerResult = await container.resolve('taskManager');
     if (!taskManagerResult.ok) {
@@ -324,7 +345,12 @@ async function cancelTask(taskId: string, reason?: string) {
 async function retryTask(taskId: string) {
   try {
     console.log('🚀 Bootstrapping Claudine...');
-    const container = await bootstrap();
+    const containerResult = await bootstrap();
+    if (!containerResult.ok) {
+      console.error('❌ Bootstrap failed:', containerResult.error.message);
+      process.exit(1);
+    }
+    const container = containerResult.value;
 
     const taskManagerResult = await container.resolve('taskManager');
     if (!taskManagerResult.ok) {

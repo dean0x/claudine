@@ -3,6 +3,8 @@
  * All types are immutable (readonly)
  */
 
+import { ClaudineError } from './errors.js';
+
 export type TaskId = string & { readonly __brand: 'TaskId' };
 export type WorkerId = string & { readonly __brand: 'WorkerId' };
 
@@ -67,7 +69,7 @@ export interface Task {
   readonly workerId?: WorkerId;
   readonly exitCode?: number;
   readonly duration?: number;
-  readonly error?: any;
+  readonly error?: Error | ClaudineError;
 }
 
 export interface Worker {
@@ -129,7 +131,7 @@ export interface TaskUpdate {
   readonly completedAt?: number;
   readonly exitCode?: number;
   readonly duration?: number;
-  readonly error?: any;
+  readonly error?: Error | ClaudineError;
 }
 
 /**

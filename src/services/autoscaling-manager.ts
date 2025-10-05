@@ -13,6 +13,10 @@ import { EventBus } from '../core/events/event-bus.js';
 import { Result, ok, err } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
 import { BaseEventHandler } from '../core/events/handlers.js';
+import {
+  WorkerKilledEvent,
+  SystemResourcesUpdatedEvent
+} from '../core/events/events.js';
 
 export class AutoscalingManager extends BaseEventHandler {
   private running = false;
@@ -78,7 +82,7 @@ export class AutoscalingManager extends BaseEventHandler {
   /**
    * Handle worker killed events - check if we need to scale up for remaining queue
    */
-  private async handleWorkerKilled(event: any): Promise<void> {
+  private async handleWorkerKilled(event: WorkerKilledEvent): Promise<void> {
     if (!this.running) {
       return;
     }
@@ -96,7 +100,7 @@ export class AutoscalingManager extends BaseEventHandler {
   /**
    * Handle system resource updates - check if resources now allow scaling
    */
-  private async handleResourcesUpdated(event: any): Promise<void> {
+  private async handleResourcesUpdated(event: SystemResourcesUpdatedEvent): Promise<void> {
     if (!this.running) {
       return;
     }

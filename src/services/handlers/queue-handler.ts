@@ -10,9 +10,12 @@ import { EventBus } from '../../core/events/event-bus.js';
 import {
   TaskPersistedEvent,
   TaskCancelledEvent,
+  TaskCancellationRequestedEvent,
+  NextTaskQueryEvent,
+  RequeueTaskEvent,
   createEvent
 } from '../../core/events/events.js';
-import { TaskStatus } from '../../core/domain.js';
+import { Task, TaskStatus } from '../../core/domain.js';
 
 export class QueueHandler extends BaseEventHandler {
   private eventBus?: EventBus;
@@ -94,7 +97,7 @@ export class QueueHandler extends BaseEventHandler {
   /**
    * Handle task cancellation request - remove from queue if queued
    */
-  private async handleTaskCancellation(event: any): Promise<void> {
+  private async handleTaskCancellation(event: TaskCancellationRequestedEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
       const { taskId } = event;
       
@@ -130,7 +133,7 @@ export class QueueHandler extends BaseEventHandler {
    * Handle next task query - event-driven dequeue operation
    * ARCHITECTURE: Pure event-driven pattern - WorkerHandler uses events, not direct calls
    */
-  private async handleNextTaskQuery(event: any): Promise<void> {
+  private async handleNextTaskQuery(event: NextTaskQueryEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
       const result = this.queue.dequeue();
 
@@ -174,7 +177,7 @@ export class QueueHandler extends BaseEventHandler {
    * Handle requeue task event - event-driven requeue operation
    * ARCHITECTURE: Pure event-driven pattern - WorkerHandler uses events, not direct calls
    */
-  private async handleRequeueTask(event: any): Promise<void> {
+  private async handleRequeueTask(event: RequeueTaskEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
       const { task } = event;
 
@@ -240,7 +243,7 @@ export class QueueHandler extends BaseEventHandler {
    * DEPRECATED: Use RequeueTask event instead
    * @deprecated This method will be removed - use event-driven pattern
    */
-  async requeueTask(task: any): Promise<Result<void>> {
+  async requeueTask(task: Task): Promise<Result<void>> {
     this.logger.warn('requeueTask() called directly - should use RequeueTask event');
     const result = this.queue.enqueue(task);
 

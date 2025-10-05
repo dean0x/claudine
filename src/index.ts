@@ -33,7 +33,12 @@ async function main() {
 
   try {
     // Bootstrap application
-    container = await bootstrap();
+    const containerResult = await bootstrap();
+    if (!containerResult.ok) {
+      console.error('Bootstrap failed:', containerResult.error.message);
+      process.exit(1);
+    }
+    container = containerResult.value;
 
     // Resolve services (async factories require resolve())
     const loggerResult = await container.resolve<Logger>('logger');
