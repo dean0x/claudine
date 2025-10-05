@@ -45,6 +45,11 @@ tmp/
 temp/
 *.tmp
 
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
 
 # Internal documentation (keep local only)
 .docs/
