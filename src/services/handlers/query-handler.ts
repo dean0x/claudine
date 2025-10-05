@@ -57,6 +57,7 @@ export class QueryHandler extends BaseEventHandler {
   /**
    * Handle task status queries
    * Returns single task or all tasks based on query
+   * ARCHITECTURE: Uses Result pattern instead of throwing
    */
   private async handleTaskStatusQuery(event: TaskStatusQueryEvent & { __correlationId?: string }): Promise<void> {
     const correlationId = event.__correlationId;
@@ -67,52 +68,47 @@ export class QueryHandler extends BaseEventHandler {
       correlationId
     });
 
-    try {
-      let result: Task | readonly Task[] | null;
+    let queryResult: Result<Task | readonly Task[] | null>;
 
-      if (event.taskId) {
-        // Query single task
-        const taskResult = await this.repository.findById(event.taskId);
+    if (event.taskId) {
+      // Query single task
+      const taskResult = await this.repository.findById(event.taskId);
 
-        if (!taskResult.ok) {
-          throw taskResult.error;
-        }
-
-        // FIXED: Return null for not-found instead of throwing
-        // This provides graceful handling for non-existent tasks
-        result = taskResult.value;
+      if (!taskResult.ok) {
+        queryResult = taskResult;
       } else {
-        // Query all tasks
-        const tasksResult = await this.repository.findAll();
-
-        if (!tasksResult.ok) {
-          throw tasksResult.error;
-        }
-
-        result = tasksResult.value;
+        // Return null for not-found instead of throwing
+        // This provides graceful handling for non-existent tasks
+        queryResult = ok(taskResult.value);
       }
+    } else {
+      // Query all tasks
+      const tasksResult = await this.repository.findAll();
 
-      // Send response back via event bus
-      if (correlationId && 'respond' in this.eventBus) {
-        (this.eventBus as InMemoryEventBus).respond(correlationId, result);
+      if (!tasksResult.ok) {
+        queryResult = tasksResult;
+      } else {
+        queryResult = ok(tasksResult.value);
       }
+    }
 
-    } catch (error) {
-      this.logger.error('Task status query failed', error as Error, {
-        taskId: event.taskId,
-        correlationId
-      });
-
-      // Send error back via event bus
-      if (correlationId && 'respondError' in this.eventBus) {
-        const actualError = error instanceof Error ? error : new Error(String(error));
-        (this.eventBus as InMemoryEventBus).respondError(correlationId, actualError);
+    // Send response or error back via event bus
+    if (correlationId && 'respond' in this.eventBus) {
+      if (queryResult.ok) {
+        (this.eventBus as InMemoryEventBus).respond(correlationId, queryResult.value);
+      } else {
+        this.logger.error('Task status query failed', queryResult.error, {
+          taskId: event.taskId,
+          correlationId
+        });
+        (this.eventBus as InMemoryEventBus).respondError(correlationId, queryResult.error);
       }
     }
   }
 
   /**
    * Handle task logs queries
+   * ARCHITECTURE: Uses Result pattern instead of throwing
    */
   private async handleTaskLogsQuery(event: TaskLogsQueryEvent & { __correlationId?: string }): Promise<void> {
     const correlationId = event.__correlationId;
@@ -123,56 +119,59 @@ export class QueryHandler extends BaseEventHandler {
       correlationId
     });
 
-    try {
-      // First verify task exists
-      const taskResult = await this.repository.findById(event.taskId);
+    // First verify task exists
+    const taskResult = await this.repository.findById(event.taskId);
 
-      if (!taskResult.ok) {
-        throw taskResult.error;
-      }
-
-      if (!taskResult.value) {
-        throw taskNotFound(event.taskId);
-      }
-
-      // Get logs from output capture if available
-      let stdout: string[] = [];
-      let stderr: string[] = [];
-      let totalSize = 0;
-
-      if (this.outputCapture) {
-        const outputResult = await this.outputCapture.getOutput(event.taskId, event.tail);
-
-        if (outputResult.ok) {
-          stdout = [...outputResult.value.stdout];
-          stderr = [...outputResult.value.stderr];
-          totalSize = outputResult.value.totalSize;
-        }
-      }
-
-      const response = {
-        taskId: event.taskId,
-        stdout,
-        stderr,
-        totalSize
-      };
-
-      // Send response back via event bus
-      if (correlationId && 'respond' in this.eventBus) {
-        (this.eventBus as InMemoryEventBus).respond(correlationId, response);
-      }
-
-    } catch (error) {
-      this.logger.error('Task logs query failed', error as Error, {
+    if (!taskResult.ok) {
+      this.logger.error('Task logs query failed - repository error', taskResult.error, {
         taskId: event.taskId,
         correlationId
       });
 
-      // Send error back via event bus
       if (correlationId && 'respondError' in this.eventBus) {
-        const actualError = error instanceof Error ? error : new Error(String(error));
-        (this.eventBus as InMemoryEventBus).respondError(correlationId, actualError);
+        (this.eventBus as InMemoryEventBus).respondError(correlationId, taskResult.error);
       }
+      return;
+    }
+
+    if (!taskResult.value) {
+      const notFoundError = taskNotFound(event.taskId);
+      this.logger.error('Task logs query failed - task not found', notFoundError, {
+        taskId: event.taskId,
+        correlationId
+      });
+
+      if (correlationId && 'respondError' in this.eventBus) {
+        (this.eventBus as InMemoryEventBus).respondError(correlationId, notFoundError);
+      }
+      return;
+    }
+
+    // Get logs from output capture if available
+    let stdout: string[] = [];
+    let stderr: string[] = [];
+    let totalSize = 0;
+
+    if (this.outputCapture) {
+      const outputResult = await this.outputCapture.getOutput(event.taskId, event.tail);
+
+      if (outputResult.ok) {
+        stdout = [...outputResult.value.stdout];
+        stderr = [...outputResult.value.stderr];
+        totalSize = outputResult.value.totalSize;
+      }
+    }
+
+    const response = {
+      taskId: event.taskId,
+      stdout,
+      stderr,
+      totalSize
+    };
+
+    // Send response back via event bus
+    if (correlationId && 'respond' in this.eventBus) {
+      (this.eventBus as InMemoryEventBus).respond(correlationId, response);
     }
   }
 }

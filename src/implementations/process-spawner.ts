@@ -25,51 +25,51 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
   }
 
   spawn(prompt: string, workingDirectory: string, taskId?: string): Result<{ process: ChildProcess; pid: number }> {
-    return tryCatch(
-      () => {
-        // Make prompt more explicit if it looks like a simple command
-        let finalPrompt = prompt;
+    try {
+      // Make prompt more explicit if it looks like a simple command
+      let finalPrompt = prompt;
 
-        // If the prompt looks like a simple command without explicit instructions,
-        // wrap it to make Claude understand it should execute it
-        if (!prompt.toLowerCase().includes('run') &&
-            !prompt.toLowerCase().includes('execute') &&
-            !prompt.toLowerCase().includes('perform') &&
-            !prompt.toLowerCase().includes('bash') &&
-            !prompt.toLowerCase().includes('command') &&
-            prompt.split(' ').length <= 3) {
-          finalPrompt = `Execute the following bash command: ${prompt}`;
-        }
+      // If the prompt looks like a simple command without explicit instructions,
+      // wrap it to make Claude understand it should execute it
+      if (!prompt.toLowerCase().includes('run') &&
+          !prompt.toLowerCase().includes('execute') &&
+          !prompt.toLowerCase().includes('perform') &&
+          !prompt.toLowerCase().includes('bash') &&
+          !prompt.toLowerCase().includes('command') &&
+          prompt.split(' ').length <= 3) {
+        finalPrompt = `Execute the following bash command: ${prompt}`;
+      }
 
-        // With --print flag, prompt is passed as argument, not via stdin
-        const args = [...this.baseArgs, finalPrompt];
-        
-        // Log via proper logger instead of console.error to avoid interfering with output capture
-        // console.error(`[ProcessSpawner] Executing: ${this.claudeCommand} ${args.map(arg => `"${arg}"`).join(' ')}`);
-        // console.error(`[ProcessSpawner] Working directory: ${workingDirectory}`);
-        // console.error(`[ProcessSpawner] Environment keys: ${Object.keys(process.env).length}`);
-        
-        // Add Claudine-specific environment variables for identification
-        const env = {
-          ...process.env,
-          CLAUDINE_WORKER: 'true',
-          ...(taskId && { CLAUDINE_TASK_ID: taskId })
-        };
-        
-        const child = spawn(this.claudeCommand, args, {
-          cwd: workingDirectory,
-          env,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        });
+      // With --print flag, prompt is passed as argument, not via stdin
+      const args = [...this.baseArgs, finalPrompt];
 
-        if (!child.pid) {
-          throw new Error('Failed to get process PID');
-        }
+      // Log via proper logger instead of console.error to avoid interfering with output capture
+      // console.error(`[ProcessSpawner] Executing: ${this.claudeCommand} ${args.map(arg => `"${arg}"`).join(' ')}`);
+      // console.error(`[ProcessSpawner] Working directory: ${workingDirectory}`);
+      // console.error(`[ProcessSpawner] Environment keys: ${Object.keys(process.env).length}`);
 
-        return { process: child, pid: child.pid };
-      },
-      (error) => processSpawnFailed(String(error))
-    );
+      // Add Claudine-specific environment variables for identification
+      const env = {
+        ...process.env,
+        CLAUDINE_WORKER: 'true',
+        ...(taskId && { CLAUDINE_TASK_ID: taskId })
+      };
+
+      const child = spawn(this.claudeCommand, args, {
+        cwd: workingDirectory,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      // ARCHITECTURE: Check PID immediately - spawn() is synchronous for PID assignment
+      if (!child.pid) {
+        return err(processSpawnFailed('Failed to get process PID'));
+      }
+
+      return ok({ process: child, pid: child.pid });
+    } catch (error) {
+      return err(processSpawnFailed(String(error)));
+    }
   }
 
   kill(pid: number): Result<void> {

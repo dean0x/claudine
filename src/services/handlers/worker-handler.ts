@@ -11,10 +11,13 @@ import {
   TaskDelegatedEvent,
   TaskCancelledEvent,
   TaskStatusQueryEvent,
+  TaskCancellationRequestedEvent,
+  TaskQueuedEvent,
   NextTaskQueryEvent,
   createEvent
 } from '../../core/events/events.js';
-import { Task, TaskStatus } from '../../core/domain.js';
+import { Task, TaskId, TaskStatus } from '../../core/domain.js';
+import { ClaudineError, ErrorCode, taskNotFound } from '../../core/errors.js';
 import { Configuration } from '../../core/configuration.js';
 
 export class WorkerHandler extends BaseEventHandler {
@@ -95,13 +98,13 @@ export class WorkerHandler extends BaseEventHandler {
   /**
    * Handle task queued - process immediately
    */
-  private async handleTaskQueued(event: any): Promise<void> {
+  private async handleTaskQueued(event: TaskQueuedEvent): Promise<void> {
     this.logger.debug('Received TaskQueued event', {
-      taskId: event.taskId || event.task?.id
+      taskId: event.taskId
     });
     await this.handleEvent(event, async (event) => {
       this.logger.debug('Task queued, attempting to process', {
-        taskId: event.taskId || event.task?.id
+        taskId: event.taskId
       });
 
       this.logger.debug('About to call processNextTask()');
@@ -117,7 +120,7 @@ export class WorkerHandler extends BaseEventHandler {
    * Handle task cancellation - validate and kill worker if running
    * ARCHITECTURE: Pure event-driven - uses TaskStatusQuery instead of direct repository access
    */
-  private async handleTaskCancellation(event: any): Promise<void> {
+  private async handleTaskCancellation(event: TaskCancellationRequestedEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
       const { taskId, reason } = event;
 
@@ -129,12 +132,12 @@ export class WorkerHandler extends BaseEventHandler {
 
       if (!taskResult.ok) {
         this.logger.error('Failed to find task for cancellation', taskResult.error, { taskId });
-        throw taskResult.error;
+        return taskResult;
       }
 
       if (!taskResult.value) {
         this.logger.error('Task not found for cancellation', undefined, { taskId });
-        throw new Error(`Task ${taskId} not found`);
+        return err(taskNotFound(taskId));
       }
 
       const task = taskResult.value;
@@ -146,7 +149,11 @@ export class WorkerHandler extends BaseEventHandler {
           status: task.status,
           reason
         });
-        throw new Error(`Task ${taskId} cannot be cancelled in state ${task.status}`);
+        return err(new ClaudineError(
+          ErrorCode.TASK_CANNOT_CANCEL,
+          `Task ${taskId} cannot be cancelled in state ${task.status}`,
+          { taskId, status: task.status, reason }
+        ));
       }
 
       // Check if we have a worker for this task
@@ -311,7 +318,7 @@ export class WorkerHandler extends BaseEventHandler {
   /**
    * Handle worker completion (called by WorkerPool)
    */
-  async onWorkerComplete(taskId: any, exitCode: number): Promise<void> {
+  async onWorkerComplete(taskId: TaskId, exitCode: number): Promise<void> {
     try {
       // Update resource monitor
       this.resourceMonitor.decrementWorkerCount();
@@ -357,7 +364,7 @@ export class WorkerHandler extends BaseEventHandler {
   /**
    * Handle worker timeout (called by WorkerPool)
    */
-  async onWorkerTimeout(taskId: any, error: any): Promise<void> {
+  async onWorkerTimeout(taskId: TaskId, error: ClaudineError): Promise<void> {
     try {
       // Update resource monitor
       this.resourceMonitor.decrementWorkerCount();
