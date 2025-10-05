@@ -89,6 +89,10 @@ export class MCPAdapter {
       async (request) => {
         const { name, arguments: args } = request.params;
 
+        // SECURITY: DoS protection handled at resource level:
+        // - Queue size limit (RESOURCE_EXHAUSTED error when queue full)
+        // - Resource monitoring (workers only spawn when system has capacity)
+        // - Spawn throttling (prevents fork bombs)
         this.logger.debug('MCP tool call received', { tool: name });
 
         switch (name) {
@@ -103,7 +107,17 @@ export class MCPAdapter {
           case 'RetryTask':
             return await this.handleRetryTask(args);
           default:
-            throw new Error(`Unknown tool: ${name}`);
+            // ARCHITECTURE: Return error response instead of throwing
+            return {
+              content: [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                  error: `Unknown tool: ${name}`,
+                  code: 'INVALID_TOOL'
+                }, null, 2)
+              }],
+              isError: true
+            };
         }
       }
     );
