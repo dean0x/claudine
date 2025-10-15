@@ -32,8 +32,11 @@ jobs:
     - name: Build project
       run: npm run build
     
-    - name: Run tests
-      run: npm test
+    - name: Run unit tests
+      run: npm test -- tests/unit/
+
+    - name: Run integration tests
+      run: npm test -- tests/integration/
     
     - name: Test CLI commands
       run: |
