@@ -53,8 +53,9 @@ jobs:
     - name: Run unit tests (root level)
       run: npm test -- tests/unit/*.test.ts
 
-    - name: Run integration tests
-      run: npm test -- tests/integration/
+    # Integration tests require Claude Code CLI to be installed
+    # Skip in CI since `claude` binary is not available
+    # Run locally with: npm test -- tests/integration/
     
     - name: Test CLI commands
       run: |
