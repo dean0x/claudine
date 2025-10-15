@@ -8,7 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { bootstrap } from './bootstrap.js';
 import { validatePath, validateBufferSize, validateTimeout } from './utils/validation.js';
-import { Task } from './core/domain.js';
+import type { Task } from './core/domain.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

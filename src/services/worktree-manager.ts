@@ -510,22 +510,71 @@ export class GitWorktreeManager implements WorktreeManager {
         return true;
       }
 
-      // Check for unpushed commits
+      // Check for unpushed commits against upstream
       try {
         const result = await gitInWorktree.raw(['rev-list', '--count', '@{u}..HEAD']);
         const unpushedCount = parseInt(result.trim(), 10);
         return unpushedCount > 0;
-      } catch {
-        // If we can't check upstream, assume there might be unpushed changes
-        return true;
+      } catch (upstreamError) {
+        // ARCHITECTURE: Branch has no upstream configured (new local branch)
+        // Check if branch has any commits that aren't in the main branch
+        // If it does, consider it "unpushed" since the work isn't integrated
+        try {
+          const currentBranch = status.current || 'HEAD';
+
+          // Try to find commits unique to this branch vs common base branches
+          // This handles the case where a worktree branch has commits but no upstream
+          for (const baseBranch of ['main', 'master', 'develop']) {
+            try {
+              const compareResult = await gitInWorktree.raw([
+                'rev-list', '--count', `${baseBranch}..${currentBranch}`
+              ]);
+              const uniqueCommits = parseInt(compareResult.trim(), 10);
+
+              // If this branch has commits not in base branch, it has "unpushed" work
+              if (uniqueCommits > 0) {
+                this.logger.debug('Branch has commits not in base branch', {
+                  worktreePath,
+                  currentBranch,
+                  baseBranch,
+                  uniqueCommits
+                });
+                return true;
+              }
+
+              // Successfully compared with this base branch and found no unique commits
+              return false;
+            } catch {
+              // Base branch doesn't exist or compare failed, try next base
+              continue;
+            }
+          }
+
+          // Couldn't compare with any base branch - assume no unpushed changes
+          // This handles edge cases like detached HEAD or orphan branches
+          this.logger.debug('No upstream and no base branch comparison possible', {
+            worktreePath,
+            currentBranch
+          });
+          return false;
+        } catch (compareError) {
+          // If we can't compare branches, log and assume no unpushed changes
+          // This is safer than blocking cleanup forever
+          this.logger.warn('Could not compare with base branches', {
+            worktreePath,
+            error: compareError instanceof Error ? compareError.message : String(compareError)
+          });
+          return false;
+        }
       }
     } catch (error) {
       this.logger.warn('Could not check for unpushed changes', {
         worktreePath,
         error: error instanceof Error ? error.message : String(error)
       });
-      // If we can't check, assume there might be unpushed changes to be safe
-      return true;
+      // ARCHITECTURE: On error, default to false to prevent blocking cleanup
+      // Safety checks (age, etc.) provide additional protection
+      return false;
     }
   }
 

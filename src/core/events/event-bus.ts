@@ -61,21 +61,28 @@ export class InMemoryEventBus implements EventBus {
     config: Configuration,
     private readonly logger: Logger
   ) {
-    this.maxListenersPerEvent = config.maxListenersPerEvent!;
-    this.maxTotalSubscriptions = config.maxTotalSubscriptions!;
-    this.maxRequestAge = config.eventCleanupIntervalMs!;
-    this.defaultRequestTimeoutMs = config.eventRequestTimeoutMs!;
+    // SECURITY: Use safe defaults instead of non-null assertions to prevent runtime crashes
+    // These match ConfigurationSchema defaults from configuration.ts
+    this.maxListenersPerEvent = config.maxListenersPerEvent ?? 100;
+    this.maxTotalSubscriptions = config.maxTotalSubscriptions ?? 1000;
+    this.maxRequestAge = config.eventCleanupIntervalMs ?? 60000;
+    this.defaultRequestTimeoutMs = config.eventRequestTimeoutMs ?? 5000;
     // Start cleanup interval to prevent memory leaks
     this.startCleanupInterval();
   }
 
   /**
    * Start periodic cleanup of stale pending requests
+   * ARCHITECTURE: Timer uses unref() to allow process exit without explicit cleanup
    */
   private startCleanupInterval(): void {
     this.cleanupInterval = setInterval(() => {
       this.cleanupStaleRequests();
     }, this.maxRequestAge); // Use configured cleanup interval
+
+    // Allow Node.js to exit if this timer is the only thing keeping it alive
+    // This prevents blocking process exit in tests or short-lived processes
+    this.cleanupInterval.unref();
   }
 
   /**
