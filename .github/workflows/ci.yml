@@ -44,7 +44,7 @@ jobs:
       run: npm test -- tests/unit/services/handlers/query-handler.test.ts
 
     - name: Run unit tests (worker handler)
-      run: NODE_OPTIONS="--max-old-space-size=6144" npm test -- --no-threads --pool=forks tests/unit/services/handlers/worker-handler.test.ts
+      run: NODE_OPTIONS="--max-old-space-size=6144" npm test -- --pool=forks --poolOptions.forks.singleFork tests/unit/services/handlers/worker-handler.test.ts
 
     - name: Run unit tests (adapters & utils)
       run: npm test -- tests/unit/adapters/ tests/unit/utils/
