@@ -53,7 +53,7 @@
 - **TaskLogs**: Stream or retrieve execution logs from any task
 - **CancelTask**: Cancel tasks with automatic resource cleanup
 
-See [FEATURES.md](./FEATURES.md) for complete feature documentation.
+See [FEATURES.md](./docs/FEATURES.md) for complete feature documentation.
 
 ## Quick Start
 
@@ -297,7 +297,7 @@ await claudine.DelegateTask({
 - No distributed execution across multiple machines (planned for v0.4.0)
 - No web dashboard (monitoring via logs only)
 
-For complete feature list, see [FEATURES.md](./FEATURES.md).
+For complete feature list, see [FEATURES.md](./docs/FEATURES.md).
 
 ## Troubleshooting
 
@@ -330,7 +330,7 @@ npm run dev
 - [ ] **v0.4.0**: Distributed processing (Q1 2026)
 - [ ] **v0.5.0**: Advanced orchestration and monitoring (Q2 2026)
 
-See [ROADMAP.md](./ROADMAP.md) for detailed feature plans and timelines.
+See [ROADMAP.md](./docs/ROADMAP.md) for detailed feature plans and timelines.
 
 ## Contributing
 

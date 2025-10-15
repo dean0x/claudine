@@ -23,7 +23,7 @@ config/mcp-config-snippet.json
 config/mcp-config-ready.json
 
 # Runtime directories
-.claudine-worktrees/
+.worktrees/
 task-outputs/
 data/
 
@@ -45,6 +45,11 @@ tmp/
 temp/
 *.tmp
 
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
 
 # Internal documentation (keep local only)
 .docs/
@@ -52,3 +57,5 @@ temp/
 .mcp.json
 CLAUDE.md
 output/
+coverage/
+.claudine/

@@ -7,12 +7,15 @@ import { TaskQueue, Logger } from '../../core/interfaces.js';
 import { Result, ok, err } from '../../core/result.js';
 import { BaseEventHandler } from '../../core/events/handlers.js';
 import { EventBus } from '../../core/events/event-bus.js';
-import { 
-  TaskDelegatedEvent,
+import {
+  TaskPersistedEvent,
   TaskCancelledEvent,
+  TaskCancellationRequestedEvent,
+  NextTaskQueryEvent,
+  RequeueTaskEvent,
   createEvent
 } from '../../core/events/events.js';
-import { TaskStatus } from '../../core/domain.js';
+import { Task, TaskStatus } from '../../core/domain.js';
 
 export class QueueHandler extends BaseEventHandler {
   private eventBus?: EventBus;
@@ -29,10 +32,12 @@ export class QueueHandler extends BaseEventHandler {
    */
   async setup(eventBus: EventBus): Promise<Result<void>> {
     this.eventBus = eventBus; // Store reference for later use
-    
+
     const subscriptions = [
-      eventBus.subscribe('TaskDelegated', this.handleTaskDelegated.bind(this)),
-      eventBus.subscribe('TaskCancellationRequested', this.handleTaskCancellation.bind(this))
+      eventBus.subscribe('TaskPersisted', this.handleTaskPersisted.bind(this)),
+      eventBus.subscribe('TaskCancellationRequested', this.handleTaskCancellation.bind(this)),
+      eventBus.subscribe('NextTaskQuery', this.handleNextTaskQuery.bind(this)),
+      eventBus.subscribe('RequeueTask', this.handleRequeueTask.bind(this))
     ];
 
     // Check if any subscription failed
@@ -47,9 +52,9 @@ export class QueueHandler extends BaseEventHandler {
   }
 
   /**
-   * Handle task delegation - add task to queue
+   * Handle task persisted - add task to queue only after it's been saved to database
    */
-  private async handleTaskDelegated(event: TaskDelegatedEvent): Promise<void> {
+  private async handleTaskPersisted(event: TaskPersistedEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
       const result = this.queue.enqueue(event.task);
       
@@ -67,7 +72,6 @@ export class QueueHandler extends BaseEventHandler {
       });
 
       // Emit event that task is now queued - critical for worker spawning
-      console.error(`[QueueHandler] About to emit TaskQueued event for task ${event.task.id}`);
       if (this.eventBus) {
         const emitResult = await this.eventBus.emit('TaskQueued', { 
           taskId: event.task.id,
@@ -78,13 +82,12 @@ export class QueueHandler extends BaseEventHandler {
           this.logger.error('Failed to emit TaskQueued event', emitResult.error, {
             taskId: event.task.id
           });
-          console.error(`[QueueHandler] FAILED to emit TaskQueued event: ${emitResult.error.message}`);
           // Don't fail the enqueue operation - the task is in the queue
-        } else {
-          console.error(`[QueueHandler] Successfully emitted TaskQueued event for task ${event.task.id}`);
         }
       } else {
-        console.error(`[QueueHandler] ERROR: No eventBus available to emit TaskQueued event!`);
+        this.logger.error('No eventBus available to emit TaskQueued event', undefined, {
+          taskId: event.task.id
+        });
       }
       
       return ok(undefined);
@@ -94,7 +97,7 @@ export class QueueHandler extends BaseEventHandler {
   /**
    * Handle task cancellation request - remove from queue if queued
    */
-  private async handleTaskCancellation(event: any): Promise<void> {
+  private async handleTaskCancellation(event: TaskCancellationRequestedEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
       const { taskId } = event;
       
@@ -127,11 +130,98 @@ export class QueueHandler extends BaseEventHandler {
   }
 
   /**
-   * Get next task from queue (called by worker handler)
+   * Handle next task query - event-driven dequeue operation
+   * ARCHITECTURE: Pure event-driven pattern - WorkerHandler uses events, not direct calls
+   */
+  private async handleNextTaskQuery(event: NextTaskQueryEvent): Promise<void> {
+    await this.handleEvent(event, async (event) => {
+      const result = this.queue.dequeue();
+
+      if (!result.ok) {
+        // Respond with error
+        const correlationId = (event as any).__correlationId;
+        if (correlationId && this.eventBus && 'respondError' in this.eventBus) {
+          (this.eventBus as any).respondError(correlationId, result.error);
+        }
+        return result;
+      }
+
+      if (!result.value) {
+        // Respond with null (no tasks)
+        const correlationId = (event as any).__correlationId;
+        if (correlationId && this.eventBus && 'respond' in this.eventBus) {
+          (this.eventBus as any).respond(correlationId, null);
+        }
+        return ok(undefined);
+      }
+
+      const task = result.value;
+
+      this.logger.debug('Task dequeued via event', {
+        taskId: task.id,
+        priority: task.priority,
+        queueSize: this.queue.size()
+      });
+
+      // Respond with task
+      const correlationId = (event as any).__correlationId;
+      if (correlationId && this.eventBus && 'respond' in this.eventBus) {
+        (this.eventBus as any).respond(correlationId, task);
+      }
+
+      return ok(undefined);
+    });
+  }
+
+  /**
+   * Handle requeue task event - event-driven requeue operation
+   * ARCHITECTURE: Pure event-driven pattern - WorkerHandler uses events, not direct calls
+   */
+  private async handleRequeueTask(event: RequeueTaskEvent): Promise<void> {
+    await this.handleEvent(event, async (event) => {
+      const { task } = event;
+
+      const result = this.queue.enqueue(task);
+
+      if (!result.ok) {
+        this.logger.error('Failed to requeue task via event', result.error, {
+          taskId: task.id
+        });
+        return result;
+      }
+
+      this.logger.debug('Task requeued via event', {
+        taskId: task.id,
+        queueSize: this.queue.size()
+      });
+
+      // CRITICAL: Emit TaskQueued event to trigger worker spawning for requeued task
+      if (this.eventBus) {
+        const emitResult = await this.eventBus.emit('TaskQueued', {
+          taskId: task.id,
+          task: task
+        });
+
+        if (!emitResult.ok) {
+          this.logger.error('Failed to emit TaskQueued event for requeued task', emitResult.error, {
+            taskId: task.id
+          });
+          // Don't fail the requeue operation - the task is in the queue
+        }
+      }
+
+      return ok(undefined);
+    });
+  }
+
+  /**
+   * DEPRECATED: Use NextTaskQuery event instead
+   * @deprecated This method will be removed - use event-driven pattern
    */
   async getNextTask(): Promise<Result<any>> {
+    this.logger.warn('getNextTask() called directly - should use NextTaskQuery event');
     const result = this.queue.dequeue();
-    
+
     if (!result.ok) {
       return result;
     }
@@ -150,11 +240,13 @@ export class QueueHandler extends BaseEventHandler {
   }
 
   /**
-   * Put task back in queue (on failure)
+   * DEPRECATED: Use RequeueTask event instead
+   * @deprecated This method will be removed - use event-driven pattern
    */
-  async requeueTask(task: any): Promise<Result<void>> {
+  async requeueTask(task: Task): Promise<Result<void>> {
+    this.logger.warn('requeueTask() called directly - should use RequeueTask event');
     const result = this.queue.enqueue(task);
-    
+
     if (!result.ok) {
       this.logger.error('Failed to requeue task', result.error, {
         taskId: task.id
@@ -169,11 +261,11 @@ export class QueueHandler extends BaseEventHandler {
 
     // CRITICAL: Emit TaskQueued event to trigger worker spawning for requeued task
     if (this.eventBus) {
-      const emitResult = await this.eventBus.emit('TaskQueued', { 
+      const emitResult = await this.eventBus.emit('TaskQueued', {
         taskId: task.id,
-        task: task 
+        task: task
       });
-      
+
       if (!emitResult.ok) {
         this.logger.error('Failed to emit TaskQueued event for requeued task', emitResult.error, {
           taskId: task.id

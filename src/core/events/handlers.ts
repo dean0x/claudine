@@ -20,11 +20,12 @@ export abstract class BaseEventHandler {
 
   /**
    * Handle an event with error logging
+   * ARCHITECTURE: Returns Result instead of throwing to maintain consistency
    */
   protected async handleEvent<T extends ClaudineEvent>(
     event: T,
     handler: (event: T) => Promise<Result<void>>
-  ): Promise<void> {
+  ): Promise<Result<void>> {
     this.logger.debug(`${this.name} handling event`, {
       eventType: event.type,
       eventId: event.eventId
@@ -37,15 +38,16 @@ export abstract class BaseEventHandler {
         eventType: event.type,
         eventId: event.eventId
       });
-      
-      // Re-throw to fail the event emission
-      throw result.error;
+
+      return result;
     }
 
     this.logger.debug(`${this.name} event handled successfully`, {
       eventType: event.type,
       eventId: event.eventId
     });
+
+    return ok(undefined);
   }
 }
 
@@ -149,17 +151,18 @@ export class RetryableEventHandler extends BaseEventHandler {
 
   /**
    * Execute handler with retry logic
+   * ARCHITECTURE: Returns Result instead of throwing
    */
   protected async executeWithRetry<T extends ClaudineEvent>(
     event: T,
     handler: (event: T) => Promise<Result<void>>
-  ): Promise<void> {
+  ): Promise<Result<void>> {
     let lastError: ClaudineError | undefined;
 
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       try {
         const result = await handler(event);
-        
+
         if (result.ok) {
           if (attempt > 1) {
             this.logger.info(`${this.name} succeeded on retry`, {
@@ -167,11 +170,11 @@ export class RetryableEventHandler extends BaseEventHandler {
               attempt
             });
           }
-          return;
+          return ok(undefined);
         }
 
         lastError = result.error instanceof ClaudineError ? result.error : new ClaudineError(ErrorCode.SYSTEM_ERROR, result.error.message || String(result.error));
-        
+
         this.logger.warn(`${this.name} failed, attempt ${attempt}/${this.maxRetries}`, {
           eventId: event.eventId,
           error: lastError.message
@@ -182,22 +185,23 @@ export class RetryableEventHandler extends BaseEventHandler {
           await new Promise(resolve => setTimeout(resolve, this.retryDelayMs));
         }
       } catch (error) {
-        lastError = error instanceof ClaudineError 
-          ? error 
+        lastError = error instanceof ClaudineError
+          ? error
           : new ClaudineError(ErrorCode.SYSTEM_ERROR, `${error}`);
       }
     }
 
-    // All retries failed
-    throw lastError || new ClaudineError(
+    // All retries failed - return error instead of throwing
+    return err(lastError || new ClaudineError(
       ErrorCode.SYSTEM_ERROR,
       `${this.name} failed after ${this.maxRetries} attempts`
-    );
+    ));
   }
 }
 
 /**
  * Utility to create simple event handler functions
+ * ARCHITECTURE: Logs errors but doesn't throw - EventBus handles error propagation
  */
 export function createEventHandler<T extends ClaudineEvent>(
   handler: (event: T) => Promise<Result<void>>,
@@ -217,7 +221,7 @@ export function createEventHandler<T extends ClaudineEvent>(
         eventType: event.type,
         eventId: event.eventId
       });
-      throw result.error;
+      // Note: EventBus will handle error aggregation and propagation
     }
   };
 }

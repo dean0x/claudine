@@ -19,6 +19,8 @@ import {
 import { TaskStatus, updateTask } from '../../core/domain.js';
 
 export class PersistenceHandler extends BaseEventHandler {
+  private eventBus?: EventBus;
+
   constructor(
     private readonly repository: TaskRepository,
     logger: Logger
@@ -30,6 +32,8 @@ export class PersistenceHandler extends BaseEventHandler {
    * Set up event subscriptions
    */
   async setup(eventBus: EventBus): Promise<Result<void>> {
+    this.eventBus = eventBus; // Store reference for later use
+
     // Subscribe to all task lifecycle events that need persistence
     const subscriptions = [
       eventBus.subscribe('TaskDelegated', this.handleTaskDelegated.bind(this)),
@@ -68,6 +72,14 @@ export class PersistenceHandler extends BaseEventHandler {
       this.logger.debug('Task persisted to database', {
         taskId: event.task.id
       });
+
+      // Emit TaskPersisted event with full task for queue handler
+      if (this.eventBus) {
+        await this.eventBus.emit('TaskPersisted', {
+          taskId: event.task.id,
+          task: event.task
+        });
+      }
 
       return ok(undefined);
     });
@@ -126,7 +138,8 @@ export class PersistenceHandler extends BaseEventHandler {
       const updatedTask = updateTask(taskResult.value, {
         status: TaskStatus.COMPLETED,
         completedAt: Date.now(),
-        exitCode: event.exitCode
+        exitCode: event.exitCode,
+        duration: event.duration
       });
 
       const result = await this.repository.save(updatedTask);
@@ -164,7 +177,8 @@ export class PersistenceHandler extends BaseEventHandler {
       const updatedTask = updateTask(taskResult.value, {
         status: TaskStatus.FAILED,
         completedAt: Date.now(),
-        exitCode: event.exitCode
+        exitCode: event.exitCode,
+        error: event.error?.toJSON ? event.error.toJSON() : event.error
       });
 
       const result = await this.repository.save(updatedTask);
@@ -236,7 +250,8 @@ export class PersistenceHandler extends BaseEventHandler {
       // Update task with timeout failure status
       const updatedTask = updateTask(taskResult.value, {
         status: TaskStatus.FAILED,
-        completedAt: Date.now()
+        completedAt: Date.now(),
+        error: event.error?.toJSON ? event.error.toJSON() : event.error
       });
 
       const result = await this.repository.save(updatedTask);

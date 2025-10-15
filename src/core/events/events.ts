@@ -26,6 +26,7 @@ export interface TaskDelegatedEvent extends BaseEvent {
 export interface TaskPersistedEvent extends BaseEvent {
   type: 'TaskPersisted';
   taskId: TaskId;
+  task: Task;  // Include full task for QueueHandler
 }
 
 export interface TaskQueuedEvent extends BaseEvent {
@@ -118,6 +119,46 @@ export interface TaskConfiguredEvent extends BaseEvent {
 }
 
 /**
+ * Query events - for read operations in pure event-driven architecture
+ * ARCHITECTURE: Part of pure event-driven pattern - ALL operations go through events
+ */
+export interface TaskStatusQueryEvent extends BaseEvent {
+  type: 'TaskStatusQuery';
+  taskId?: TaskId;  // If omitted, return all tasks
+}
+
+export interface TaskStatusResponseEvent extends BaseEvent {
+  type: 'TaskStatusResponse';
+  result: Task | readonly Task[];
+}
+
+export interface TaskLogsQueryEvent extends BaseEvent {
+  type: 'TaskLogsQuery';
+  taskId: TaskId;
+  tail?: number;
+}
+
+export interface TaskLogsResponseEvent extends BaseEvent {
+  type: 'TaskLogsResponse';
+  taskId: TaskId;
+  stdout: readonly string[];
+  stderr: readonly string[];
+  totalSize: number;
+}
+
+/**
+ * Queue query events - for pure event-driven queue operations
+ */
+export interface NextTaskQueryEvent extends BaseEvent {
+  type: 'NextTaskQuery';
+}
+
+export interface RequeueTaskEvent extends BaseEvent {
+  type: 'RequeueTask';
+  task: Task;
+}
+
+/**
  * System events
  */
 export interface SystemResourcesUpdatedEvent extends BaseEvent {
@@ -140,7 +181,8 @@ export interface RecoveryCompletedEvent extends BaseEvent {
 /**
  * Union type of all events
  */
-export type ClaudineEvent = 
+export type ClaudineEvent =
+  // Task lifecycle events
   | TaskDelegatedEvent
   | TaskPersistedEvent
   | TaskQueuedEvent
@@ -152,10 +194,21 @@ export type ClaudineEvent =
   | TaskTimeoutEvent
   | TaskCancellationRequestedEvent
   | LogsRequestedEvent
+  // Query events (pure event-driven architecture)
+  | TaskStatusQueryEvent
+  | TaskStatusResponseEvent
+  | TaskLogsQueryEvent
+  | TaskLogsResponseEvent
+  // Queue query events
+  | NextTaskQueryEvent
+  | RequeueTaskEvent
+  // Worker events
   | WorkerSpawnedEvent
   | WorkerKilledEvent
+  // Output events
   | OutputCapturedEvent
   | TaskConfiguredEvent
+  // System events
   | SystemResourcesUpdatedEvent
   | RecoveryStartedEvent
   | RecoveryCompletedEvent;

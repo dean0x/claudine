@@ -110,29 +110,30 @@ export async function retryWithBackoff<T>(
     operation = 'operation',
     isRetryable = isRetryableError
   } = options;
-  
+
   let lastError: unknown;
-  
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
+
+  // Attempt 0 is the initial attempt, then we have maxRetries additional attempts
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       // Attempt the operation
       const result = await fn();
-      
+
       // Success - log if this was a retry
       if (attempt > 0 && logger) {
         logger.info(`${operation} succeeded after ${attempt} retries`);
       }
-      
+
       return result;
     } catch (error) {
       lastError = error;
-      
+
       // Check if we should retry
-      if (attempt === maxRetries - 1) {
-        // Last attempt failed
+      if (attempt === maxRetries) {
+        // Last retry attempt failed
         if (logger) {
           logger.error(
-            `${operation} failed after ${maxRetries} attempts`,
+            `${operation} failed after ${maxRetries} retries`,
             error as Error
           );
         }

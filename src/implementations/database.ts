@@ -44,10 +44,23 @@ export class Database {
 
   private getDefaultDbPath(): string {
     // Allow override via environment variable
+    // SECURITY: Validate environment variable to prevent path traversal
     if (process.env.CLAUDINE_DATA_DIR) {
-      return path.join(process.env.CLAUDINE_DATA_DIR, 'claudine.db');
+      const dataDir = process.env.CLAUDINE_DATA_DIR;
+
+      // Validate path is absolute and doesn't contain traversal
+      if (!path.isAbsolute(dataDir)) {
+        throw new Error('CLAUDINE_DATA_DIR must be an absolute path');
+      }
+
+      const normalized = path.normalize(dataDir);
+      if (normalized.includes('..')) {
+        throw new Error('CLAUDINE_DATA_DIR must not contain path traversal sequences (..)');
+      }
+
+      return path.join(normalized, 'claudine.db');
     }
-    
+
     // Platform-specific defaults
     const homeDir = os.homedir();
     
@@ -62,7 +75,7 @@ export class Database {
   }
 
   private createTables(): void {
-    // Tasks table
+    // Tasks table with complete schema
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS tasks (
         id TEXT PRIMARY KEY,
@@ -71,9 +84,19 @@ export class Database {
         priority TEXT NOT NULL,
         working_directory TEXT,
         use_worktree INTEGER DEFAULT 0,
-        cleanup_worktree INTEGER DEFAULT 1,
+        worktree_cleanup TEXT DEFAULT 'auto',
+        merge_strategy TEXT DEFAULT 'pr',
+        branch_name TEXT,
+        base_branch TEXT,
+        auto_commit INTEGER DEFAULT 1,
+        push_to_remote INTEGER DEFAULT 1,
+        pr_title TEXT,
+        pr_body TEXT,
         timeout INTEGER,
         max_output_buffer INTEGER,
+        parent_task_id TEXT,
+        retry_count INTEGER,
+        retry_of TEXT,
         created_at INTEGER NOT NULL,
         started_at INTEGER,
         completed_at INTEGER,
@@ -94,13 +117,6 @@ export class Database {
         FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
       )
     `);
-
-    // Migrate existing databases by adding cleanup_worktree column if it doesn't exist
-    try {
-      this.db.exec(`ALTER TABLE tasks ADD COLUMN cleanup_worktree INTEGER DEFAULT 1`);
-    } catch (error) {
-      // Column already exists, ignore the error
-    }
 
     // Create indexes for performance
     this.db.exec(`

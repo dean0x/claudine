@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { TaskManager, Logger } from '../core/interfaces.js';
 import { DelegateRequest, Priority, TaskId } from '../core/domain.js';
 import { match } from '../core/result.js';
+import { validatePath } from '../utils/validation.js';
 import pkg from '../../package.json' with { type: 'json' };
 
 // Zod schemas for MCP protocol validation
@@ -15,7 +16,7 @@ const DelegateTaskSchema = z.object({
   prompt: z.string().min(1).max(4000),
   priority: z.enum(['P0', 'P1', 'P2']).optional(),
   workingDirectory: z.string().optional(),
-  useWorktree: z.boolean().optional().default(true), // Changed default to true
+  useWorktree: z.boolean().optional().default(false), // Default: false - worktrees are opt-in (safer default)
   worktreeCleanup: z.enum(['auto', 'keep', 'delete']).optional().default('auto'),
   mergeStrategy: z.enum(['pr', 'auto', 'manual', 'patch']).optional().default('pr'),
   branchName: z.string().optional(),
@@ -40,6 +41,10 @@ const TaskLogsSchema = z.object({
 const CancelTaskSchema = z.object({
   taskId: z.string(),
   reason: z.string().optional(),
+});
+
+const RetryTaskSchema = z.object({
+  taskId: z.string(),
 });
 
 export class MCPAdapter {
@@ -84,6 +89,10 @@ export class MCPAdapter {
       async (request) => {
         const { name, arguments: args } = request.params;
 
+        // SECURITY: DoS protection handled at resource level:
+        // - Queue size limit (RESOURCE_EXHAUSTED error when queue full)
+        // - Resource monitoring (workers only spawn when system has capacity)
+        // - Spawn throttling (prevents fork bombs)
         this.logger.debug('MCP tool call received', { tool: name });
 
         switch (name) {
@@ -95,8 +104,20 @@ export class MCPAdapter {
             return await this.handleTaskLogs(args);
           case 'CancelTask':
             return await this.handleCancelTask(args);
+          case 'RetryTask':
+            return await this.handleRetryTask(args);
           default:
-            throw new Error(`Unknown tool: ${name}`);
+            // ARCHITECTURE: Return error response instead of throwing
+            return {
+              content: [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                  error: `Unknown tool: ${name}`,
+                  code: 'INVALID_TOOL'
+                }, null, 2)
+              }],
+              isError: true
+            };
         }
       }
     );
@@ -246,6 +267,21 @@ export class MCPAdapter {
                 required: ['taskId'],
               },
             },
+            {
+              name: 'RetryTask',
+              description: 'Retry a failed or completed task',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  taskId: {
+                    type: 'string',
+                    description: 'Task ID to retry',
+                    pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  },
+                },
+                required: ['taskId'],
+              },
+            },
           ],
         };
       }
@@ -270,11 +306,29 @@ export class MCPAdapter {
 
     const data = parseResult.data;
 
-    // Create request with all new fields
+    // SECURITY: Validate workingDirectory to prevent path traversal attacks
+    let validatedWorkingDirectory: string | undefined;
+    if (data.workingDirectory) {
+      const pathValidation = validatePath(data.workingDirectory);
+      if (!pathValidation.ok) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Invalid working directory: ${pathValidation.error.message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      validatedWorkingDirectory = pathValidation.value;
+    }
+
+    // Create request with all new fields and validated paths
     const request: DelegateRequest = {
       prompt: data.prompt,
       priority: data.priority as Priority,
-      workingDirectory: data.workingDirectory,
+      workingDirectory: validatedWorkingDirectory,
       useWorktree: data.useWorktree,
       worktreeCleanup: data.worktreeCleanup,
       mergeStrategy: data.mergeStrategy,
@@ -475,6 +529,55 @@ export class MCPAdapter {
             text: JSON.stringify({
               success: true,
               message: `Task ${taskId} cancelled`,
+            }),
+          },
+        ],
+      }),
+      err: (error) => ({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              success: false,
+              error: error.message,
+            }),
+          },
+        ],
+        isError: true,
+      }),
+    });
+  }
+
+  private async handleRetryTask(args: unknown): Promise<any> {
+    const parseResult = RetryTaskSchema.safeParse(args);
+
+    if (!parseResult.success) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Validation error: ${parseResult.error.message}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const { taskId } = parseResult.data;
+
+    const result = await this.taskManager.retry(TaskId(taskId));
+
+    return match(result, {
+      ok: (newTask) => ({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: `Task ${taskId} retried successfully`,
+              newTaskId: newTask.id,
+              retryCount: newTask.retryCount || 1,
+              parentTaskId: newTask.parentTaskId,
             }),
           },
         ],

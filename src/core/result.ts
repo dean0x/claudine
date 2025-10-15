@@ -154,3 +154,23 @@ export const isOk = <T, E>(result: Result<T, E>): result is { ok: true; value: T
 export const isErr = <T, E>(result: Result<T, E>): result is { ok: false; error: E } => {
   return !result.ok;
 };
+
+/**
+ * Unwrap a Result (throws if error)
+ */
+export const unwrap = <T, E>(result: Result<T, E>): T => {
+  if (result.ok) {
+    return result.value;
+  }
+  throw result.error;
+};
+
+/**
+ * Unwrap error (throws if ok)
+ */
+export const unwrapErr = <T, E>(result: Result<T, E>): E => {
+  if (!result.ok) {
+    return result.error;
+  }
+  throw new Error('Called unwrapErr on Ok result');
+};

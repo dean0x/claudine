@@ -119,7 +119,7 @@ git worktree prune
 git branch -d claudine/task-abc123
 
 // Archive worktree before deletion
-tar -czf task-abc123.tar.gz .claudine-worktrees/task-abc123/
+tar -czf task-abc123.tar.gz .worktrees/task-abc123/
 ```
 
 ## Implementation Priority

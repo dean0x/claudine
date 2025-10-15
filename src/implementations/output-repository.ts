@@ -11,9 +11,7 @@ import { TaskId, TaskOutput } from '../core/domain.js';
 import { Result, ok, err, tryCatchAsync } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
 import { Database } from './database.js';
-
-// 100KB threshold for file storage
-const FILE_STORAGE_THRESHOLD = 100 * 1024;
+import { Configuration } from '../core/configuration.js';
 
 export interface OutputRepository {
   save(taskId: TaskId, output: TaskOutput): Promise<Result<void>>;
@@ -28,10 +26,12 @@ export class SQLiteOutputRepository implements OutputRepository {
   private readonly getStmt: SQLite.Statement;
   private readonly deleteStmt: SQLite.Statement;
   private readonly outputDir: string;
+  private readonly fileStorageThreshold: number;
 
-  constructor(database: Database) {
+  constructor(config: Configuration, database: Database) {
     this.db = database.getDatabase();
-    
+    this.fileStorageThreshold = config.fileStorageThresholdBytes!;
+
     // Set up output directory for large files
     const dbPath = this.db.name;
     this.outputDir = path.join(path.dirname(dbPath), 'output');
@@ -67,7 +67,7 @@ export class SQLiteOutputRepository implements OutputRepository {
       const totalSize = this.calculateTotalSize(fullOutput);
       
       // Check if we should use file storage
-      if (totalSize > FILE_STORAGE_THRESHOLD) {
+      if (totalSize > this.fileStorageThreshold) {
         await this.saveToFile(taskId, fullOutput);
       } else {
         this.saveToDatabase(taskId, fullOutput, totalSize);
