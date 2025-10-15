@@ -32,8 +32,23 @@ jobs:
     - name: Build project
       run: npm run build
     
-    - name: Run unit tests
-      run: npm test -- tests/unit/
+    - name: Run unit tests (core)
+      run: npm test -- tests/unit/core/
+
+    - name: Run unit tests (implementations)
+      run: npm test -- tests/unit/implementations/
+
+    - name: Run unit tests (services)
+      run: npm test -- tests/unit/services/
+
+    - name: Run unit tests (adapters & utils)
+      run: npm test -- tests/unit/adapters/ tests/unit/utils/
+
+    - name: Run unit tests (error scenarios)
+      run: npm test -- tests/unit/error-scenarios/
+
+    - name: Run unit tests (root level)
+      run: npm test -- tests/unit/*.test.ts
 
     - name: Run integration tests
       run: npm test -- tests/integration/
