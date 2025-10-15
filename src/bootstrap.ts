@@ -36,6 +36,7 @@ import { QueueHandler } from './services/handlers/queue-handler.js';
 import { QueryHandler } from './services/handlers/query-handler.js';
 import { WorkerHandler } from './services/handlers/worker-handler.js';
 import { OutputHandler } from './services/handlers/output-handler.js';
+import { WorktreeHandler } from './services/handlers/worktree-handler.js';
 
 // Adapter
 import { MCPAdapter } from './adapters/mcp-adapter.js';
@@ -369,6 +370,25 @@ export async function bootstrap(): Promise<Result<Container>> {
         ErrorCode.SYSTEM_ERROR,
         `Failed to setup OutputHandler: ${outputSetup.error.message}`,
         { error: outputSetup.error }
+      ));
+    }
+
+    // 6. Worktree Handler - manages git worktree operations
+    // ARCHITECTURE: Completes event-driven refactor for worktree management
+    const worktreeManagerResult = getFromContainerSafe<WorktreeManager>(container, 'worktreeManager');
+    if (!worktreeManagerResult.ok) return worktreeManagerResult;
+
+    const worktreeHandler = new WorktreeHandler(
+      worktreeManagerResult.value,
+      eventBus,
+      logger.child({ module: 'WorktreeHandler' })
+    );
+    const worktreeSetup = await worktreeHandler.setup(eventBus);
+    if (!worktreeSetup.ok) {
+      return err(new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Failed to setup WorktreeHandler: ${worktreeSetup.error.message}`,
+        { error: worktreeSetup.error }
       ));
     }
 

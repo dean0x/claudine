@@ -159,6 +159,28 @@ export interface RequeueTaskEvent extends BaseEvent {
 }
 
 /**
+ * Worktree query events - for pure event-driven worktree operations
+ * ARCHITECTURE: Completes event-driven refactor for worktree management
+ */
+export interface WorktreeListQueryEvent extends BaseEvent {
+  type: 'WorktreeListQuery';
+  includeStale?: boolean;
+  olderThanDays?: number;
+}
+
+export interface WorktreeStatusQueryEvent extends BaseEvent {
+  type: 'WorktreeStatusQuery';
+  taskId: TaskId;
+}
+
+export interface WorktreeCleanupRequestedEvent extends BaseEvent {
+  type: 'WorktreeCleanupRequested';
+  strategy?: 'safe' | 'interactive' | 'force';
+  olderThanDays?: number;
+  taskIds?: TaskId[];
+}
+
+/**
  * System events
  */
 export interface SystemResourcesUpdatedEvent extends BaseEvent {
@@ -202,6 +224,10 @@ export type ClaudineEvent =
   // Queue query events
   | NextTaskQueryEvent
   | RequeueTaskEvent
+  // Worktree query events
+  | WorktreeListQueryEvent
+  | WorktreeStatusQueryEvent
+  | WorktreeCleanupRequestedEvent
   // Worker events
   | WorkerSpawnedEvent
   | WorkerKilledEvent

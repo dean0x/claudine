@@ -139,10 +139,10 @@ export interface TaskManager {
   cancel(taskId: TaskId, reason?: string): Promise<Result<void>>;
   retry(taskId: TaskId): Promise<Result<Task>>;
 
-  // Worktree management methods (not yet implemented in event-driven architecture)
-  listWorktrees(includeStale?: boolean, olderThanDays?: number): Promise<Result<readonly any[]>>;
-  getWorktreeStatus(taskId: TaskId): Promise<Result<any>>;
-  cleanupWorktrees(strategy?: 'safe' | 'interactive' | 'force', olderThanDays?: number, taskIds?: TaskId[]): Promise<Result<any>>;
+  // Worktree management methods (event-driven)
+  listWorktrees(includeStale?: boolean, olderThanDays?: number): Promise<Result<readonly WorktreeStatus[]>>;
+  getWorktreeStatus(taskId: TaskId): Promise<Result<WorktreeStatus>>;
+  cleanupWorktrees(strategy?: 'safe' | 'interactive' | 'force', olderThanDays?: number, taskIds?: TaskId[]): Promise<Result<WorktreeCleanupResult>>;
 }
 
 /**
