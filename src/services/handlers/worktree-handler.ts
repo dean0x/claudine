@@ -184,35 +184,38 @@ export class WorktreeHandler extends BaseEventHandler {
       return;
     }
 
-    // Get list of worktrees to clean up
-    let worktreesToClean: WorktreeStatus[];
+    // OPTIMIZATION: Fetch all worktrees once to avoid N queries and race conditions
+    const statusesResult = await this.worktreeManager.getWorktreeStatuses();
 
-    if (event.taskIds && event.taskIds.length > 0) {
-      // Clean specific task IDs
-      const statusPromises = event.taskIds.map(taskId =>
-        this.worktreeManager.getWorktreeStatus(taskId)
-      );
-      const statusResults = await Promise.all(statusPromises);
+    if (!statusesResult.ok) {
+      this.logger.error('Failed to get worktree statuses for cleanup', statusesResult.error, {
+        correlationId
+      });
 
-      worktreesToClean = statusResults
-        .filter((r): r is { ok: true; value: WorktreeStatus } => r.ok)
-        .map(r => r.value);
-    } else {
-      // Get all worktrees
-      const statusesResult = await this.worktreeManager.getWorktreeStatuses();
-
-      if (!statusesResult.ok) {
-        this.logger.error('Failed to get worktree statuses for cleanup', statusesResult.error, {
-          correlationId
-        });
-
-        if (correlationId && 'respondError' in this.eventBus) {
-          (this.eventBus as InMemoryEventBus).respondError(correlationId, statusesResult.error);
-        }
-        return;
+      if (correlationId && 'respondError' in this.eventBus) {
+        (this.eventBus as InMemoryEventBus).respondError(correlationId, statusesResult.error);
       }
+      return;
+    }
 
-      worktreesToClean = statusesResult.value;
+    const allWorktrees = statusesResult.value;
+    let worktreesToClean: WorktreeStatus[] = allWorktrees;
+
+    // Filter by specific task IDs if provided
+    if (event.taskIds && event.taskIds.length > 0) {
+      // Convert TaskId[] to Set<string> for efficient lookup
+      const taskIdsSet = new Set(event.taskIds.map(id => id as string));
+      worktreesToClean = allWorktrees.filter(w => taskIdsSet.has(w.taskId));
+
+      // Log any requested taskIds that were not found
+      for (const taskId of event.taskIds) {
+        if (!worktreesToClean.some(w => w.taskId === (taskId as string))) {
+          this.logger.warn('Worktree for requested taskId not found during cleanup', {
+            taskId,
+            correlationId
+          });
+        }
+      }
     }
 
     // Filter by age if specified
@@ -226,9 +229,11 @@ export class WorktreeHandler extends BaseEventHandler {
     }
 
     // Remove worktrees
+    // NOTE: "skipped" means worktrees not selected for cleanup (filtered out)
+    // This is calculated BEFORE attempting removal
     const result: WorktreeCleanupResult = {
       removed: 0,
-      skipped: 0,
+      skipped: allWorktrees.length - worktreesToClean.length,
       errors: []
     };
 
@@ -252,8 +257,6 @@ export class WorktreeHandler extends BaseEventHandler {
         });
       }
     }
-
-    result.skipped = worktreesToClean.length - result.removed;
 
     // Send response back via event bus
     if (correlationId && 'respond' in this.eventBus) {
