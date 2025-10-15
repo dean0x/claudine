@@ -17,10 +17,18 @@ import {
   TaskManager,
   TaskRepository,
   Logger,
-  OutputCapture
+  OutputCapture,
+  WorktreeStatus,
+  WorktreeCleanupResult
 } from '../core/interfaces.js';
 import { EventBus } from '../core/events/event-bus.js';
-import { TaskStatusQueryEvent, TaskLogsQueryEvent } from '../core/events/events.js';
+import {
+  TaskStatusQueryEvent,
+  TaskLogsQueryEvent,
+  WorktreeListQueryEvent,
+  WorktreeStatusQueryEvent,
+  WorktreeCleanupRequestedEvent
+} from '../core/events/events.js';
 import {
   Task,
   TaskId,
@@ -243,33 +251,68 @@ export class TaskManagerService implements TaskManager {
     return ok(newTask);
   }
 
-  // ARCHITECTURE: Worktree management methods not yet implemented
-  // TODO: These will be event-driven once WorktreeHandler is implemented
-  // For now, delegate to WorktreeManager directly (not event-driven yet)
+  /**
+   * List all worktrees with optional filtering
+   * ARCHITECTURE: Pure event-driven query - no direct WorktreeManager access
+   */
+  async listWorktrees(includeStale = false, olderThanDays?: number): Promise<Result<readonly WorktreeStatus[]>> {
+    this.logger.debug('Listing worktrees', { includeStale, olderThanDays });
 
-  async listWorktrees(includeStale = false, olderThanDays?: number): Promise<Result<readonly any[]>> {
-    return err(new ClaudineError(
-      ErrorCode.INVALID_OPERATION,
-      'Worktree management not yet implemented in event-driven architecture. Use GitWorktreeManager directly if needed.'
-    ));
+    const result = await this.eventBus.request<WorktreeListQueryEvent, readonly WorktreeStatus[]>(
+      'WorktreeListQuery',
+      { includeStale, olderThanDays }
+    );
+
+    if (!result.ok) {
+      this.logger.error('Worktree list query failed', result.error);
+      return result;
+    }
+
+    return ok(result.value);
   }
 
-  async getWorktreeStatus(taskId: TaskId): Promise<Result<any>> {
-    return err(new ClaudineError(
-      ErrorCode.INVALID_OPERATION,
-      'Worktree management not yet implemented in event-driven architecture. Use GitWorktreeManager directly if needed.'
-    ));
+  /**
+   * Get worktree status for specific task
+   * ARCHITECTURE: Pure event-driven query - no direct WorktreeManager access
+   */
+  async getWorktreeStatus(taskId: TaskId): Promise<Result<WorktreeStatus>> {
+    this.logger.debug('Getting worktree status', { taskId });
+
+    const result = await this.eventBus.request<WorktreeStatusQueryEvent, WorktreeStatus>(
+      'WorktreeStatusQuery',
+      { taskId }
+    );
+
+    if (!result.ok) {
+      this.logger.error('Worktree status query failed', result.error, { taskId });
+      return result;
+    }
+
+    return ok(result.value);
   }
 
+  /**
+   * Cleanup worktrees based on strategy
+   * ARCHITECTURE: Pure event-driven command - no direct WorktreeManager access
+   */
   async cleanupWorktrees(
-    strategy = 'safe' as const,
+    strategy: 'safe' | 'interactive' | 'force' = 'safe',
     olderThanDays = 7,
     taskIds?: TaskId[]
-  ): Promise<Result<any>> {
-    return err(new ClaudineError(
-      ErrorCode.INVALID_OPERATION,
-      'Worktree management not yet implemented in event-driven architecture. Use GitWorktreeManager directly if needed.'
-    ));
+  ): Promise<Result<WorktreeCleanupResult>> {
+    this.logger.info('Cleaning up worktrees', { strategy, olderThanDays, taskIds });
+
+    const result = await this.eventBus.request<WorktreeCleanupRequestedEvent, WorktreeCleanupResult>(
+      'WorktreeCleanupRequested',
+      { strategy, olderThanDays, taskIds }
+    );
+
+    if (!result.ok) {
+      this.logger.error('Worktree cleanup failed', result.error);
+      return result;
+    }
+
+    return ok(result.value);
   }
 
 }
