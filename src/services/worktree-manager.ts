@@ -603,9 +603,12 @@ export class GitWorktreeManager implements WorktreeManager {
    * @returns Success or error result
    */
   async cleanup(force = false): Promise<Result<void>> {
-    let errors: string[] = [];
+    const errors: string[] = [];
 
-    for (const [taskId, _] of this.activeWorktrees) {
+    // Create array of task IDs to avoid modifying map during iteration
+    const taskIds = Array.from(this.activeWorktrees.keys());
+
+    for (const taskId of taskIds) {
       const result = await this.removeWorktree(taskId, force);
       if (!result.ok) {
         errors.push(`${taskId}: ${result.error.message}`);
