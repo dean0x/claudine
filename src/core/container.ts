@@ -212,6 +212,11 @@ export class Container {
       if (eventBus.emit) {
         await eventBus.emit('ShutdownComplete', {});
       }
+
+      // CRITICAL: Dispose EventBus to clear setInterval cleanup timer
+      if (eventBus.dispose) {
+        eventBus.dispose();
+      }
     }
 
     // Clear all services

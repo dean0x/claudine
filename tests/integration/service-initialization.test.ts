@@ -91,8 +91,8 @@ describe('Integration: Service initialization', () => {
         expect(bus1Result.value).toBe(bus2Result.value); // Same instance
       }
 
-      // Cleanup
-      container.clear();
+      // Cleanup - CRITICAL: Use dispose() to clear setInterval timers
+      await container.dispose();
 
     } finally {
       delete process.env.CLAUDINE_DATABASE_PATH;
@@ -200,7 +200,8 @@ describe('Integration: Service initialization', () => {
         expect(taskDelegatedData.task.prompt).toBe('Test task');
       }
 
-      container.clear();
+      // Cleanup - CRITICAL: Use dispose() to clear setInterval timers
+      await container.dispose();
 
     } finally {
       delete process.env.CLAUDINE_DATABASE_PATH;
@@ -269,7 +270,8 @@ describe('Integration: Service initialization', () => {
         expect(healthCheckReceived).toBe(true);
       }
 
-      container.clear();
+      // Cleanup - CRITICAL: Use dispose() to clear setInterval timers
+      await container.dispose();
 
     } finally {
       delete process.env.CLAUDINE_DATABASE_PATH;
