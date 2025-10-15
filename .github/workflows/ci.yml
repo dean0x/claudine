@@ -38,8 +38,11 @@ jobs:
     - name: Run unit tests (implementations)
       run: npm test -- tests/unit/implementations/
 
-    - name: Run unit tests (services)
-      run: npm test -- tests/unit/services/
+    - name: Run unit tests (query handler)
+      run: npm test -- tests/unit/services/handlers/query-handler.test.ts
+
+    - name: Run unit tests (worker handler)
+      run: npm test -- tests/unit/services/handlers/worker-handler.test.ts
 
     - name: Run unit tests (adapters & utils)
       run: npm test -- tests/unit/adapters/ tests/unit/utils/
