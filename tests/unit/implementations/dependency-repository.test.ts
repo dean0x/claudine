@@ -801,5 +801,59 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       if (!allResult.ok) return;
       expect(allResult.value).toHaveLength(tasks.length - 1);
     });
+
+    it('should prevent TOCTOU race conditions with concurrent cycle attempts', async () => {
+      /**
+       * SECURITY TEST: Verify TOCTOU (Time-of-Check-Time-of-Use) protection
+       *
+       * This tests that the synchronous transaction in addDependency prevents:
+       *   Thread A: check cycle A->B (pass)
+       *   Thread B: check cycle B->A (pass) <- Can't happen, transaction locked
+       *   Thread A: add A->B
+       *   Thread B: add B->A <- Would create cycle
+       *
+       * Expected behavior: One or both operations fail, no cycle created
+       */
+      const taskA = 'task-a' as TaskId;
+      const taskB = 'task-b' as TaskId;
+
+      // Create tasks first
+      createTask(taskA);
+      createTask(taskB);
+
+      // Attempt to create A->B and B->A concurrently
+      // Due to transaction locks, one will see the other's dependency
+      const [resultAB, resultBA] = await Promise.all([
+        repo.addDependency(taskA, taskB),
+        repo.addDependency(taskB, taskA)
+      ]);
+
+      // SECURITY ASSERTION: At least one must fail (both failing is also valid)
+      const failures = [resultAB, resultBA].filter(r => !r.ok);
+      expect(failures.length).toBeGreaterThan(0);
+
+      // Verify at least one failure is due to cycle detection
+      const hasCycleError = failures.some(f =>
+        !f.ok && f.error.message.toLowerCase().includes('cycle')
+      );
+      expect(hasCycleError).toBe(true);
+
+      // SECURITY ASSERTION: No cycle was created in database
+      const allDeps = await repo.findAll();
+      expect(allDeps.ok).toBe(true);
+      if (allDeps.ok) {
+        // Should have at most 1 dependency, NOT 2 (which would be a cycle)
+        expect(allDeps.value.length).toBeLessThanOrEqual(1);
+
+        // If one dependency exists, verify it's valid (not both directions)
+        if (allDeps.value.length === 1) {
+          const dep = allDeps.value[0];
+          const hasBothDirections = allDeps.value.some(d =>
+            d.taskId === dep.dependsOnTaskId && d.dependsOnTaskId === dep.taskId
+          );
+          expect(hasBothDirections).toBe(false);
+        }
+      }
+    });
   });
 });
