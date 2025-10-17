@@ -33,12 +33,13 @@
 
 ## What You Get
 
-✅ **Currently Available in v0.2.1**:
+✅ **Currently Available in v0.2.1+**:
 - **Event-Driven Architecture**: Fully event-driven system with EventBus coordination
 - **Task Persistence**: SQLite-based storage with automatic recovery on startup
 - **CLI Interface**: Direct task management (`claudine delegate`, `claudine status`, etc.)
-- **Autoscaling**: Automatically spawns workers based on available CPU and memory  
+- **Autoscaling**: Automatically spawns workers based on available CPU and memory
 - **Priority Levels**: P0 (Critical), P1 (High), P2 (Normal) task prioritization
+- **Task Dependencies**: DAG-based dependency resolution with cycle detection
 - **Git Worktree Support**: Branch-based isolation with PR/manual/auto/patch merge strategies
 - **GitHub Integration**: Automatic PR creation with merge strategies
 - **Retry Logic**: Exponential backoff for transient failures (git, network, API)
@@ -293,7 +294,6 @@ await claudine.DelegateTask({
 
 ## Current Limitations
 
-- No task dependency resolution (planned for v0.3.0)  
 - No distributed execution across multiple machines (planned for v0.4.0)
 - No web dashboard (monitoring via logs only)
 
@@ -325,8 +325,8 @@ npm run dev
 ## Roadmap
 
 - [x] **v0.2.0**: Autoscaling and persistence (Released Sep 2025)
-- [x] **v0.2.1**: Event-driven architecture and CLI commands (Current - Released Sep 2025)
-- [ ] **v0.3.0**: Task dependency resolution (Q4 2025)
+- [x] **v0.2.1**: Event-driven architecture and CLI commands (Released Sep 2025)
+- [x] **v0.3.0**: Task dependency resolution (Current - In Review)
 - [ ] **v0.4.0**: Distributed processing (Q1 2026)
 - [ ] **v0.5.0**: Advanced orchestration and monitoring (Q2 2026)
 

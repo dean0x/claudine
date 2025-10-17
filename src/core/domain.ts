@@ -61,6 +61,15 @@ export interface Task {
   readonly retryCount?: number;        // Number in retry chain (1 = first retry, 2 = second, etc.)
   readonly retryOf?: TaskId;          // Direct parent task ID (task this is a retry of)
 
+  // Dependency tracking (Phase 4: Task Dependencies)
+  // DEPENDENCY DESIGN:
+  // - These are cached/derived fields populated from DependencyRepository
+  // - Actual dependency relationships stored in task_dependencies table
+  // - DAG validation enforced at DependencyGraph layer
+  readonly dependsOn?: readonly TaskId[];      // Tasks this task depends on (blocking tasks)
+  readonly dependents?: readonly TaskId[];     // Tasks that depend on this task (blocked tasks)
+  readonly dependencyState?: 'blocked' | 'ready' | 'none'; // Computed dependency state
+
   // Timestamps and results
   readonly createdAt: number;
   readonly updatedAt?: number;
@@ -122,6 +131,10 @@ export interface DelegateRequest {
   readonly parentTaskId?: TaskId;
   readonly retryCount?: number;
   readonly retryOf?: TaskId;
+
+  // Dependency tracking (Phase 4: Task Dependencies)
+  // Array of task IDs this task depends on (must complete before this task can run)
+  readonly dependsOn?: readonly TaskId[];
 }
 
 export interface TaskUpdate {
@@ -170,6 +183,13 @@ export const createTask = (request: DelegateRequest): Task => Object.freeze({
   parentTaskId: request.parentTaskId,
   retryCount: request.retryCount,
   retryOf: request.retryOf,
+
+  // Dependency tracking (Phase 4: Task Dependencies)
+  // NOTE: dependsOn from request is the initial dependency list
+  // Actual validation and DAG cycle detection happens in DependencyHandler
+  dependsOn: request.dependsOn,
+  dependents: undefined, // Populated by DependencyRepository queries
+  dependencyState: request.dependsOn && request.dependsOn.length > 0 ? 'blocked' : 'none',
 
   // Execution configuration
   timeout: request.timeout,

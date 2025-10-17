@@ -4,7 +4,7 @@
  */
 
 import { Container } from './core/container.js';
-import { Config, Logger, ProcessSpawner, ResourceMonitor, OutputCapture, TaskQueue, WorkerPool, TaskRepository, TaskManager, WorktreeManager } from './core/interfaces.js';
+import { Config, Logger, ProcessSpawner, ResourceMonitor, OutputCapture, TaskQueue, WorkerPool, TaskRepository, TaskManager, WorktreeManager, DependencyRepository } from './core/interfaces.js';
 import { EventBus } from './core/events/event-bus.js';
 import { Configuration, loadConfiguration } from './core/configuration.js';
 import { InMemoryEventBus } from './core/events/event-bus.js';
@@ -22,6 +22,7 @@ import { StructuredLogger, ConsoleLogger, LogLevel } from './implementations/log
 import { Database } from './implementations/database.js';
 import { SQLiteTaskRepository } from './implementations/task-repository.js';
 import { SQLiteOutputRepository } from './implementations/output-repository.js';
+import { SQLiteDependencyRepository } from './implementations/dependency-repository.js';
 
 // Services
 import { TaskManagerService } from './services/task-manager.js';
@@ -37,6 +38,7 @@ import { QueryHandler } from './services/handlers/query-handler.js';
 import { WorkerHandler } from './services/handlers/worker-handler.js';
 import { OutputHandler } from './services/handlers/output-handler.js';
 import { WorktreeHandler } from './services/handlers/worktree-handler.js';
+import { DependencyHandler } from './services/handlers/dependency-handler.js';
 
 // Adapter
 import { MCPAdapter } from './adapters/mcp-adapter.js';
@@ -186,9 +188,16 @@ export async function bootstrap(): Promise<Result<Container>> {
     return new SQLiteOutputRepository(configResult.value, dbResult.value);
   });
 
+  // Register DependencyRepository for task dependency management
+  container.registerSingleton('dependencyRepository', () => {
+    const dbResult = container.get<Database>('database');
+    if (!dbResult.ok) throw new Error('Failed to get database for DependencyRepository');
+    return new SQLiteDependencyRepository(dbResult.value);
+  });
+
   // Register core services
   container.registerSingleton('taskQueue', () => new PriorityTaskQueue());
-  
+
   container.registerSingleton('processSpawner', () => {
     const configResult = container.get<Configuration>('config');
     if (!configResult.ok) throw new Error('Config required for ProcessSpawner');
@@ -315,12 +324,17 @@ export async function bootstrap(): Promise<Result<Container>> {
       ));
     }
 
-    // 3. Queue Handler - manages task queue operations
+    // 3. Queue Handler - manages task queue operations with dependency awareness
+    // ARCHITECTURE: Dependency-aware queueing - blocks tasks until dependencies resolve
     const taskQueueResult = getFromContainerSafe<TaskQueue>(container, 'taskQueue');
     if (!taskQueueResult.ok) return taskQueueResult;
 
+    const dependencyRepoResult2 = getFromContainerSafe<DependencyRepository>(container, 'dependencyRepository');
+    if (!dependencyRepoResult2.ok) return dependencyRepoResult2;
+
     const queueHandler = new QueueHandler(
       taskQueueResult.value,
+      dependencyRepoResult2.value,
       logger.child({ module: 'QueueHandler' })
     );
     const queueSetup = await queueHandler.setup(eventBus);
@@ -389,6 +403,25 @@ export async function bootstrap(): Promise<Result<Container>> {
         ErrorCode.SYSTEM_ERROR,
         `Failed to setup WorktreeHandler: ${worktreeSetup.error.message}`,
         { error: worktreeSetup.error }
+      ));
+    }
+
+    // 7. Dependency Handler - manages task dependencies with DAG validation
+    // ARCHITECTURE: Event-driven dependency tracking with cycle detection
+    const dependencyRepoResult = getFromContainerSafe<any>(container, 'dependencyRepository');
+    if (!dependencyRepoResult.ok) return dependencyRepoResult;
+
+    const dependencyHandler = new DependencyHandler(
+      dependencyRepoResult.value,
+      repository,
+      logger.child({ module: 'DependencyHandler' })
+    );
+    const dependencySetup = await dependencyHandler.setup(eventBus);
+    if (!dependencySetup.ok) {
+      return err(new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Failed to setup DependencyHandler: ${dependencySetup.error.message}`,
+        { error: dependencySetup.error }
       ));
     }
 

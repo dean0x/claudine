@@ -181,6 +181,37 @@ export interface WorktreeCleanupRequestedEvent extends BaseEvent {
 }
 
 /**
+ * Dependency events - for task dependency management
+ * ARCHITECTURE: Part of DAG-based task dependency system
+ * Pattern: Event-driven dependency validation and resolution tracking
+ */
+export interface TaskDependencyAddedEvent extends BaseEvent {
+  type: 'TaskDependencyAdded';
+  taskId: TaskId;
+  dependsOnTaskId: TaskId;
+}
+
+export interface TaskDependencyResolvedEvent extends BaseEvent {
+  type: 'TaskDependencyResolved';
+  taskId: TaskId;
+  dependsOnTaskId: TaskId;
+  resolution: 'completed' | 'failed' | 'cancelled';
+}
+
+export interface TaskUnblockedEvent extends BaseEvent {
+  type: 'TaskUnblocked';
+  taskId: TaskId;
+  task: Task;  // ARCHITECTURE: Include task to prevent layer violation in QueueHandler
+}
+
+export interface TaskDependencyFailedEvent extends BaseEvent {
+  type: 'TaskDependencyFailed';
+  taskId: TaskId;
+  failedDependencyId: TaskId;
+  error: ClaudineError;
+}
+
+/**
  * System events
  */
 export interface SystemResourcesUpdatedEvent extends BaseEvent {
@@ -228,6 +259,11 @@ export type ClaudineEvent =
   | WorktreeListQueryEvent
   | WorktreeStatusQueryEvent
   | WorktreeCleanupRequestedEvent
+  // Dependency events
+  | TaskDependencyAddedEvent
+  | TaskDependencyResolvedEvent
+  | TaskUnblockedEvent
+  | TaskDependencyFailedEvent
   // Worker events
   | WorkerSpawnedEvent
   | WorkerKilledEvent
