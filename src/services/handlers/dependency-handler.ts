@@ -21,6 +21,7 @@ import { ClaudineError, ErrorCode } from '../../core/errors.js';
 
 export class DependencyHandler extends BaseEventHandler {
   private eventBus?: EventBus;
+  private graphCache: DependencyGraph | null = null;
 
   constructor(
     private readonly dependencyRepo: DependencyRepository,
@@ -43,7 +44,9 @@ export class DependencyHandler extends BaseEventHandler {
       eventBus.subscribe('TaskCompleted', this.handleTaskCompleted.bind(this)),
       eventBus.subscribe('TaskFailed', this.handleTaskFailed.bind(this)),
       eventBus.subscribe('TaskCancelled', this.handleTaskCancelled.bind(this)),
-      eventBus.subscribe('TaskTimeout', this.handleTaskTimeout.bind(this))
+      eventBus.subscribe('TaskTimeout', this.handleTaskTimeout.bind(this)),
+      // Listen for dependency additions to invalidate cache
+      eventBus.subscribe('TaskDependencyAdded', this.handleDependencyAdded.bind(this))
     ];
 
     // Check if any subscription failed
@@ -55,6 +58,37 @@ export class DependencyHandler extends BaseEventHandler {
 
     this.logger.info('DependencyHandler initialized - DAG validation and dependency tracking active');
     return ok(undefined);
+  }
+
+  /**
+   * Get dependency graph (cached or fresh)
+   * PERFORMANCE: Cache graph at handler level to avoid N+1 findAll() calls
+   */
+  private async getGraph(): Promise<Result<DependencyGraph>> {
+    // Return cached graph if available
+    if (this.graphCache) {
+      this.logger.debug('Using cached dependency graph');
+      return ok(this.graphCache);
+    }
+
+    // Build fresh graph from repository
+    this.logger.debug('Building fresh dependency graph');
+    const allDepsResult = await this.dependencyRepo.findAll();
+    if (!allDepsResult.ok) {
+      return allDepsResult;
+    }
+
+    // Cache the graph
+    this.graphCache = new DependencyGraph(allDepsResult.value);
+    return ok(this.graphCache);
+  }
+
+  /**
+   * Handle dependency added event - invalidate cache
+   */
+  private async handleDependencyAdded(): Promise<void> {
+    this.graphCache = null;
+    this.logger.debug('Dependency graph cache invalidated');
   }
 
   /**
@@ -77,14 +111,12 @@ export class DependencyHandler extends BaseEventHandler {
         dependencies: task.dependsOn
       });
 
-      // Get all existing dependencies to build graph
-      const allDepsResult = await this.dependencyRepo.findAll();
-      if (!allDepsResult.ok) {
-        return allDepsResult;
+      // Get dependency graph (cached or fresh)
+      const graphResult = await this.getGraph();
+      if (!graphResult.ok) {
+        return graphResult;
       }
-
-      // Build dependency graph for cycle detection
-      const graph = new DependencyGraph(allDepsResult.value);
+      const graph = graphResult.value;
 
       // Validate each proposed dependency for cycles
       for (const dependsOnTaskId of task.dependsOn) {

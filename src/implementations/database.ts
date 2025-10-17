@@ -166,6 +166,7 @@ export class Database {
       CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on ON task_dependencies(depends_on_task_id);
       CREATE INDEX IF NOT EXISTS idx_task_dependencies_resolution ON task_dependencies(resolution);
       CREATE INDEX IF NOT EXISTS idx_task_dependencies_blocked ON task_dependencies(task_id, resolution);
+      CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on_resolution ON task_dependencies(depends_on_task_id, resolution);
     `);
   }
 

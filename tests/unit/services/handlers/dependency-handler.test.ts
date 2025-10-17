@@ -105,24 +105,44 @@ describe('DependencyHandler - Behavioral Tests', () => {
       }
     });
 
-    it.skip('should detect and prevent cycles (A -> B -> A)', async () => {
+    it('should detect and prevent cycles (A -> B -> A)', async () => {
       // Arrange - Create tasks A and B
       const taskA = createTask({ prompt: 'task A' });
       const taskB = createTask({ prompt: 'task B', dependsOn: [taskA.id] });
       await taskRepo.save(taskA);
       await taskRepo.save(taskB);
 
-      // Create A -> B dependency
+      // Create B -> A dependency
       await eventBus.emit('TaskDelegated', { task: taskB });
 
-      // Try to create B -> A dependency (would create cycle)
+      // Give handler time to process
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Verify B -> A dependency was created
+      const depsB = await dependencyRepo.getDependencies(taskB.id);
+      expect(depsB.ok).toBe(true);
+      if (depsB.ok) {
+        expect(depsB.value).toHaveLength(1);
+        expect(depsB.value[0].dependsOnTaskId).toBe(taskA.id);
+      }
+
+      // Try to create A -> B dependency (would create cycle)
       const taskAWithCycle = { ...taskA, dependsOn: [taskB.id] };
-      await taskRepo.save(taskAWithCycle);
+      // NOTE: Don't save the task again - INSERT OR REPLACE would cascade delete existing dependencies
+      // The handler only needs the event, not the persisted task
 
       // Act - Try to emit TaskDelegated for A with dependency on B
       await eventBus.emit('TaskDelegated', { task: taskAWithCycle });
 
+      // Give handler time to process
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       // Assert - Cycle should be detected and prevented
+      // Verify an error was logged about cycle detection
+      const errorLogs = logger.getLogsByLevel('error');
+      expect(errorLogs.length).toBeGreaterThan(0);
+      expect(errorLogs.some(log => log.message.includes('Cycle detected'))).toBe(true);
+
       // The cyclic dependency (A -> B) should NOT have been added
       const depsA = await dependencyRepo.getDependencies(taskA.id);
       expect(depsA.ok).toBe(true);
@@ -133,7 +153,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
       }
     });
 
-    it.skip('should detect and prevent transitive cycles (A -> B -> C -> A)', async () => {
+    it('should detect and prevent transitive cycles (A -> B -> C -> A)', async () => {
       // Arrange - Create tasks A, B, C
       const taskA = createTask({ prompt: 'task A' });
       const taskB = createTask({ prompt: 'task B', dependsOn: [taskA.id] });
@@ -142,18 +162,35 @@ describe('DependencyHandler - Behavioral Tests', () => {
       await taskRepo.save(taskB);
       await taskRepo.save(taskC);
 
-      // Create A -> B and B -> C dependencies
+      // Create B -> A and C -> B dependencies
       await eventBus.emit('TaskDelegated', { task: taskB });
       await eventBus.emit('TaskDelegated', { task: taskC });
 
-      // Try to create C -> A dependency (would create transitive cycle)
+      // Give handler time to process
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Verify dependencies were created
+      const depsB = await dependencyRepo.getDependencies(taskB.id);
+      const depsC = await dependencyRepo.getDependencies(taskC.id);
+      expect(depsB.ok && depsB.value.length === 1).toBe(true);
+      expect(depsC.ok && depsC.value.length === 1).toBe(true);
+
+      // Try to create A -> C dependency (would create transitive cycle: A->C->B->A)
       const taskAWithCycle = { ...taskA, dependsOn: [taskC.id] };
-      await taskRepo.save(taskAWithCycle);
+      // NOTE: Don't save the task again - INSERT OR REPLACE would cascade delete existing dependencies
 
       // Act
       await eventBus.emit('TaskDelegated', { task: taskAWithCycle });
 
+      // Give handler time to process
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       // Assert - Transitive cycle should be detected and prevented
+      // Verify an error was logged about cycle detection
+      const errorLogs = logger.getLogsByLevel('error');
+      expect(errorLogs.length).toBeGreaterThan(0);
+      expect(errorLogs.some(log => log.message.includes('Cycle detected'))).toBe(true);
+
       // The cyclic dependency (A -> C) should NOT have been added
       const depsA = await dependencyRepo.getDependencies(taskA.id);
       expect(depsA.ok).toBe(true);

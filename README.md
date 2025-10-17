@@ -326,7 +326,8 @@ npm run dev
 
 - [x] **v0.2.0**: Autoscaling and persistence (Released Sep 2025)
 - [x] **v0.2.1**: Event-driven architecture and CLI commands (Released Sep 2025)
-- [x] **v0.3.0**: Task dependency resolution (Current - In Review)
+- [x] **v0.2.3**: Stability improvements and bug fixes (Current - Released)
+- [ ] **v0.3.0**: Task dependency resolution (In Development - PR #9)
 - [ ] **v0.4.0**: Distributed processing (Q1 2026)
 - [ ] **v0.5.0**: Advanced orchestration and monitoring (Q2 2026)
 

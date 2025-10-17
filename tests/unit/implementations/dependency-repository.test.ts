@@ -131,6 +131,33 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       expect(depTaskIds).toContain(taskA);
       expect(depTaskIds).toContain(taskB);
     });
+
+    it('should invalidate cache after dependency changes to detect cycles', async () => {
+      const taskA = 'task-a' as TaskId;
+      const taskB = 'task-b' as TaskId;
+      const taskC = 'task-c' as TaskId;
+
+      // Create tasks first
+      createTask(taskA);
+      createTask(taskB);
+      createTask(taskC);
+
+      // Add A->B dependency (cache is built during cycle check)
+      const result1 = await repo.addDependency(taskA, taskB);
+      expect(result1.ok).toBe(true);
+
+      // Add B->C dependency (cache should be invalidated and rebuilt)
+      const result2 = await repo.addDependency(taskB, taskC);
+      expect(result2.ok).toBe(true);
+
+      // Try to add C->A dependency (would create transitive cycle: A->B->C->A)
+      // This should fail because cache was invalidated and fresh graph detects cycle
+      const result3 = await repo.addDependency(taskC, taskA);
+      expect(result3.ok).toBe(false);
+      if (result3.ok) return;
+
+      expect(result3.error.message).toContain('cycle');
+    });
   });
 
   describe('getDependencies()', () => {
