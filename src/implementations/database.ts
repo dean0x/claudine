@@ -210,9 +210,13 @@ export class Database {
       `).get() as { version: number | null };
 
       return result?.version || 0;
-    } catch (error) {
-      // Table doesn't exist yet (fresh database)
-      return 0;
+    } catch (error: any) {
+      // Only return 0 if the table doesn't exist (fresh database)
+      // Re-throw all other errors (permissions, corruption, connection issues)
+      if (error.message && error.message.includes('no such table')) {
+        return 0;
+      }
+      throw error;
     }
   }
 

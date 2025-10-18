@@ -189,6 +189,12 @@ export class SQLiteDependencyRepository implements DependencyRepository {
     return tryCatch(
       () => addDependencyTransaction(taskId, dependsOnTaskId),
       (error) => {
+        // Preserve semantic ClaudineError types (TASK_NOT_FOUND, INVALID_OPERATION for cycles)
+        // This allows upstream code to handle validation failures vs system errors correctly
+        if (error instanceof ClaudineError) {
+          return error;
+        }
+
         // Handle UNIQUE constraint violation
         if (error instanceof Error && error.message.includes('UNIQUE constraint')) {
           return new ClaudineError(
@@ -198,6 +204,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
           );
         }
 
+        // Unknown errors become SYSTEM_ERROR
         return new ClaudineError(
           ErrorCode.SYSTEM_ERROR,
           `Failed to add dependency: ${error}`,

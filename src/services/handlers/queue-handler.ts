@@ -308,12 +308,20 @@ export class QueueHandler extends BaseEventHandler {
         taskId: event.taskId
       });
 
-      // ARCHITECTURE: Use task from event (no layer violation)
-      const task = event.task;
+      // Fetch latest task state to prevent race conditions
+      // Event data may be stale if task was cancelled/failed between emission and handling
+      const taskResult = await this.taskRepo.findById(event.taskId);
+      if (!taskResult.ok || !taskResult.value) {
+        this.logger.error('Failed to fetch unblocked task for re-validation', taskResult.error, {
+          taskId: event.taskId
+        });
+        return err(taskResult.error || new Error('Task not found'));
+      }
+      const task = taskResult.value;
 
-      // Verify task is still queued (not cancelled/failed in the meantime)
+      // Verify task is still in valid state to be enqueued (not cancelled/failed in the meantime)
       if (task.status !== TaskStatus.QUEUED) {
-        this.logger.warn('Unblocked task is no longer in QUEUED state', {
+        this.logger.warn('Unblocked task is no longer in QUEUED state, will not be enqueued', {
           taskId: event.taskId,
           status: task.status
         });
