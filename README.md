@@ -1,4 +1,4 @@
-# Claudine - Background Task Delegation MCP Server
+# Claudine - Task Delegation And Management Framework
 
 [![npm version](https://img.shields.io/npm/v/claudine.svg)](https://www.npmjs.com/package/claudine)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -8,30 +8,18 @@
 
 ## Why Claudine Exists
 
-**The Problem**: Claude Code is incredibly powerful, but you can only work on one thing at a time. This kills true multitasking and orchestration:
-
-- **No parallel feature development** - Can't work on authentication while simultaneously building the API layer
-- **Cross-repository workflow breaks** - Switch from frontend to backend repo? Your main session context gets polluted by the detour
-- **Session context pollution** - Get sidetracked debugging? Your original feature work context is contaminated and lost
-- **No true orchestration** - Can't coordinate multiple Claude instances to work on interconnected parts of your system
-- **Single-threaded thinking** - Complex products require parallel workstreams, but Claude Code forces linear execution
-- **Context juggling overhead** - Constantly losing mental models when forced to switch between unrelated codebases
+**The Problem**: Claude Code is incredibly powerful, but you can only work on one thing at a time with a single claude code instance. This kills true multitasking and orchestration.
 
 **Our Belief**: AI should scale with your ambition, not limit it. Why use only one Claude instance?
 
 **The Vision**: Transform your machine or dedicated server into an AI powerhouse where you orchestrate multiple Claude Code instances through one main session. Work on authentication in repo A while simultaneously building APIs in repo B, all coordinated through your primary Claude Code interface - no context pollution, no workflow interruption.
 
-## How It Works
+## Features
 
 - **Event-Driven Architecture**: Coordinates components through events, eliminating race conditions
 - **Intelligent Resource Management**: Monitors CPU and memory in real-time, spawning workers when resources are available
 - **Task Persistence & Recovery**: SQLite storage with automatic crash recovery
-- **No Artificial Limits**: Uses ALL available system resources - spawning as many workers as your server can handle
 - **Task Dependencies**: DAG-based dependency resolution with cycle detection
-
-## Features
-
-Claudine provides task delegation, dependency management, autoscaling workers, and persistent task storage with automatic recovery.
 
 See **[FEATURES.md](./docs/FEATURES.md)** for complete feature list.
 
@@ -219,9 +207,9 @@ claudine/
 - [x] v0.2.1 - Event-driven architecture and CLI
 - [x] v0.2.3 - Stability improvements
 - [x] v0.3.0 - Task dependency resolution
-- [ ] v0.3.1 - Dependency performance optimizations (Nov 2025)
-- [ ] v0.4.0 - Task resumption and scheduling (Q1 2026)
-- [ ] v0.5.0 - Distributed multi-server processing (Q2 2026)
+- [ ] v0.3.1 - Dependency performance optimizations
+- [ ] v0.4.0 - Task resumption and scheduling
+- [ ] v0.5.0 - Distributed multi-server processing
 
 See **[ROADMAP.md](./docs/ROADMAP.md)** for detailed plans and timelines.
 
