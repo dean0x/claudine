@@ -68,6 +68,8 @@ export class DependencyGraph {
    * 2. Run DFS from the new dependent task
    * 3. If we reach the dependency task, cycle exists
    *
+   * @param taskId - The task that will depend on another task
+   * @param dependsOnTaskId - The task that will be depended upon
    * @returns Ok(true) if cycle would be created, Ok(false) otherwise
    */
   wouldCreateCycle(taskId: TaskId, dependsOnTaskId: TaskId): Result<boolean> {
@@ -183,6 +185,7 @@ export class DependencyGraph {
 
   /**
    * Get all tasks that the given task depends on (transitive closure)
+   * @param taskId - The task to get dependencies for
    * @returns Array of all task IDs in dependency chain
    */
   getAllDependencies(taskId: TaskId): Result<readonly TaskId[]> {
@@ -212,6 +215,7 @@ export class DependencyGraph {
 
   /**
    * Get all tasks that depend on the given task (transitive closure)
+   * @param taskId - The task to get dependents for
    * @returns Array of all task IDs that depend on this task
    */
   getAllDependents(taskId: TaskId): Result<readonly TaskId[]> {
@@ -241,6 +245,7 @@ export class DependencyGraph {
 
   /**
    * Get direct dependencies for a task
+   * @param taskId - The task to get direct dependencies for
    * @returns Array of task IDs this task directly depends on
    */
   getDirectDependencies(taskId: TaskId): Result<readonly TaskId[]> {
@@ -256,6 +261,7 @@ export class DependencyGraph {
 
   /**
    * Get direct dependents for a task
+   * @param taskId - The task to get direct dependents for
    * @returns Array of task IDs that directly depend on this task
    */
   getDirectDependents(taskId: TaskId): Result<readonly TaskId[]> {
@@ -338,6 +344,8 @@ export class DependencyGraph {
 
   /**
    * Check if a task exists in the graph
+   * @param taskId - The task ID to check for existence
+   * @returns true if the task exists in the graph, false otherwise
    */
   hasTask(taskId: TaskId): boolean {
     return this.graph.has(taskId as string);

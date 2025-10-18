@@ -144,6 +144,63 @@ claudine cancel <task-id> [reason]
 claudine help
 ```
 
+#### Task Dependencies (New in v0.3.0)
+
+Create workflows where tasks wait for dependencies to complete:
+
+```bash
+# Step 1: Create a build task
+claudine delegate "npm run build" --priority P1
+# Output: Task created with ID: task-abc123
+
+# Step 2: Create a test task that depends on the build
+claudine delegate "npm test" --priority P1 --depends-on task-abc123
+# Task will wait for build to complete before running
+
+# Step 3: Create a deployment task that depends on tests
+claudine delegate "npm run deploy" --priority P0 --depends-on task-def456
+# Execution order: build → test → deploy
+```
+
+**Via MCP Tools** (in Claude Code):
+
+```typescript
+// Create dependency chain
+const build = await DelegateTask({
+  prompt: "npm run build",
+  priority: "P1"
+});
+
+const test = await DelegateTask({
+  prompt: "npm test",
+  priority: "P1",
+  dependsOn: [build.taskId]
+});
+
+const deploy = await DelegateTask({
+  prompt: "npm run deploy",
+  priority: "P0",
+  dependsOn: [test.taskId]
+});
+// Tasks execute in order: build → test → deploy
+```
+
+**Multiple Dependencies**:
+
+```typescript
+// Task waits for multiple dependencies
+const lint = await DelegateTask({ prompt: "npm run lint" });
+const format = await DelegateTask({ prompt: "npm run format" });
+
+const commit = await DelegateTask({
+  prompt: "git commit -m 'Formatted and linted'",
+  dependsOn: [lint.taskId, format.taskId]
+});
+// lint and format run in parallel, commit waits for both
+```
+
+See [Task Dependencies Documentation](./docs/task-dependencies.md) for advanced patterns (diamond dependencies, error handling, etc.).
+
 ### MCP Tools in Claude Code
 
 Once configured, you can use Claudine's tools in Claude Code:
@@ -199,11 +256,15 @@ npm run clean
 ### Testing
 
 ```bash
-# Run tests
+# Run tests (unit + integration sequentially - SAFE)
 npm test
 
-# Run comprehensive tests
-npm run test:comprehensive
+# Run with coverage
+npm run test:coverage
+
+# Run specific test suites
+npm run test:unit
+npm run test:integration
 
 # Validate entire setup
 npm run validate
@@ -326,10 +387,13 @@ npm run dev
 
 - [x] **v0.2.0**: Autoscaling and persistence (Released Sep 2025)
 - [x] **v0.2.1**: Event-driven architecture and CLI commands (Released Sep 2025)
-- [x] **v0.2.3**: Stability improvements and bug fixes (Current - Released)
-- [ ] **v0.3.0**: Task dependency resolution (In Development - PR #9)
-- [ ] **v0.4.0**: Distributed processing (Q1 2026)
-- [ ] **v0.5.0**: Advanced orchestration and monitoring (Q2 2026)
+- [x] **v0.2.3**: Stability improvements and bug fixes (Released Sep 2025)
+- [x] **v0.3.0**: Task dependency resolution (Released Oct 2025)
+- [ ] **v0.3.1**: Task dependencies performance optimizations (Nov 2025)
+- [ ] **v0.4.0**: Task resumption and scheduling (Q1 2026)
+- [ ] **v0.5.0**: Distributed multi-server processing (Q2 2026)
+- [ ] **v0.6.0**: Advanced orchestration and templates (Q3 2026)
+- [ ] **v0.7.0**: Monitoring, REST API, and multi-user support (Q4 2026)
 
 See [ROADMAP.md](./docs/ROADMAP.md) for detailed feature plans and timelines.
 

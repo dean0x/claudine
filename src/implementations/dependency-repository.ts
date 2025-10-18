@@ -88,6 +88,27 @@ export class SQLiteDependencyRepository implements DependencyRepository {
     `);
   }
 
+  /**
+   * Add a dependency relationship between two tasks with cycle detection
+   *
+   * Uses synchronous better-sqlite3 transaction to prevent TOCTOU race conditions.
+   * Performs cycle detection using DFS algorithm before persisting.
+   *
+   * @param taskId - The task that depends on another task
+   * @param dependsOnTaskId - The task to depend on
+   * @returns Result containing created TaskDependency or error if:
+   *   - Cycle would be created (ErrorCode.INVALID_OPERATION)
+   *   - Dependency already exists (ErrorCode.INVALID_OPERATION)
+   *   - Either task doesn't exist (ErrorCode.TASK_NOT_FOUND)
+   *
+   * @example
+   * ```typescript
+   * const result = await dependencyRepo.addDependency(taskB.id, taskA.id);
+   * if (!result.ok) {
+   *   console.error('Failed to add dependency:', result.error.message);
+   * }
+   * ```
+   */
   async addDependency(taskId: TaskId, dependsOnTaskId: TaskId): Promise<Result<TaskDependency>> {
     // SECURITY: TOCTOU Fix - Use synchronous .transaction() for true atomicity
     // Per Wikipedia TOCTOU principles: check and use must be atomic
@@ -186,6 +207,23 @@ export class SQLiteDependencyRepository implements DependencyRepository {
     );
   }
 
+  /**
+   * Get all dependencies for a task (tasks that this task depends on)
+   *
+   * Returns only direct dependencies, not transitive closure.
+   * Use DependencyGraph.getAllDependencies() for transitive dependencies.
+   *
+   * @param taskId - The task to get dependencies for
+   * @returns Result containing array of TaskDependency objects or error
+   *
+   * @example
+   * ```typescript
+   * const result = await dependencyRepo.getDependencies(taskA.id);
+   * if (result.ok) {
+   *   console.log(`Task A depends on ${result.value.length} tasks`);
+   * }
+   * ```
+   */
   async getDependencies(taskId: TaskId): Promise<Result<readonly TaskDependency[]>> {
     return tryCatchAsync(
       async () => {
@@ -200,6 +238,23 @@ export class SQLiteDependencyRepository implements DependencyRepository {
     );
   }
 
+  /**
+   * Get all dependents for a task (tasks that depend on this task)
+   *
+   * Returns only direct dependents, not transitive closure.
+   * Use DependencyGraph.getAllDependents() for transitive dependents.
+   *
+   * @param taskId - The task to get dependents for
+   * @returns Result containing array of TaskDependency objects or error
+   *
+   * @example
+   * ```typescript
+   * const result = await dependencyRepo.getDependents(taskA.id);
+   * if (result.ok) {
+   *   console.log(`${result.value.length} tasks depend on Task A`);
+   * }
+   * ```
+   */
   async getDependents(taskId: TaskId): Promise<Result<readonly TaskDependency[]>> {
     return tryCatchAsync(
       async () => {
@@ -214,6 +269,29 @@ export class SQLiteDependencyRepository implements DependencyRepository {
     );
   }
 
+  /**
+   * Mark a dependency as resolved with the given resolution state
+   *
+   * Called when a dependency completes, fails, or is cancelled.
+   * Updates the resolution and resolved_at timestamp.
+   *
+   * @param taskId - The task that has the dependency
+   * @param dependsOnTaskId - The dependency task that was resolved
+   * @param resolution - The resolution state: 'completed', 'failed', or 'cancelled'
+   * @returns Result indicating success or error if dependency not found
+   *
+   * @example
+   * ```typescript
+   * const result = await dependencyRepo.resolveDependency(
+   *   taskB.id,
+   *   taskA.id,
+   *   'completed'
+   * );
+   * if (result.ok) {
+   *   console.log('Dependency marked as completed');
+   * }
+   * ```
+   */
   async resolveDependency(
     taskId: TaskId,
     dependsOnTaskId: TaskId,
@@ -239,6 +317,23 @@ export class SQLiteDependencyRepository implements DependencyRepository {
     );
   }
 
+  /**
+   * Get all unresolved (pending) dependencies for a task
+   *
+   * Returns only dependencies with resolution='pending'.
+   * Used to check if a task is still blocked waiting for dependencies.
+   *
+   * @param taskId - The task to get unresolved dependencies for
+   * @returns Result containing array of pending TaskDependency objects or error
+   *
+   * @example
+   * ```typescript
+   * const result = await dependencyRepo.getUnresolvedDependencies(taskB.id);
+   * if (result.ok && result.value.length === 0) {
+   *   console.log('Task B has no pending dependencies - ready to run');
+   * }
+   * ```
+   */
   async getUnresolvedDependencies(taskId: TaskId): Promise<Result<readonly TaskDependency[]>> {
     return tryCatchAsync(
       async () => {
@@ -253,6 +348,24 @@ export class SQLiteDependencyRepository implements DependencyRepository {
     );
   }
 
+  /**
+   * Check if a task is blocked by unresolved dependencies
+   *
+   * Returns true if the task has any dependencies with resolution='pending'.
+   * Used by QueueHandler to determine if task can be enqueued.
+   *
+   * @param taskId - The task to check for blocking dependencies
+   * @returns Result containing true if task is blocked, false if ready to run
+   *
+   * @example
+   * ```typescript
+   * const result = await dependencyRepo.isBlocked(taskB.id);
+   * if (result.ok && !result.value) {
+   *   // Task is not blocked - can be enqueued
+   *   await queue.enqueue(taskB);
+   * }
+   * ```
+   */
   async isBlocked(taskId: TaskId): Promise<Result<boolean>> {
     return tryCatchAsync(
       async () => {
@@ -267,6 +380,26 @@ export class SQLiteDependencyRepository implements DependencyRepository {
     );
   }
 
+  /**
+   * Get all dependencies in the system
+   *
+   * Returns all TaskDependency records ordered by created_at DESC.
+   * Used for building complete dependency graph and admin queries.
+   *
+   * Note: This is a full table scan - use sparingly in production.
+   * Consider caching the result for graph construction.
+   *
+   * @returns Result containing array of all TaskDependency objects or error
+   *
+   * @example
+   * ```typescript
+   * const result = await dependencyRepo.findAll();
+   * if (result.ok) {
+   *   const graph = new DependencyGraph(result.value);
+   *   console.log(`System has ${result.value.length} total dependencies`);
+   * }
+   * ```
+   */
   async findAll(): Promise<Result<readonly TaskDependency[]>> {
     return tryCatchAsync(
       async () => {
@@ -280,6 +413,27 @@ export class SQLiteDependencyRepository implements DependencyRepository {
     );
   }
 
+  /**
+   * Delete all dependencies related to a task
+   *
+   * Removes all dependency records where the task is either:
+   * - The dependent task (task_id = taskId), or
+   * - The dependency target (depends_on_task_id = taskId)
+   *
+   * Called when a task is cancelled or deleted to clean up orphaned dependencies.
+   * Invalidates dependency graph cache after deletion.
+   *
+   * @param taskId - The task to delete all dependencies for
+   * @returns Result indicating success or error
+   *
+   * @example
+   * ```typescript
+   * const result = await dependencyRepo.deleteDependencies(taskA.id);
+   * if (result.ok) {
+   *   console.log('All dependencies for Task A removed');
+   * }
+   * ```
+   */
   async deleteDependencies(taskId: TaskId): Promise<Result<void>> {
     return tryCatchAsync(
       async () => {
