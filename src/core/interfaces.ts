@@ -86,6 +86,64 @@ export interface TaskRepository {
 }
 
 /**
+ * Task dependency tracking and resolution
+ * ARCHITECTURE: Pure Result pattern, no exceptions
+ * Pattern: Repository pattern for dependency DAG management
+ * Rationale: Enables cycle detection, dependency queries, state tracking
+ */
+export interface TaskDependency {
+  readonly id: number;
+  readonly taskId: TaskId;
+  readonly dependsOnTaskId: TaskId;
+  readonly createdAt: number;
+  readonly resolvedAt: number | null;
+  readonly resolution: 'pending' | 'completed' | 'failed' | 'cancelled';
+}
+
+export interface DependencyRepository {
+  /**
+   * Add a dependency relationship between tasks
+   * @returns Error if dependency would create a cycle
+   */
+  addDependency(taskId: TaskId, dependsOnTaskId: TaskId): Promise<Result<TaskDependency>>;
+
+  /**
+   * Get all tasks that the given task depends on (blocking tasks)
+   */
+  getDependencies(taskId: TaskId): Promise<Result<readonly TaskDependency[]>>;
+
+  /**
+   * Get all tasks that depend on the given task (blocked tasks)
+   */
+  getDependents(taskId: TaskId): Promise<Result<readonly TaskDependency[]>>;
+
+  /**
+   * Mark a dependency as resolved with given resolution state
+   */
+  resolveDependency(taskId: TaskId, dependsOnTaskId: TaskId, resolution: 'completed' | 'failed' | 'cancelled'): Promise<Result<void>>;
+
+  /**
+   * Get all unresolved dependencies for a task
+   */
+  getUnresolvedDependencies(taskId: TaskId): Promise<Result<readonly TaskDependency[]>>;
+
+  /**
+   * Check if a task has any unresolved dependencies (is blocked)
+   */
+  isBlocked(taskId: TaskId): Promise<Result<boolean>>;
+
+  /**
+   * Get all dependencies in the system
+   */
+  findAll(): Promise<Result<readonly TaskDependency[]>>;
+
+  /**
+   * Remove all dependencies for a task (on task deletion)
+   */
+  deleteDependencies(taskId: TaskId): Promise<Result<void>>;
+}
+
+/**
  * Structured logging
  */
 export interface Logger {

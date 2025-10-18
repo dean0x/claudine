@@ -1,0 +1,56 @@
+# Test files should not be published
+**/*.test.js
+**/*.test.d.ts
+**/*.spec.js
+**/*.spec.d.ts
+dist/tests/
+
+# Sourcemaps not needed in production
+**/*.map
+
+# Build artifacts
+.tsbuildinfo
+
+# Development configs
+tsconfig.dev.json
+
+# Test artifacts
+test-db/
+test-logs/
+coverage/
+.nyc_output/
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+
+# Documentation (keep only README and LICENSE)
+docs/
+CLAUDE.md
+*.md
+!README.md
+
+# Scripts not needed by users
+scripts/
+
+# Test and development dependencies
+vitest.config.ts
+tests/

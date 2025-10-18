@@ -1,9 +1,10 @@
 /**
  * Task queue management event handler
  * Manages queue operations through events
+ * ARCHITECTURE: Dependency-aware queueing - tasks only enqueued when dependencies met
  */
 
-import { TaskQueue, Logger } from '../../core/interfaces.js';
+import { TaskQueue, Logger, DependencyRepository, TaskRepository } from '../../core/interfaces.js';
 import { Result, ok, err } from '../../core/result.js';
 import { BaseEventHandler } from '../../core/events/handlers.js';
 import { EventBus } from '../../core/events/event-bus.js';
@@ -13,6 +14,7 @@ import {
   TaskCancellationRequestedEvent,
   NextTaskQueryEvent,
   RequeueTaskEvent,
+  TaskUnblockedEvent,
   createEvent
 } from '../../core/events/events.js';
 import { Task, TaskStatus } from '../../core/domain.js';
@@ -22,6 +24,8 @@ export class QueueHandler extends BaseEventHandler {
 
   constructor(
     private readonly queue: TaskQueue,
+    private readonly dependencyRepo: DependencyRepository,
+    private readonly taskRepo: TaskRepository,
     logger: Logger
   ) {
     super(logger, 'QueueHandler');
@@ -37,7 +41,8 @@ export class QueueHandler extends BaseEventHandler {
       eventBus.subscribe('TaskPersisted', this.handleTaskPersisted.bind(this)),
       eventBus.subscribe('TaskCancellationRequested', this.handleTaskCancellation.bind(this)),
       eventBus.subscribe('NextTaskQuery', this.handleNextTaskQuery.bind(this)),
-      eventBus.subscribe('RequeueTask', this.handleRequeueTask.bind(this))
+      eventBus.subscribe('RequeueTask', this.handleRequeueTask.bind(this)),
+      eventBus.subscribe('TaskUnblocked', this.handleTaskUnblocked.bind(this))
     ];
 
     // Check if any subscription failed
@@ -47,17 +52,34 @@ export class QueueHandler extends BaseEventHandler {
       }
     }
 
-    this.logger.info('QueueHandler initialized');
+    this.logger.info('QueueHandler initialized - dependency-aware queueing active');
     return ok(undefined);
   }
 
   /**
-   * Handle task persisted - add task to queue only after it's been saved to database
+   * Handle task persisted - add task to queue only if not blocked by dependencies
+   * ARCHITECTURE: Dependency-aware queueing - blocked tasks wait for TaskUnblocked event
    */
   private async handleTaskPersisted(event: TaskPersistedEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
+      // Check if task is blocked by dependencies
+      const isBlockedResult = await this.dependencyRepo.isBlocked(event.task.id);
+      if (!isBlockedResult.ok) {
+        this.logger.error('Failed to check if task is blocked', isBlockedResult.error, {
+          taskId: event.task.id
+        });
+        // Fail-safe: enqueue anyway to avoid stuck tasks
+      } else if (isBlockedResult.value) {
+        // Task is blocked - do NOT enqueue yet
+        this.logger.info('Task blocked by dependencies - waiting for TaskUnblocked event', {
+          taskId: event.task.id
+        });
+        return ok(undefined);
+      }
+
+      // Task is not blocked - safe to enqueue
       const result = this.queue.enqueue(event.task);
-      
+
       if (!result.ok) {
         this.logger.error('Failed to enqueue task', result.error, {
           taskId: event.task.id
@@ -73,11 +95,11 @@ export class QueueHandler extends BaseEventHandler {
 
       // Emit event that task is now queued - critical for worker spawning
       if (this.eventBus) {
-        const emitResult = await this.eventBus.emit('TaskQueued', { 
+        const emitResult = await this.eventBus.emit('TaskQueued', {
           taskId: event.task.id,
-          task: event.task 
+          task: event.task
         });
-        
+
         if (!emitResult.ok) {
           this.logger.error('Failed to emit TaskQueued event', emitResult.error, {
             taskId: event.task.id
@@ -89,7 +111,7 @@ export class QueueHandler extends BaseEventHandler {
           taskId: event.task.id
         });
       }
-      
+
       return ok(undefined);
     });
   }
@@ -278,11 +300,81 @@ export class QueueHandler extends BaseEventHandler {
   }
 
   /**
+   * Handle task unblocked - enqueue task when all dependencies are resolved
+   * ARCHITECTURE: Dependency-aware queueing - tasks automatically enqueued when ready
+   */
+  private async handleTaskUnblocked(event: TaskUnblockedEvent): Promise<void> {
+    await this.handleEvent(event, async (event) => {
+      this.logger.info('Task unblocked - enqueuing for execution', {
+        taskId: event.taskId
+      });
+
+      // Fetch latest task state to prevent race conditions
+      // Event data may be stale if task was cancelled/failed between emission and handling
+      const taskResult = await this.taskRepo.findById(event.taskId);
+      if (!taskResult.ok) {
+        this.logger.error('Failed to fetch unblocked task for re-validation', taskResult.error, {
+          taskId: event.taskId
+        });
+        return err(taskResult.error);
+      }
+      if (!taskResult.value) {
+        this.logger.error('Task not found after unblocking', new Error('Task not found'), {
+          taskId: event.taskId
+        });
+        return err(new Error('Task not found'));
+      }
+      const task = taskResult.value;
+
+      // Verify task is still in valid state to be enqueued (not cancelled/failed in the meantime)
+      if (task.status !== TaskStatus.QUEUED) {
+        this.logger.warn('Unblocked task is no longer in QUEUED state, will not be enqueued', {
+          taskId: event.taskId,
+          status: task.status
+        });
+        return ok(undefined);
+      }
+
+      // Enqueue the unblocked task
+      const result = this.queue.enqueue(task);
+
+      if (!result.ok) {
+        this.logger.error('Failed to enqueue unblocked task', result.error, {
+          taskId: task.id
+        });
+        return result;
+      }
+
+      this.logger.info('Unblocked task enqueued for execution', {
+        taskId: task.id,
+        priority: task.priority,
+        queueSize: this.queue.size()
+      });
+
+      // Emit TaskQueued event to trigger worker spawning
+      if (this.eventBus) {
+        const emitResult = await this.eventBus.emit('TaskQueued', {
+          taskId: task.id,
+          task: task
+        });
+
+        if (!emitResult.ok) {
+          this.logger.error('Failed to emit TaskQueued event for unblocked task', emitResult.error, {
+            taskId: task.id
+          });
+        }
+      }
+
+      return ok(undefined);
+    });
+  }
+
+  /**
    * Get queue statistics
    */
   getQueueStats(): { size: number; tasks: readonly any[] } {
     const allResult = this.queue.getAll();
-    
+
     return {
       size: this.queue.size(),
       tasks: allResult.ok ? allResult.value : []

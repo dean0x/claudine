@@ -27,13 +27,14 @@ Usage:
 
 MCP Server Commands:
   mcp start              Start the MCP server
-  mcp test               Test server startup and validation  
+  mcp test               Test server startup and validation
   mcp config             Show MCP configuration for Claude
 
 Task Commands:
   delegate <prompt> [options]  Delegate a task to Claude Code (runs in current directory by default)
     -p, --priority P0|P1|P2    Task priority (P0=critical, P1=high, P2=normal)
     -w, --working-directory D  Working directory for task execution
+    --depends-on TASK_IDS      Comma-separated task IDs this task depends on (blocks until complete)
     --use-worktree             [EXPERIMENTAL] Use git worktree for isolation (opt-in)
     --keep-worktree            Always preserve worktree after completion (requires --use-worktree)
     --delete-worktree          Always cleanup worktree after completion (requires --use-worktree)
@@ -59,6 +60,7 @@ Configuration:
     worktree-max-count <num>   Set maximum number of worktrees (default: 50)
     worktree-safety-check <bool> Enable/disable safety checks (default: true)
   status [task-id]             Get status of task(s)
+    --show-dependencies        Show dependency graph for tasks
   logs <task-id> [--tail N]    Get output logs for a task (optionally limit to last N lines)
   cancel <task-id> [reason]    Cancel a running task with optional reason
   retry-task <task-id>         Retry a failed or completed task
@@ -71,8 +73,11 @@ Examples:
   claudine delegate "test changes" --no-worktree      # Run directly without worktree
   claudine delegate "new feature" --strategy auto     # Auto-merge if no conflicts
   claudine delegate "experiment" --keep-worktree      # Preserve worktree after completion
+  claudine delegate "run tests" --depends-on task-abc123  # Wait for task-abc123 to complete
+  claudine delegate "deploy" --depends-on task-1,task-2   # Wait for multiple tasks
   claudine status                                       # List all tasks
   claudine status abc123                                # Get specific task status
+  claudine status --show-dependencies                   # Show dependency graph
   claudine logs abc123                                  # Get task output
   claudine cancel abc123                                # Cancel task
   
@@ -129,6 +134,7 @@ Learn more: https://github.com/dean0x/claudine#configuration
 async function delegateTask(prompt: string, options?: {
   priority?: 'P0' | 'P1' | 'P2';
   workingDirectory?: string;
+  dependsOn?: readonly string[];
   useWorktree?: boolean;
   worktreeCleanup?: 'auto' | 'keep' | 'delete';
   mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch';
@@ -169,6 +175,10 @@ async function delegateTask(prompt: string, options?: {
       console.log('🔧 Task parameters:');
       if (options.priority) console.log('  Priority:', options.priority);
       if (options.workingDirectory) console.log('  Working Directory:', options.workingDirectory);
+      if (options.dependsOn && options.dependsOn.length > 0) {
+        console.log('  Depends On:', options.dependsOn.join(', '));
+        console.log('  ⏳ Task will wait for dependencies to complete before starting');
+      }
       if (options.useWorktree) console.log('  Use Worktree:', options.useWorktree);
       if (options.timeout) console.log('  Timeout:', options.timeout, 'ms');
       if (options.maxOutputBuffer) console.log('  Max Output Buffer:', options.maxOutputBuffer, 'bytes');
@@ -192,7 +202,7 @@ async function delegateTask(prompt: string, options?: {
   }
 }
 
-async function getTaskStatus(taskId?: string) {
+async function getTaskStatus(taskId?: string, showDependencies?: boolean) {
   try {
     console.log('🚀 Bootstrapping Claudine...');
     const containerResult = await bootstrap();
@@ -201,15 +211,15 @@ async function getTaskStatus(taskId?: string) {
       process.exit(1);
     }
     const container = containerResult.value;
-    
+
     const taskManagerResult = await container.resolve('taskManager');
     if (!taskManagerResult.ok) {
       console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
       process.exit(1);
     }
-    
+
     const taskManager = taskManagerResult.value as any;
-    
+
     if (taskId) {
       console.log('🔍 Getting status for:', taskId);
       const result = await taskManager.getStatus(taskId);
@@ -226,6 +236,25 @@ async function getTaskStatus(taskId?: string) {
           console.log('   Duration:', task.completedAt - task.startedAt, 'ms');
         }
         console.log('   Prompt:', task.prompt.substring(0, 100) + (task.prompt.length > 100 ? '...' : ''));
+
+        // Show dependency information if present
+        if (task.dependsOn && task.dependsOn.length > 0) {
+          console.log('\n🔗 Dependencies:');
+          console.log('   Depends On:', task.dependsOn.join(', '));
+          if (task.dependencyState) {
+            console.log('   Dependency State:', task.dependencyState);
+            if (task.dependencyState === 'blocked') {
+              console.log('   ⏳ Task is waiting for dependencies to complete');
+            } else if (task.dependencyState === 'ready') {
+              console.log('   ✅ All dependencies satisfied');
+            }
+          }
+        }
+
+        if (task.dependents && task.dependents.length > 0) {
+          console.log('\n🔗 Dependents:');
+          console.log('   Tasks blocked by this:', task.dependents.join(', '));
+        }
       } else {
         console.error('❌ Failed to get task status:', result.error.message);
         process.exit(1);
@@ -460,6 +489,7 @@ if (mainCommand === 'mcp') {
   const options: {
     priority?: 'P0' | 'P1' | 'P2';
     workingDirectory?: string;
+    dependsOn?: readonly string[];
     useWorktree?: boolean;
     worktreeCleanup?: 'auto' | 'keep' | 'delete';
     mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch';
@@ -506,6 +536,22 @@ if (mainCommand === 'mcp') {
         i++; // skip next arg
       } else {
         console.error('❌ Working directory requires a path');
+        process.exit(1);
+      }
+    } else if (arg === '--depends-on') {
+      const next = delegateArgs[i + 1];
+      if (next && !next.startsWith('-')) {
+        // Parse comma-separated task IDs
+        const taskIds = next.split(',').map(id => id.trim()).filter(id => id.length > 0);
+        if (taskIds.length === 0) {
+          console.error('❌ --depends-on requires at least one task ID');
+          process.exit(1);
+        }
+        options.dependsOn = taskIds;
+        i++; // skip next arg
+      } else {
+        console.error('❌ --depends-on requires comma-separated task IDs');
+        console.error('Example: --depends-on task-abc123 or --depends-on task-1,task-2,task-3');
         process.exit(1);
       }
     } else if (arg === '--no-worktree') {
@@ -628,8 +674,20 @@ if (mainCommand === 'mcp') {
   await delegateTask(prompt, Object.keys(options).length > 0 ? options : undefined);
   
 } else if (mainCommand === 'status') {
-  const taskId = args[1];
-  await getTaskStatus(taskId);
+  // Parse status command arguments
+  let taskId: string | undefined;
+  let showDependencies = false;
+
+  for (let i = 1; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--show-dependencies') {
+      showDependencies = true;
+    } else if (!arg.startsWith('-')) {
+      taskId = arg;
+    }
+  }
+
+  await getTaskStatus(taskId, showDependencies);
   
 } else if (mainCommand === 'logs') {
   const taskId = args[1];

@@ -144,9 +144,29 @@ Last Updated: September 2025
 - **Database-First Pattern**: Single source of truth with no memory-database divergence
 - **Proper Process Handling**: Fixed stdin management (`stdio: ['ignore', 'pipe', 'pipe']`)
 
-## ❌ NOT Implemented (Despite Some Documentation Claims)
+## ✅ Task Dependencies (v0.3.0)
 
-- **Task Dependencies**: Tasks cannot wait for other tasks
+### DAG-Based Dependency Management
+- **Dependency Declaration**: Tasks can depend on other tasks via `dependsOn` array in task specification
+- **Cycle Detection**: DFS-based algorithm prevents circular dependencies (A→B→A patterns)
+- **Transitive Cycle Detection**: Detects complex cycles across multiple tasks (A→B→C→A)
+- **Automatic Resolution**: Dependencies automatically resolved on task completion/failure/cancellation
+- **Blocked Task Management**: Tasks with unmet dependencies remain in BLOCKED state until resolved
+- **Multiple Dependencies**: Tasks can depend on multiple prerequisite tasks simultaneously
+- **Diamond Patterns**: Supports complex dependency graphs (A→B, A→C, B→D, C→D)
+
+### Database Schema
+- **Foreign Key Constraints**: Database-enforced referential integrity
+- **Resolution Tracking**: Automatic resolution timestamp on dependency completion
+- **Atomic Transactions**: TOCTOU-safe dependency addition with synchronous better-sqlite3 transactions
+- **Composite Indexes**: Optimized queries for dependency lookups and blocked task checks
+
+### Event-Driven Integration
+- **TaskDependencyAdded**: Emitted when new dependency relationship created
+- **DependencyResolved**: Emitted when blocking dependency completes
+- **TaskUnblocked**: Emitted when all dependencies resolved, triggers automatic queuing
+
+## ❌ NOT Implemented (Despite Some Documentation Claims)
 - **Distributed Processing**: Single-server only
 - **Web UI**: No dashboard interface
 - **Task Templates**: No preset task configurations

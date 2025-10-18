@@ -33,15 +33,17 @@ export default defineConfig({
     pool: 'forks', // Better isolation for integration tests
     poolOptions: {
       forks: {
-        singleFork: false,
-        maxForks: 2 // Limit concurrent test files to prevent process overload
+        singleFork: true, // CRITICAL: Run all tests in single fork to prevent resource exhaustion
+        maxForks: 1 // Only 1 test file at a time
       }
     },
-    // Run stress tests sequentially to prevent system overload
+    // CRITICAL: Run ALL tests sequentially to prevent crashes
     sequence: {
       concurrent: false,
       shuffle: false
-    }
+    },
+    // CRITICAL: Disable parallel test execution within files
+    fileParallelism: false
   },
   resolve: {
     alias: {
