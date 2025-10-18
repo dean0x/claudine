@@ -17,8 +17,8 @@
   "scripts": {
     "pretest": "rm -rf test-db test-logs",
     "test": "npm run test:unit && npm run test:integration",
-    "test:unit": "NODE_OPTIONS='--max-old-space-size=2048' vitest --no-file-parallelism",
-    "test:integration": "NODE_OPTIONS='--max-old-space-size=2048' vitest tests/integration --no-file-parallelism",
+    "test:unit": "vitest --no-file-parallelism",
+    "test:integration": "vitest tests/integration --no-file-parallelism",
     "test:coverage": "npm run test:unit -- --coverage && npm run test:integration -- --coverage",
     "test:watch": "NODE_OPTIONS='--max-old-space-size=2048' vitest --watch",
     "test:e2e": "tsx tests/e2e/test-runner.ts",
