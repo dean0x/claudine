@@ -32,7 +32,6 @@
     "build": "tsc",
     "build:dev": "tsc --project tsconfig.dev.json",
     "build:watch": "tsc --project tsconfig.dev.json --watch",
-    "postbuild": "node -e \"require('fs').chmodSync('dist/cli.js', '755')\"",
     "dev": "tsx src/index.ts",
     "dev:watch": "tsx watch src/index.ts",
     "start": "node dist/index.js",
