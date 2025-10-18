@@ -4,7 +4,7 @@
  * ARCHITECTURE: Dependency-aware queueing - tasks only enqueued when dependencies met
  */
 
-import { TaskQueue, Logger, DependencyRepository } from '../../core/interfaces.js';
+import { TaskQueue, Logger, DependencyRepository, TaskRepository } from '../../core/interfaces.js';
 import { Result, ok, err } from '../../core/result.js';
 import { BaseEventHandler } from '../../core/events/handlers.js';
 import { EventBus } from '../../core/events/event-bus.js';
@@ -25,6 +25,7 @@ export class QueueHandler extends BaseEventHandler {
   constructor(
     private readonly queue: TaskQueue,
     private readonly dependencyRepo: DependencyRepository,
+    private readonly taskRepo: TaskRepository,
     logger: Logger
   ) {
     super(logger, 'QueueHandler');

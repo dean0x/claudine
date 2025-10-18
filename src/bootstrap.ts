@@ -335,6 +335,7 @@ export async function bootstrap(): Promise<Result<Container>> {
     const queueHandler = new QueueHandler(
       taskQueueResult.value,
       dependencyRepoResult2.value,
+      repository,
       logger.child({ module: 'QueueHandler' })
     );
     const queueSetup = await queueHandler.setup(eventBus);
