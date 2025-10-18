@@ -17,50 +17,29 @@
 - **Single-threaded thinking** - Complex products require parallel workstreams, but Claude Code forces linear execution
 - **Context juggling overhead** - Constantly losing mental models when forced to switch between unrelated codebases
 
-**Our Belief**: AI should scale with your ambition, not limit it. why use only one Claude instance?
+**Our Belief**: AI should scale with your ambition, not limit it. Why use only one Claude instance?
 
 **The Vision**: Transform your machine or dedicated server into an AI powerhouse where you orchestrate multiple Claude Code instances through one main session. Work on authentication in repo A while simultaneously building APIs in repo B, all coordinated through your primary Claude Code interface - no context pollution, no workflow interruption.
 
-## How Claudine Works
+## How It Works
 
-**Event-Driven Architecture**: Instead of managing state directly, Claudine uses events to coordinate between components, eliminating race conditions and ensuring reliability.
-
-**Intelligent Resource Management**: Monitors CPU and memory in real-time, spawning new Claude Code instances when resources are available, maintaining system stability.
-
-**Task Persistence & Recovery**: Every task is stored in SQLite with automatic recovery after crashes. Your work never gets lost.
-
-**No Artificial Limits**: Unlike traditional approaches, Claudine uses ALL available system resources - spawning as many workers as your server can handle.
-
-## What You Get
-
-✅ **Currently Available in v0.2.1+**:
-- **Event-Driven Architecture**: Fully event-driven system with EventBus coordination
-- **Task Persistence**: SQLite-based storage with automatic recovery on startup
-- **CLI Interface**: Direct task management (`claudine delegate`, `claudine status`, etc.)
-- **Autoscaling**: Automatically spawns workers based on available CPU and memory
-- **Priority Levels**: P0 (Critical), P1 (High), P2 (Normal) task prioritization
+- **Event-Driven Architecture**: Coordinates components through events, eliminating race conditions
+- **Intelligent Resource Management**: Monitors CPU and memory in real-time, spawning workers when resources are available
+- **Task Persistence & Recovery**: SQLite storage with automatic crash recovery
+- **No Artificial Limits**: Uses ALL available system resources - spawning as many workers as your server can handle
 - **Task Dependencies**: DAG-based dependency resolution with cycle detection
-- **Git Worktree Support**: Branch-based isolation with PR/manual/auto/patch merge strategies
-- **GitHub Integration**: Automatic PR creation with merge strategies
-- **Retry Logic**: Exponential backoff for transient failures (git, network, API)
-- **Resource Management**: Dynamic worker scaling with CPU/memory monitoring
-- **Output Capture**: Fixed process handling with proper stdin management
-- **Recovery System**: Automatic task recovery after crashes
-- **Configuration**: Environment variables and per-task overrides
 
-📋 **MCP Tools**:
-- **DelegateTask**: Submit tasks to background Claude Code instances
-- **TaskStatus**: Real-time status of all running and queued tasks
-- **TaskLogs**: Stream or retrieve execution logs from any task
-- **CancelTask**: Cancel tasks with automatic resource cleanup
+## Features
 
-See [FEATURES.md](./docs/FEATURES.md) for complete feature documentation.
+Claudine provides task delegation, dependency management, autoscaling workers, and persistent task storage with automatic recovery.
+
+See **[FEATURES.md](./docs/FEATURES.md)** for complete feature list.
 
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js 20.0.0+ 
+- Node.js 20.0.0+
 - npm 10.0.0+
 - Claude Code CLI installed (`claude` command available)
 
@@ -77,10 +56,10 @@ See [FEATURES.md](./docs/FEATURES.md) for complete feature documentation.
 - 500GB+ NVMe SSD
 - Dedicated Linux server (Ubuntu 22.04+)
 
-### Installation & Configuration
+### Installation
 
-#### Production Setup (Recommended)
 Add to your project's `.mcp.json`:
+
 ```json
 {
   "mcpServers": {
@@ -92,141 +71,104 @@ Add to your project's `.mcp.json`:
 }
 ```
 
-#### Local Development
-For developing Claudine itself:
-```json
-{
-  "mcpServers": {
-    "claudine": {
-      "command": "node", 
-      "args": ["/path/to/claudine/dist/cli.js", "mcp", "start"]
-    }
-  }
-}
-```
-
-After adding the configuration, restart Claude Code to connect to Claudine.
+Restart Claude Code to connect to Claudine.
 
 ## Usage
 
+### MCP Tools
+
+Once configured, use these tools in Claude Code:
+
+| Tool | Description | Usage |
+|------|-------------|-------|
+| **DelegateTask** | Submit tasks to background instances | `DelegateTask({ prompt: "...", priority: "P1" })` |
+| **TaskStatus** | Get real-time task status | `TaskStatus({ taskId })` |
+| **TaskLogs** | Stream or retrieve execution logs | `TaskLogs({ taskId })` |
+| **CancelTask** | Cancel tasks with resource cleanup | `CancelTask({ taskId, reason })` |
+
 ### CLI Commands
 
-#### MCP Server Management
-```bash
-# Start the MCP server
-claudine mcp start
+| Command | Description |
+|---------|-------------|
+| `claudine mcp start` | Start the MCP server |
+| `claudine delegate <task>` | Submit new task |
+| `claudine status [task-id]` | Check task status (all tasks if no ID) |
+| `claudine logs <task-id>` | View task output |
+| `claudine cancel <task-id>` | Cancel running task |
+| `claudine help` | Show help |
 
-# Test server startup and validation
-claudine mcp test
-
-# Show MCP configuration
-claudine mcp config
-```
-
-#### Direct Task Management (New in v0.2.1)
-```bash
-# Delegate a task directly
-claudine delegate "Create a Python script to analyze CSV data"
-
-# Check status of all tasks
-claudine status
-
-# Check specific task status
-claudine status <task-id>
-
-# Get task logs (with optional tail)
-claudine logs <task-id> [--tail 100]
-
-# Cancel a running task
-claudine cancel <task-id> [reason]
-
-# Show help
-claudine help
-```
-
-#### Task Dependencies (New in v0.3.0)
+### Task Dependencies
 
 Create workflows where tasks wait for dependencies to complete:
 
 ```bash
-# Step 1: Create a build task
+# Step 1: Create build task
 claudine delegate "npm run build" --priority P1
-# Output: Task created with ID: task-abc123
+# → task-abc123
 
-# Step 2: Create a test task that depends on the build
-claudine delegate "npm test" --priority P1 --depends-on task-abc123
-# Task will wait for build to complete before running
+# Step 2: Create test task that waits for build
+claudine delegate "npm test" --depends-on task-abc123
+# Task waits for build to complete before running
 
-# Step 3: Create a deployment task that depends on tests
-claudine delegate "npm run deploy" --priority P0 --depends-on task-def456
+# Step 3: Create deploy task that waits for tests
+claudine delegate "npm run deploy" --depends-on task-def456
 # Execution order: build → test → deploy
 ```
 
-**Via MCP Tools** (in Claude Code):
+**Multiple dependencies** (parallel execution):
 
 ```typescript
-// Create dependency chain
-const build = await DelegateTask({
-  prompt: "npm run build",
-  priority: "P1"
-});
-
-const test = await DelegateTask({
-  prompt: "npm test",
-  priority: "P1",
-  dependsOn: [build.taskId]
-});
-
-const deploy = await DelegateTask({
-  prompt: "npm run deploy",
-  priority: "P0",
-  dependsOn: [test.taskId]
-});
-// Tasks execute in order: build → test → deploy
-```
-
-**Multiple Dependencies**:
-
-```typescript
-// Task waits for multiple dependencies
+// lint and format run in parallel
 const lint = await DelegateTask({ prompt: "npm run lint" });
 const format = await DelegateTask({ prompt: "npm run format" });
 
+// commit waits for both to complete
 const commit = await DelegateTask({
   prompt: "git commit -m 'Formatted and linted'",
   dependsOn: [lint.taskId, format.taskId]
 });
-// lint and format run in parallel, commit waits for both
 ```
 
-See [Task Dependencies Documentation](./docs/task-dependencies.md) for advanced patterns (diamond dependencies, error handling, etc.).
+See **[Task Dependencies Documentation](./docs/TASK-DEPENDENCIES.md)** for advanced patterns (diamond dependencies, error handling, failure propagation).
 
-### MCP Tools in Claude Code
+## Architecture
 
-Once configured, you can use Claudine's tools in Claude Code:
+**Event-driven system** with autoscaling workers and SQLite persistence. Components communicate through a central EventBus, eliminating race conditions and direct state management.
 
-### Delegate a Task
+**Task Lifecycle**: `Queued` → `Running` → `Completed` / `Failed` / `Cancelled`
 
-```
-Use DelegateTask to run: "Create a Python script that analyzes CSV data"
-```
+See **[Architecture Documentation](./docs/architecture/)** for implementation details.
 
-### Check Task Status
+## Configuration
 
-```
-Use TaskStatus to check the current task
-```
+### Environment Variables
 
-### Get Task Logs
+| Variable | Default | Range | Description |
+|----------|---------|-------|-------------|
+| `TASK_TIMEOUT` | 1800000 (30min) | 1000-86400000 | Task timeout in milliseconds |
+| `MAX_OUTPUT_BUFFER` | 10485760 (10MB) | 1024-1073741824 | Output buffer size in bytes |
+| `CPU_THRESHOLD` | 80 | 1-100 | CPU usage threshold percentage |
+| `MEMORY_RESERVE` | 1073741824 (1GB) | 0+ | Memory reserve in bytes |
+| `LOG_LEVEL` | info | debug/info/warn/error | Logging verbosity |
 
-```
-Use TaskLogs with taskId: <task-id-here>
-```
+### Per-Task Configuration
 
-### Cancel a Task
+Override limits for individual tasks:
 
-```
-Use CancelTask with taskId: <task-id-here> and reason: "Taking too long"
+```typescript
+// Long-running task with larger buffer
+await DelegateTask({
+  prompt: "analyze large dataset",
+  timeout: 7200000,           // 2 hours
+  maxOutputBuffer: 104857600  // 100MB
+});
+
+// Quick task with minimal resources
+await DelegateTask({
+  prompt: "run eslint",
+  timeout: 30000,             // 30 seconds
+  maxOutputBuffer: 1048576    // 1MB
+});
 ```
 
 ## Development
@@ -234,40 +176,22 @@ Use CancelTask with taskId: <task-id-here> and reason: "Taking too long"
 ### Available Scripts
 
 ```bash
-# Development mode (with auto-reload)
-npm run dev
-
-# Build TypeScript
-npm run build
-
-# Run built server
-npm start
-
-# Type checking
-npm run typecheck
-
-# Run tests
-npm test
-
-# Clean build artifacts
-npm run clean
+npm run dev        # Development mode with auto-reload
+npm run build      # Build TypeScript
+npm start          # Run built server
+npm run typecheck  # Type checking
+npm test           # Run tests
+npm run clean      # Clean build artifacts
 ```
 
 ### Testing
 
 ```bash
-# Run tests (unit + integration sequentially - SAFE)
-npm test
-
-# Run with coverage
-npm run test:coverage
-
-# Run specific test suites
-npm run test:unit
-npm run test:integration
-
-# Validate entire setup
-npm run validate
+npm test                    # Run all tests (safe, sequential)
+npm run test:coverage       # Run with coverage
+npm run test:unit           # Unit tests only
+npm run test:integration    # Integration tests only
+npm run validate            # Validate entire setup
 ```
 
 ### Project Structure
@@ -275,90 +199,31 @@ npm run validate
 ```
 claudine/
 ├── src/
-│   ├── index.ts              # Entry point
-│   ├── cli.ts                # CLI interface
-│   ├── bootstrap.ts          # Dependency injection
-│   ├── core/                 # Core interfaces and types
-│   ├── implementations/      # Service implementations
-│   ├── services/             # Business logic
-│   └── adapters/             # MCP adapter
-├── dist/                     # Compiled JavaScript
+│   ├── core/                # Core interfaces and types
+│   ├── implementations/     # Service implementations
+│   ├── services/            # Business logic & event handlers
+│   ├── adapters/            # MCP adapter
+│   ├── bootstrap.ts         # Dependency injection
+│   ├── cli.ts               # CLI interface
+│   └── index.ts             # Entry point
+├── dist/                    # Compiled JavaScript
 ├── tests/
-│   ├── unit/                 # Unit tests
-│   └── integration/          # Integration tests
-├── .docs/                    # Internal documentation
-└── README.md
+│   ├── unit/                # Unit tests
+│   └── integration/         # Integration tests
+└── docs/                    # Documentation
 ```
 
-## Architecture
+## Roadmap
 
-### Dedicated Server Design
+- [x] v0.2.0 - Autoscaling and persistence
+- [x] v0.2.1 - Event-driven architecture and CLI
+- [x] v0.2.3 - Stability improvements
+- [x] v0.3.0 - Task dependency resolution
+- [ ] v0.3.1 - Dependency performance optimizations (Nov 2025)
+- [ ] v0.4.0 - Task resumption and scheduling (Q1 2026)
+- [ ] v0.5.0 - Distributed multi-server processing (Q2 2026)
 
-Claudine is optimized for **dedicated servers** with ample resources, not constrained environments:
-
-- **Autoscaling Workers**: Spawns as many Claude Code instances as your system can handle
-- **Dynamic Resource Monitoring**: Continuously checks CPU and memory availability
-- **Queue-Based Load Management**: Processes tasks from queue as resources become available
-- **Zero Configuration**: No worker limits or tuning required
-
-### Core Components
-
-**Event-Driven Architecture (New in v0.2.1)**:
-1. **EventBus**: Central coordination hub for all system events
-2. **Event Handlers**: Specialized handlers for persistence, queue, worker, and output events
-3. **MCP Server**: Handles JSON-RPC requests from Claude Code
-4. **Task Manager**: Event-driven orchestrator (no direct state management)
-5. **Autoscaling Manager**: Event-based worker scaling with resource monitoring
-6. **Task Queue**: Priority-based queue with event-driven processing
-7. **Worker Pool**: Event-driven worker lifecycle management
-8. **Output Capture**: Event-based output handling with proper stdin management
-9. **Task Persistence**: SQLite database with WAL mode for concurrent access
-10. **Recovery Manager**: Restores interrupted tasks via events on startup
-
-### Task Lifecycle
-
-1. **Queued**: Task waiting for available resources
-2. **Running**: Claude Code process actively executing
-3. **Completed**: Task finished successfully (exit code 0)
-4. **Failed**: Task failed with error
-5. **Cancelled**: Task manually cancelled by user
-
-## Configuration
-
-### Environment Variables
-
-- `TASK_TIMEOUT`: Task timeout in milliseconds (default: 1800000 = 30 minutes, range: 1000-86400000)
-- `MAX_OUTPUT_BUFFER`: Output buffer size in bytes (default: 10485760 = 10MB, range: 1024-1073741824)  
-- `CPU_THRESHOLD`: CPU usage threshold percentage (default: 80, range: 1-100)
-- `MEMORY_RESERVE`: Memory reserve in bytes (default: 1073741824 = 1GB, range: 0+)
-- `LOG_LEVEL`: Logging level (default: 'info', options: 'debug', 'info', 'warn', 'error')
-
-### Per-Task Configuration
-
-You can override timeout and buffer limits for individual tasks via MCP parameters:
-
-```javascript
-// Example: Long-running task with larger buffer
-await claudine.DelegateTask({
-  prompt: "analyze large dataset and generate report", 
-  timeout: 7200000,        // 2 hours
-  maxOutputBuffer: 104857600  // 100MB
-});
-
-// Example: Quick task with minimal resources  
-await claudine.DelegateTask({
-  prompt: "run eslint on current file",
-  timeout: 30000,          // 30 seconds
-  maxOutputBuffer: 1048576    // 1MB
-});
-```
-
-## Current Limitations
-
-- No distributed execution across multiple machines (planned for v0.4.0)
-- No web dashboard (monitoring via logs only)
-
-For complete feature list, see [FEATURES.md](./docs/FEATURES.md).
+See **[ROADMAP.md](./docs/ROADMAP.md)** for detailed plans and timelines.
 
 ## Troubleshooting
 
@@ -378,24 +243,10 @@ node --version  # Should be v20.0.0+
 
 ### Tasks fail immediately
 
-Run in development mode:
+Run in development mode to see detailed logs:
 ```bash
 npm run dev
 ```
-
-## Roadmap
-
-- [x] **v0.2.0**: Autoscaling and persistence (Released Sep 2025)
-- [x] **v0.2.1**: Event-driven architecture and CLI commands (Released Sep 2025)
-- [x] **v0.2.3**: Stability improvements and bug fixes (Released Sep 2025)
-- [x] **v0.3.0**: Task dependency resolution (Released Oct 2025)
-- [ ] **v0.3.1**: Task dependencies performance optimizations (Nov 2025)
-- [ ] **v0.4.0**: Task resumption and scheduling (Q1 2026)
-- [ ] **v0.5.0**: Distributed multi-server processing (Q2 2026)
-- [ ] **v0.6.0**: Advanced orchestration and templates (Q3 2026)
-- [ ] **v0.7.0**: Monitoring, REST API, and multi-user support (Q4 2026)
-
-See [ROADMAP.md](./docs/ROADMAP.md) for detailed feature plans and timelines.
 
 ## Contributing
 
