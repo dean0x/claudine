@@ -108,7 +108,7 @@ jobs:
     - name: Check for release notes
       if: steps.version.outputs.changed == 'true'
       run: |
-        RELEASE_NOTES_FILE="RELEASE_NOTES_v${{ steps.version.outputs.package }}.md"
+        RELEASE_NOTES_FILE="docs/releases/RELEASE_NOTES_v${{ steps.version.outputs.package }}.md"
         if [ ! -f "$RELEASE_NOTES_FILE" ]; then
           echo "❌ Error: $RELEASE_NOTES_FILE not found!"
           echo "Release notes are required for version ${{ steps.version.outputs.package }}"
@@ -138,6 +138,6 @@ jobs:
       run: |
         gh release create v${{ steps.version.outputs.package }} \
           --title "🚀 Claudine v${{ steps.version.outputs.package }}" \
-          --notes-file RELEASE_NOTES_v${{ steps.version.outputs.package }}.md
+          --notes-file docs/releases/RELEASE_NOTES_v${{ steps.version.outputs.package }}.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
