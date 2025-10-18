@@ -37,6 +37,90 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Test Reliability**: Fixed flaky tests with proper mocking
 - **Parameter Consistency**: Aligned CLI and MCP tool parameters
 
+## [0.3.0] - 2025-10-18
+
+### 🚀 Major Features
+- **🔗 Task Dependencies**: DAG-based dependency management for complex workflows
+  - Specify task dependencies using `dependsOn` field in task specifications
+  - Automatic cycle detection (simple and transitive) using DAG algorithms
+  - Tasks automatically transition from BLOCKED → QUEUED when dependencies complete
+  - Diamond dependency patterns fully supported
+  - Event-driven dependency resolution through EventBus
+  - Atomic dependency operations with TOCTOU race condition protection
+  - Foreign key validation preventing references to non-existent tasks
+
+### 🛠️ Technical Improvements
+- **Event-Driven Architecture Complete**: WorktreeHandler added for full consistency
+  - All worktree operations now go through EventBus
+  - Optimized worktree cleanup with single fetch operation
+  - Fixed skipped worktree calculation semantics
+  - Documented EventBus type casting as tech debt
+- **Database Schema Migrations**: Version-based migration system
+  - schema_migrations table for tracking applied migrations
+  - Transaction-wrapped migrations for safety
+  - Support for incremental schema evolution
+- **MCP API Enhancement**: Added dependsOn parameter to DelegateTask
+  - UUID pattern validation for dependency task IDs
+  - Complete integration with task dependency system
+- **Performance Optimizations**:
+  - Handler-level graph cache prevents N+1 query pattern
+  - Composite database index for getDependents() queries
+  - Cache invalidation on TaskDependencyAdded events
+
+### 🐛 Bug Fixes
+- **Security - TOCTOU Race Condition**: Fixed critical race condition in dependency cycle detection
+  - Synchronous transactions prevent concurrent cycle creation
+  - Atomic check-and-add operations using better-sqlite3
+  - Verified protection with concurrent operation tests
+- **Error Handling Improvements**:
+  - Preserve semantic ClaudineError types in addDependency (TASK_NOT_FOUND, INVALID_OPERATION)
+  - Fixed error masking that converted validation failures to SYSTEM_ERROR
+  - Migration error handling only catches "no such table" errors
+  - Re-throws permission, corruption, and connection errors
+- **Race Condition in QueueHandler**: Fetch fresh task state before enqueueing unblocked tasks
+  - Prevents stale event data from enqueueing cancelled/failed tasks
+  - Added TaskRepository dependency to QueueHandler
+- **CI Stability**:
+  - Fixed memory exhaustion by running only unit tests in CI
+  - Added 5ms tolerance to network latency timing assertions
+  - Skipped memory-intensive worker-handler tests in CI environment
+  - Configured NODE_OPTIONS for per-test-suite memory management
+- **CI Releases**: Added contents write permission for automated releases
+
+### 📚 Documentation Updates
+- **Task Dependencies**: Complete API documentation in docs/task-dependencies.md
+- **Architecture**: Added ARCHITECTURE_QUICK_REFERENCE.md and TASK_ARCHITECTURE.md
+- **Quality Audit**: COMPLEXITY_AUDIT_REPORT.md (76.2/100 maintainability score)
+- **Test Stability**: Documented fixes in docs/test-stability-fixes.md
+- **ROADMAP.md**: Updated with v0.3.0 status and v0.3.1/v0.4.0 plans
+- **README.md**: Added dependency examples and usage patterns
+
+### 🧪 Test Coverage
+- **74 new tests** for task dependency system:
+  - 23 tests for DependencyGraph (DAG operations)
+  - 33 tests for DependencyRepository (persistence)
+  - 16 tests for DependencyHandler (event-driven integration)
+  - 7 integration tests for end-to-end dependency workflows
+  - TOCTOU race condition protection verification
+- **All 638 tests passing** (integration tests included)
+
+### 📦 Infrastructure
+- Added .npmignore for proper npm package publishing
+- Added tsconfig.dev.json for development-specific builds
+- Enhanced vitest.config.ts for better test isolation
+- Added cleanup script for orphaned test processes
+- Added TypeScript build artifacts to .gitignore
+
+### ⚠️ Known Limitations
+- Two architectural improvements deferred to v0.3.1:
+  - Issue #20: EventBus type safety improvements
+  - Issue #21: Dependency graph optimization for large-scale workflows
+
+### 🔗 References
+- PR #9: Task Dependencies v0.3.0 - Post-Review Fixes
+- PR #8: Complete event-driven architecture with WorktreeHandler
+- Comprehensive Review: .docs/reviews/feat-task-dependencies_2025-10-17_0933.md
+
 ## [0.2.1] - 2025-09-05
 
 ### 🚀 Major Features
