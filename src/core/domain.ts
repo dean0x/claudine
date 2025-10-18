@@ -159,44 +159,47 @@ export const updateTask = (task: Task, update: TaskUpdate): Task => ({
 /**
  * Create a new task
  */
-export const createTask = (request: DelegateRequest): Task => Object.freeze({
-  id: TaskId(`task-${crypto.randomUUID()}`),
-  prompt: request.prompt,
-  status: TaskStatus.QUEUED,
-  priority: request.priority || Priority.P2,
-  workingDirectory: request.workingDirectory,
+export const createTask = (request: DelegateRequest): Task => {
+  const now = Date.now(); // Capture once to ensure createdAt === updatedAt
+  return Object.freeze({
+    id: TaskId(`task-${crypto.randomUUID()}`),
+    prompt: request.prompt,
+    status: TaskStatus.QUEUED,
+    priority: request.priority || Priority.P2,
+    workingDirectory: request.workingDirectory,
 
-  // Worktree configuration (EXPERIMENTAL - default false, applied in TaskManager from config)
-  useWorktree: request.useWorktree ?? false, // Default false (TaskManager applies config default)
-  worktreeCleanup: request.worktreeCleanup !== undefined ? request.worktreeCleanup : 'auto',
+    // Worktree configuration (EXPERIMENTAL - default false, applied in TaskManager from config)
+    useWorktree: request.useWorktree ?? false, // Default false (TaskManager applies config default)
+    worktreeCleanup: request.worktreeCleanup !== undefined ? request.worktreeCleanup : 'auto',
 
-  // Merge strategy configuration
-  mergeStrategy: request.useWorktree ? (request.mergeStrategy || 'pr') : undefined,
-  branchName: request.branchName,
-  baseBranch: request.baseBranch,
-  autoCommit: request.autoCommit !== false, // Default to true
-  pushToRemote: request.pushToRemote !== false, // Default to true
-  prTitle: request.prTitle,
-  prBody: request.prBody,
+    // Merge strategy configuration
+    mergeStrategy: request.useWorktree ? (request.mergeStrategy || 'pr') : undefined,
+    branchName: request.branchName,
+    baseBranch: request.baseBranch,
+    autoCommit: request.autoCommit !== false, // Default to true
+    pushToRemote: request.pushToRemote !== false, // Default to true
+    prTitle: request.prTitle,
+    prBody: request.prBody,
 
-  // Retry tracking
-  parentTaskId: request.parentTaskId,
-  retryCount: request.retryCount,
-  retryOf: request.retryOf,
+    // Retry tracking
+    parentTaskId: request.parentTaskId,
+    retryCount: request.retryCount,
+    retryOf: request.retryOf,
 
-  // Dependency tracking (Phase 4: Task Dependencies)
-  // NOTE: dependsOn from request is the initial dependency list
-  // Actual validation and DAG cycle detection happens in DependencyHandler
-  dependsOn: request.dependsOn,
-  dependents: undefined, // Populated by DependencyRepository queries
-  dependencyState: request.dependsOn && request.dependsOn.length > 0 ? 'blocked' : 'none',
+    // Dependency tracking (Phase 4: Task Dependencies)
+    // NOTE: dependsOn from request is the initial dependency list
+    // Actual validation and DAG cycle detection happens in DependencyHandler
+    dependsOn: request.dependsOn,
+    dependents: undefined, // Populated by DependencyRepository queries
+    dependencyState: request.dependsOn && request.dependsOn.length > 0 ? 'blocked' : 'none',
 
-  // Execution configuration
-  timeout: request.timeout,
-  maxOutputBuffer: request.maxOutputBuffer,
-  createdAt: Date.now(),
-  updatedAt: Date.now(),
-});
+    // Execution configuration
+    timeout: request.timeout,
+    maxOutputBuffer: request.maxOutputBuffer,
+    createdAt: now,
+    updatedAt: now,
+  });
+};
 
 /**
  * Check if task is terminal state
