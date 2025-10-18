@@ -312,11 +312,17 @@ export class QueueHandler extends BaseEventHandler {
       // Fetch latest task state to prevent race conditions
       // Event data may be stale if task was cancelled/failed between emission and handling
       const taskResult = await this.taskRepo.findById(event.taskId);
-      if (!taskResult.ok || !taskResult.value) {
+      if (!taskResult.ok) {
         this.logger.error('Failed to fetch unblocked task for re-validation', taskResult.error, {
           taskId: event.taskId
         });
-        return err(taskResult.error || new Error('Task not found'));
+        return err(taskResult.error);
+      }
+      if (!taskResult.value) {
+        this.logger.error('Task not found after unblocking', new Error('Task not found'), {
+          taskId: event.taskId
+        });
+        return err(new Error('Task not found'));
       }
       const task = taskResult.value;
 
