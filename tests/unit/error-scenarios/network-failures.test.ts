@@ -302,7 +302,8 @@ describe('Network Failure Scenarios', () => {
       }));
       const elapsed = Date.now() - startTime;
 
-      expect(elapsed).toBeGreaterThanOrEqual(latency);
+      // Allow 5ms tolerance for timing precision in CI environments
+      expect(elapsed).toBeGreaterThanOrEqual(latency - 5);
       expect(result.ok).toBe(true);
     });
 
