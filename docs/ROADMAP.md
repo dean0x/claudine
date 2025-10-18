@@ -1,17 +1,16 @@
 # Claudine Development Roadmap
 
-## Current Status: v0.2.1 ✅
+## Current Status: v0.3.0 ✅
 
-**Released**: September 2025  
-**Status**: Production Ready  
+**Status**: Production Ready
 
-Claudine v0.2.1 is a fully-featured MCP server with autoscaling, persistence, and advanced task management. See [FEATURES.md](./FEATURES.md) for complete list of current capabilities.
+Claudine v0.3.0 is a fully-featured MCP server with autoscaling, persistence, task dependencies, and advanced task management. See [FEATURES.md](./FEATURES.md) for complete list of current capabilities.
 
 ---
 
 ## Future Development
 
-### v0.2.5 - Enhanced Worktree Safety Features (Q4 2025)
+### v0.2.5 - Enhanced Worktree Safety Features
 **Goal**: Add safety mechanisms for worktree operations  
 **Priority**: Medium - Stability and data protection
 
@@ -35,7 +34,7 @@ interface SafetyOptions {
 
 ---
 
-### v0.3.0 - Task Dependencies (October 2025) ✅
+### v0.3.0 - Task Dependencies ✅
 **Goal**: Enable complex workflows with task chaining
 **Priority**: High - Most requested feature
 **Status**: **COMPLETED** - Merged to main
@@ -97,7 +96,7 @@ interface Task {
 
 ---
 
-### v0.3.1 - Task Dependencies: Performance & Quality (Q4 2025)
+### v0.3.1 - Task Dependencies: Performance & Quality
 **Goal**: Optimize task dependency system based on production feedback
 **Priority**: High - Performance and maintainability improvements
 **Status**: Planned post-v0.3.0
@@ -201,7 +200,7 @@ interface Task {
 
 ---
 
-### v0.4.0 - Task Resumption & Scheduling (Q1 2026)
+### v0.4.0 - Task Resumption & Scheduling
 **Goal**: Production-ready workflow automation with recovery and scheduling
 **Priority**: High - Critical for production reliability
 
@@ -301,7 +300,7 @@ await taskManager.scheduleTask({
 
 ---
 
-### v0.5.0 - Distributed Processing (Q2 2026)
+### v0.5.0 - Distributed Processing
 **Goal**: Scale across multiple servers for enterprise deployments
 **Priority**: Medium - Enterprise use cases
 
@@ -321,7 +320,7 @@ await taskManager.scheduleTask({
 
 ---
 
-### v0.6.0 - Advanced Orchestration & Templates (Q3 2026)
+### v0.6.0 - Advanced Orchestration & Templates
 **Goal**: Sophisticated workflow management with reusable components
 **Priority**: Medium - Power user features
 
@@ -362,7 +361,7 @@ tasks:
 
 ---
 
-### v0.7.0 - Monitoring & REST API (Q4 2026)
+### v0.7.0 - Monitoring & REST API
 **Goal**: Production observability, external integrations, and multi-user support
 **Priority**: Medium - Production readiness
 
@@ -403,17 +402,17 @@ tasks:
 
 ## Version Timeline
 
-| Version | Target Date | Status | Focus |
-|---------|-------------|--------|--------|
-| v0.2.0 | Sep 2025 | ✅ **Released** | Autoscaling + Persistence |
-| v0.2.1 | Sep 2025 | ✅ **Released** | Event-driven + Git Worktree + GitHub PR |
-| v0.2.5 | Dec 2025 | 🚧 **Planning** | Worktree Safety Features |
-| v0.3.0 | Oct 2025 | ✅ **Released** | Task Dependencies (DAG validation) |
-| v0.3.1 | Nov 2025 | 📋 **Planned** | Task Dependencies Optimizations |
-| v0.4.0 | Q1 2026 | 💭 **Research** | Task Resumption + Scheduling |
-| v0.5.0 | Q2 2026 | 💭 **Research** | Distributed Processing |
-| v0.6.0 | Q3 2026 | 💭 **Research** | Advanced Orchestration + Templates |
-| v0.7.0 | Q4 2026 | 💭 **Research** | Monitoring + REST API + Multi-User |
+| Version | Status | Focus |
+|---------|--------|--------|
+| v0.2.0 | ✅ **Released** | Autoscaling + Persistence |
+| v0.2.1 | ✅ **Released** | Event-driven + Git Worktree + GitHub PR |
+| v0.2.5 | 🚧 **Planning** | Worktree Safety Features |
+| v0.3.0 | ✅ **Released** | Task Dependencies (DAG validation) |
+| v0.3.1 | 📋 **Planned** | Task Dependencies Optimizations |
+| v0.4.0 | 💭 **Research** | Task Resumption + Scheduling |
+| v0.5.0 | 💭 **Research** | Distributed Processing |
+| v0.6.0 | 💭 **Research** | Advanced Orchestration + Templates |
+| v0.7.0 | 💭 **Research** | Monitoring + REST API + Multi-User |
 
 ---
 
@@ -483,7 +482,7 @@ tasks:
 
 ## Recent Updates
 
-**October 17, 2025**:
+**Latest Changes**:
 - ✅ v0.3.0 Task Dependencies **RELEASED** and merged to main
 - 📋 Added v0.3.1 Task Dependencies Optimizations (10 GitHub issues created: #10-#19)
 - 🎯 Updated success criteria - all v0.3.0 criteria met
@@ -492,8 +491,5 @@ tasks:
 - ➕ Added **Task Resumption** (session continuation) and **Task Scheduling** (cron) to v0.4.0
 - 🔀 Reorganized roadmap: v0.4.0 Resumption+Scheduling, v0.5.0 Distributed, v0.6.0 Orchestration, v0.7.0 Monitoring
 - 📝 Added detailed implementation plans for Task Resumption (with research gate) and Task Scheduling
-
-**Last Updated**: October 17, 2025
-**Next Review**: December 2025
 
 For questions about the roadmap, please open a [GitHub Discussion](https://github.com/dean0x/claudine/discussions).
