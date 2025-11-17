@@ -350,4 +350,77 @@ export class DependencyGraph {
   hasTask(taskId: TaskId): boolean {
     return this.graph.has(taskId as string);
   }
+
+  /**
+   * Calculate the maximum dependency chain depth from a given task
+   *
+   * The depth is the longest path from the task through its transitive dependencies.
+   * Used to prevent stack overflow from excessively deep dependency chains.
+   *
+   * Algorithm: DFS with memoization to compute longest path to leaf nodes
+   *
+   * @param taskId - The task to calculate max depth for
+   * @returns Result containing max depth, or error if calculation fails
+   *
+   * @example
+   * ```typescript
+   * // A -> B -> C -> D has depth 3
+   * // A -> [B, C] where B -> D has depth 2
+   * const result = graph.getMaxDepth(taskA.id);
+   * if (result.ok && result.value > 100) {
+   *   // Chain too deep
+   * }
+   * ```
+   */
+  getMaxDepth(taskId: TaskId): Result<number> {
+    const taskIdStr = taskId as string;
+    const memo = new Map<string, number>();
+    const visited = new Set<string>();
+
+    /**
+     * Recursive DFS to calculate max depth with memoization
+     * Prevents exponential time complexity on diamond-shaped graphs
+     */
+    const calculateDepth = (node: string, currentPath: Set<string>): number => {
+      // Check for cycle (shouldn't happen in valid DAG, but defensive)
+      if (currentPath.has(node)) {
+        return 0;
+      }
+
+      // Return memoized result if available
+      if (memo.has(node)) {
+        return memo.get(node)!;
+      }
+
+      const deps = this.graph.get(node);
+
+      // Leaf node has depth 0
+      if (!deps || deps.size === 0) {
+        memo.set(node, 0);
+        return 0;
+      }
+
+      // Track current path for cycle detection
+      currentPath.add(node);
+
+      // Calculate max depth of all dependencies
+      let maxDepth = 0;
+      for (const dep of deps) {
+        const depth = calculateDepth(dep, currentPath);
+        maxDepth = Math.max(maxDepth, depth);
+      }
+
+      // Remove from current path (backtrack)
+      currentPath.delete(node);
+
+      // Depth is 1 + max depth of dependencies
+      const nodeDepth = maxDepth + 1;
+      memo.set(node, nodeDepth);
+
+      return nodeDepth;
+    };
+
+    const depth = calculateDepth(taskIdStr, new Set());
+    return ok(depth);
+  }
 }

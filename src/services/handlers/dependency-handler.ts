@@ -92,8 +92,9 @@ export class DependencyHandler extends BaseEventHandler {
   }
 
   /**
-   * Handle new task delegation - add dependencies with cycle detection
+   * Handle new task delegation - add dependencies atomically with cycle detection
    * ARCHITECTURE: DAG validation BEFORE persisting to prevent cycles
+   * ATOMICITY: All dependencies succeed or all fail together (no partial state)
    */
   private async handleTaskDelegated(event: TaskDelegatedEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
@@ -111,73 +112,44 @@ export class DependencyHandler extends BaseEventHandler {
         dependencies: task.dependsOn
       });
 
-      // Get dependency graph (cached or fresh)
-      const graphResult = await this.getGraph();
-      if (!graphResult.ok) {
-        return graphResult;
-      }
-      const graph = graphResult.value;
+      // Add all dependencies atomically (all succeed or all fail)
+      // Repository handles cycle detection, validation, and atomicity
+      const addResult = await this.dependencyRepo.addDependencies(task.id, task.dependsOn);
 
-      // Validate each proposed dependency for cycles
-      for (const dependsOnTaskId of task.dependsOn) {
-        // Check if dependency would create cycle
-        const cycleCheck = graph.wouldCreateCycle(task.id, dependsOnTaskId);
-        if (!cycleCheck.ok) {
-          return cycleCheck;
-        }
-
-        if (cycleCheck.value) {
-          const error = new ClaudineError(
-            ErrorCode.INVALID_OPERATION,
-            `Cannot add dependency: would create cycle (${task.id} -> ${dependsOnTaskId})`
-          );
-
-          this.logger.error('Cycle detected in dependency graph', error, {
-            taskId: task.id,
-            dependsOnTaskId
-          });
-
-          // Emit failure event
-          if (this.eventBus) {
-            await this.eventBus.emit('TaskDependencyFailed', {
-              taskId: task.id,
-              failedDependencyId: dependsOnTaskId,
-              error
-            });
-          }
-
-          return err(error);
-        }
-
-        // No cycle - safe to add dependency
-        const addResult = await this.dependencyRepo.addDependency(task.id, dependsOnTaskId);
-        if (!addResult.ok) {
-          this.logger.error('Failed to add dependency', addResult.error, {
-            taskId: task.id,
-            dependsOnTaskId
-          });
-          return addResult;
-        }
-
-        this.logger.debug('Dependency added', {
+      if (!addResult.ok) {
+        this.logger.error('Failed to add dependencies', addResult.error, {
           taskId: task.id,
-          dependsOnTaskId,
-          dependencyId: addResult.value.id
+          dependencies: task.dependsOn
         });
 
-        // Emit success event
+        // Emit failure event for the batch
         if (this.eventBus) {
-          await this.eventBus.emit('TaskDependencyAdded', {
+          await this.eventBus.emit('TaskDependencyFailed', {
             taskId: task.id,
-            dependsOnTaskId
+            failedDependencyId: task.dependsOn[0], // First dependency for compatibility
+            error: addResult.error
+          });
+        }
+
+        return addResult;
+      }
+
+      // All dependencies added successfully
+      this.logger.info('All dependencies added atomically', {
+        taskId: task.id,
+        count: addResult.value.length,
+        dependencyIds: addResult.value.map(d => d.id)
+      });
+
+      // Emit success event for each dependency (for compatibility with existing listeners)
+      if (this.eventBus) {
+        for (const dependency of addResult.value) {
+          await this.eventBus.emit('TaskDependencyAdded', {
+            taskId: dependency.taskId,
+            dependsOnTaskId: dependency.dependsOnTaskId
           });
         }
       }
-
-      this.logger.info('All dependencies added successfully', {
-        taskId: task.id,
-        count: task.dependsOn.length
-      });
 
       return ok(undefined);
     });

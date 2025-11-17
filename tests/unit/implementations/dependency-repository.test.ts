@@ -158,6 +158,361 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
 
       expect(result3.error.message).toContain('cycle');
     });
+
+    it('should reject adding dependency when task already has 100 dependencies', async () => {
+      const taskZ = 'task-z' as TaskId;
+
+      // Create task and 100 dependencies
+      createTask(taskZ);
+      for (let i = 0; i < 100; i++) {
+        const depId = `task-${i}` as TaskId;
+        createTask(depId);
+      }
+
+      // Add 100 dependencies (at the limit)
+      for (let i = 0; i < 100; i++) {
+        const result = await repo.addDependency(taskZ, `task-${i}` as TaskId);
+        expect(result.ok).toBe(true);
+      }
+
+      // Try to add 101st dependency (should fail)
+      const task101 = 'task-101' as TaskId;
+      createTask(task101);
+
+      const result = await repo.addDependency(taskZ, task101);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('more than 100');
+      expect(result.error.message).toContain('currently has 100');
+
+      // Verify only 100 dependencies exist
+      const depsResult = await repo.getDependencies(taskZ);
+      expect(depsResult.ok).toBe(true);
+      if (!depsResult.ok) return;
+      expect(depsResult.value).toHaveLength(100);
+    });
+
+    it('should reject adding dependency when chain depth exceeds 100', async () => {
+      // Create a chain of 100 tasks: task-0 -> task-1 -> ... -> task-99 -> task-100
+      for (let i = 0; i <= 100; i++) {
+        createTask(`task-${i}` as TaskId);
+      }
+
+      // Build chain: task-0 -> task-1 -> task-2 -> ... -> task-100
+      for (let i = 0; i < 100; i++) {
+        const result = await repo.addDependency(`task-${i}` as TaskId, `task-${i + 1}` as TaskId);
+        expect(result.ok).toBe(true);
+      }
+
+      // Now task-0 has depth 100 (task-0 -> task-1 -> ... -> task-100)
+      // Try to add new-task -> task-0, which would create depth 101
+      const newTask = 'new-task' as TaskId;
+      createTask(newTask);
+
+      const result = await repo.addDependency(newTask, 'task-0' as TaskId);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('chain depth');
+      expect(result.error.message).toContain('maximum 100');
+    });
+  });
+
+  describe('addDependencies() - Atomic Batch Operations', () => {
+    it('should successfully add multiple dependencies atomically', async () => {
+      const taskC = 'task-c' as TaskId;
+      const taskA = 'task-a' as TaskId;
+      const taskB = 'task-b' as TaskId;
+
+      // Create tasks first
+      createTask(taskC);
+      createTask(taskA);
+      createTask(taskB);
+
+      // Add multiple dependencies in one atomic operation
+      const result = await repo.addDependencies(taskC, [taskA, taskB]);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      expect(result.value).toHaveLength(2);
+      expect(result.value[0].taskId).toBe(taskC);
+      expect(result.value[1].taskId).toBe(taskC);
+
+      const depIds = result.value.map(d => d.dependsOnTaskId);
+      expect(depIds).toContain(taskA);
+      expect(depIds).toContain(taskB);
+
+      // Verify all dependencies were persisted
+      const depsResult = await repo.getDependencies(taskC);
+      expect(depsResult.ok).toBe(true);
+      if (!depsResult.ok) return;
+      expect(depsResult.value).toHaveLength(2);
+    });
+
+    it('should rollback all dependencies on cycle detection failure', async () => {
+      const taskA = 'task-a' as TaskId;
+      const taskB = 'task-b' as TaskId;
+      const taskC = 'task-c' as TaskId;
+
+      // Create tasks first
+      createTask(taskA);
+      createTask(taskB);
+      createTask(taskC);
+
+      // Set up: A -> B (existing dependency)
+      await repo.addDependency(taskA, taskB);
+
+      // Try to add B -> [C, A] atomically
+      // This should fail because B -> A would create cycle (A -> B -> A)
+      const result = await repo.addDependencies(taskB, [taskC, taskA]);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('cycle');
+
+      // CRITICAL: Verify B -> C was NOT persisted (rollback worked)
+      const bDepsResult = await repo.getDependencies(taskB);
+      expect(bDepsResult.ok).toBe(true);
+      if (!bDepsResult.ok) return;
+      expect(bDepsResult.value).toHaveLength(0);
+
+      // Verify no partial state in database
+      const allDeps = await repo.findAll();
+      expect(allDeps.ok).toBe(true);
+      if (!allDeps.ok) return;
+      // Should only have the original A -> B dependency
+      expect(allDeps.value).toHaveLength(1);
+      expect(allDeps.value[0].taskId).toBe(taskA);
+      expect(allDeps.value[0].dependsOnTaskId).toBe(taskB);
+    });
+
+    it('should rollback all dependencies on duplicate detection', async () => {
+      const taskC = 'task-c' as TaskId;
+      const taskA = 'task-a' as TaskId;
+      const taskB = 'task-b' as TaskId;
+
+      // Create tasks first
+      createTask(taskC);
+      createTask(taskA);
+      createTask(taskB);
+
+      // Set up: C already depends on A
+      await repo.addDependency(taskC, taskA);
+
+      // Try to add C -> [A, B] atomically
+      // This should fail because C -> A already exists
+      const result = await repo.addDependencies(taskC, [taskA, taskB]);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('already exists');
+
+      // CRITICAL: Verify C -> B was NOT persisted (rollback worked)
+      const cDepsResult = await repo.getDependencies(taskC);
+      expect(cDepsResult.ok).toBe(true);
+      if (!cDepsResult.ok) return;
+      // Should only have the original C -> A dependency
+      expect(cDepsResult.value).toHaveLength(1);
+      expect(cDepsResult.value[0].dependsOnTaskId).toBe(taskA);
+    });
+
+    it('should rollback all dependencies on task not found error', async () => {
+      const taskC = 'task-c' as TaskId;
+      const taskA = 'task-a' as TaskId;
+      const nonExistent = 'non-existent' as TaskId;
+
+      // Create only some tasks
+      createTask(taskC);
+      createTask(taskA);
+      // nonExistent task is NOT created
+
+      // Try to add C -> [A, nonExistent] atomically
+      const result = await repo.addDependencies(taskC, [taskA, nonExistent]);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('not found');
+
+      // CRITICAL: Verify C -> A was NOT persisted (rollback worked)
+      const cDepsResult = await repo.getDependencies(taskC);
+      expect(cDepsResult.ok).toBe(true);
+      if (!cDepsResult.ok) return;
+      expect(cDepsResult.value).toHaveLength(0);
+
+      // Verify no dependencies in database
+      const allDeps = await repo.findAll();
+      expect(allDeps.ok).toBe(true);
+      if (!allDeps.ok) return;
+      expect(allDeps.value).toHaveLength(0);
+    });
+
+    it('should reject empty dependency arrays', async () => {
+      const taskA = 'task-a' as TaskId;
+
+      // Create task first
+      createTask(taskA);
+
+      // Try to add empty array
+      const result = await repo.addDependencies(taskA, []);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('empty array');
+    });
+
+    it('should handle large batch additions atomically', async () => {
+      const taskZ = 'task-z' as TaskId;
+      const dependencyCount = 50;
+
+      // Create all tasks first
+      createTask(taskZ);
+      const deps: TaskId[] = [];
+      for (let i = 0; i < dependencyCount; i++) {
+        const depId = `task-${i}` as TaskId;
+        createTask(depId);
+        deps.push(depId);
+      }
+
+      // Add all 50 dependencies in one atomic operation
+      const result = await repo.addDependencies(taskZ, deps);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toHaveLength(dependencyCount);
+
+      // Verify all were persisted
+      const depsResult = await repo.getDependencies(taskZ);
+      expect(depsResult.ok).toBe(true);
+      if (!depsResult.ok) return;
+      expect(depsResult.value).toHaveLength(dependencyCount);
+    });
+
+    it('should rollback large batch on single failure', async () => {
+      const taskZ = 'task-z' as TaskId;
+      const taskA = 'task-a' as TaskId;
+      const dependencyCount = 49;
+
+      // Create all tasks first
+      createTask(taskZ);
+      createTask(taskA);
+      const deps: TaskId[] = [taskA];
+      for (let i = 0; i < dependencyCount; i++) {
+        const depId = `task-${i}` as TaskId;
+        createTask(depId);
+        deps.push(depId);
+      }
+
+      // Pre-create one dependency to cause duplicate
+      await repo.addDependency(taskZ, taskA);
+
+      // Try to add 50 dependencies (including the duplicate)
+      const result = await repo.addDependencies(taskZ, deps);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('already exists');
+
+      // CRITICAL: Verify only the original dependency exists (all 49 others rolled back)
+      const depsResult = await repo.getDependencies(taskZ);
+      expect(depsResult.ok).toBe(true);
+      if (!depsResult.ok) return;
+      expect(depsResult.value).toHaveLength(1);
+      expect(depsResult.value[0].dependsOnTaskId).toBe(taskA);
+    });
+
+    it('should invalidate cache after successful batch addition', async () => {
+      const taskA = 'task-a' as TaskId;
+      const taskB = 'task-b' as TaskId;
+      const taskC = 'task-c' as TaskId;
+      const taskD = 'task-d' as TaskId;
+
+      // Create all tasks first
+      createTask(taskA);
+      createTask(taskB);
+      createTask(taskC);
+      createTask(taskD);
+
+      // Add A -> [B, C] atomically (builds and caches graph)
+      const result1 = await repo.addDependencies(taskA, [taskB, taskC]);
+      expect(result1.ok).toBe(true);
+
+      // Try to add D -> A (should detect transitive cycle if cache is invalidated)
+      // This tests that cache invalidation works correctly
+      const result2 = await repo.addDependency(taskB, taskD);
+      expect(result2.ok).toBe(true);
+
+      // Now try to create cycle: D -> A (would create A -> B -> D -> A)
+      const result3 = await repo.addDependency(taskD, taskA);
+      expect(result3.ok).toBe(false);
+      if (result3.ok) return;
+      expect(result3.error.message).toContain('cycle');
+    });
+
+    it('should reject adding more than 100 dependencies in one batch', async () => {
+      const taskZ = 'task-z' as TaskId;
+
+      // Create task and 101 dependencies
+      createTask(taskZ);
+      const deps: TaskId[] = [];
+      for (let i = 0; i < 101; i++) {
+        const depId = `task-${i}` as TaskId;
+        createTask(depId);
+        deps.push(depId);
+      }
+
+      // Try to add 101 dependencies (exceeds limit of 100)
+      const result = await repo.addDependencies(taskZ, deps);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain('more than 100');
+
+      // Verify nothing was persisted
+      const depsResult = await repo.getDependencies(taskZ);
+      expect(depsResult.ok).toBe(true);
+      if (!depsResult.ok) return;
+      expect(depsResult.value).toHaveLength(0);
+    });
+
+    it('should reject adding dependencies that would exceed 100 total', async () => {
+      const taskZ = 'task-z' as TaskId;
+
+      // Create task and dependencies
+      createTask(taskZ);
+      const initialDeps: TaskId[] = [];
+      for (let i = 0; i < 90; i++) {
+        const depId = `task-${i}` as TaskId;
+        createTask(depId);
+        initialDeps.push(depId);
+      }
+
+      // Add 90 dependencies (within limit)
+      const result1 = await repo.addDependencies(taskZ, initialDeps);
+      expect(result1.ok).toBe(true);
+
+      // Try to add 20 more dependencies (would exceed 100 total)
+      const moreDeps: TaskId[] = [];
+      for (let i = 90; i < 110; i++) {
+        const depId = `task-${i}` as TaskId;
+        createTask(depId);
+        moreDeps.push(depId);
+      }
+
+      const result2 = await repo.addDependencies(taskZ, moreDeps);
+
+      expect(result2.ok).toBe(false);
+      if (result2.ok) return;
+      expect(result2.error.message).toContain('exceed maximum of 100');
+      expect(result2.error.message).toContain('currently has 90');
+
+      // Verify only original 90 dependencies exist
+      const depsResult = await repo.getDependencies(taskZ);
+      expect(depsResult.ok).toBe(true);
+      if (!depsResult.ok) return;
+      expect(depsResult.value).toHaveLength(90);
+    });
   });
 
   describe('getDependencies()', () => {

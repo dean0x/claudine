@@ -469,4 +469,162 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
       expect(result.value).toBe(true); // Cycle detected - prevented!
     });
   });
+
+  describe('Chain Depth Calculation', () => {
+    it('should return depth 0 for task with no dependencies', () => {
+      const graph = new DependencyGraph();
+
+      const result = graph.getMaxDepth(TaskId('task-A'));
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBe(0);
+    });
+
+    it('should return depth 1 for task with single dependency', () => {
+      const dependencies: TaskDependency[] = [
+        {
+          id: 1,
+          taskId: TaskId('task-A'),
+          dependsOnTaskId: TaskId('task-B'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending'
+        }
+      ];
+
+      const graph = new DependencyGraph(dependencies);
+
+      const result = graph.getMaxDepth(TaskId('task-A'));
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBe(1); // A -> B (depth 1)
+    });
+
+    it('should return correct depth for linear chain', () => {
+      // A -> B -> C -> D (depth 3)
+      const dependencies: TaskDependency[] = [
+        { id: 1, taskId: TaskId('A'), dependsOnTaskId: TaskId('B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+        { id: 2, taskId: TaskId('B'), dependsOnTaskId: TaskId('C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+        { id: 3, taskId: TaskId('C'), dependsOnTaskId: TaskId('D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+      ];
+
+      const graph = new DependencyGraph(dependencies);
+
+      const resultA = graph.getMaxDepth(TaskId('A'));
+      const resultB = graph.getMaxDepth(TaskId('B'));
+      const resultC = graph.getMaxDepth(TaskId('C'));
+      const resultD = graph.getMaxDepth(TaskId('D'));
+
+      expect(resultA.ok).toBe(true);
+      expect(resultB.ok).toBe(true);
+      expect(resultC.ok).toBe(true);
+      expect(resultD.ok).toBe(true);
+
+      if (!resultA.ok || !resultB.ok || !resultC.ok || !resultD.ok) return;
+
+      expect(resultA.value).toBe(3); // A -> B -> C -> D
+      expect(resultB.value).toBe(2); // B -> C -> D
+      expect(resultC.value).toBe(1); // C -> D
+      expect(resultD.value).toBe(0); // D (no dependencies)
+    });
+
+    it('should return maximum depth for task with multiple dependencies (diamond shape)', () => {
+      // A -> [B, C]
+      // B -> D
+      // C -> D
+      // Max depth for A is 2 (A -> B -> D or A -> C -> D)
+      const dependencies: TaskDependency[] = [
+        { id: 1, taskId: TaskId('A'), dependsOnTaskId: TaskId('B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+        { id: 2, taskId: TaskId('A'), dependsOnTaskId: TaskId('C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+        { id: 3, taskId: TaskId('B'), dependsOnTaskId: TaskId('D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+        { id: 4, taskId: TaskId('C'), dependsOnTaskId: TaskId('D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+      ];
+
+      const graph = new DependencyGraph(dependencies);
+
+      const result = graph.getMaxDepth(TaskId('A'));
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBe(2); // Max path: A -> B -> D (or A -> C -> D)
+    });
+
+    it('should choose longest path when branches have different depths', () => {
+      // A -> [B, C]
+      // B -> D -> E -> F (depth 3 from B)
+      // C (depth 0 from C)
+      // Max depth for A is 4 (A -> B -> D -> E -> F)
+      const dependencies: TaskDependency[] = [
+        { id: 1, taskId: TaskId('A'), dependsOnTaskId: TaskId('B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+        { id: 2, taskId: TaskId('A'), dependsOnTaskId: TaskId('C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+        { id: 3, taskId: TaskId('B'), dependsOnTaskId: TaskId('D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+        { id: 4, taskId: TaskId('D'), dependsOnTaskId: TaskId('E'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+        { id: 5, taskId: TaskId('E'), dependsOnTaskId: TaskId('F'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+      ];
+
+      const graph = new DependencyGraph(dependencies);
+
+      const result = graph.getMaxDepth(TaskId('A'));
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBe(4); // Longest path: A -> B -> D -> E -> F
+    });
+
+    it('should handle deep linear chains (101 tasks)', () => {
+      // Create chain: 0 -> 1 -> 2 -> ... -> 100
+      const dependencies: TaskDependency[] = [];
+      for (let i = 0; i < 100; i++) {
+        dependencies.push({
+          id: i + 1,
+          taskId: TaskId(`task-${i}`),
+          dependsOnTaskId: TaskId(`task-${i + 1}`),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending'
+        });
+      }
+
+      const graph = new DependencyGraph(dependencies);
+
+      const result = graph.getMaxDepth(TaskId('task-0'));
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBe(100); // Depth from task-0 to task-100
+    });
+
+    it('should use memoization for complex diamond graphs (performance)', () => {
+      // Complex diamond that would be exponential without memoization
+      // A -> [B, C]
+      // B -> [D, E]
+      // C -> [D, E]
+      // D -> F
+      // E -> F
+      const dependencies: TaskDependency[] = [
+        { id: 1, taskId: TaskId('A'), dependsOnTaskId: TaskId('B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+        { id: 2, taskId: TaskId('A'), dependsOnTaskId: TaskId('C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+        { id: 3, taskId: TaskId('B'), dependsOnTaskId: TaskId('D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+        { id: 4, taskId: TaskId('B'), dependsOnTaskId: TaskId('E'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+        { id: 5, taskId: TaskId('C'), dependsOnTaskId: TaskId('D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+        { id: 6, taskId: TaskId('C'), dependsOnTaskId: TaskId('E'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+        { id: 7, taskId: TaskId('D'), dependsOnTaskId: TaskId('F'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+        { id: 8, taskId: TaskId('E'), dependsOnTaskId: TaskId('F'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+      ];
+
+      const graph = new DependencyGraph(dependencies);
+
+      // This should complete quickly due to memoization
+      const startTime = Date.now();
+      const result = graph.getMaxDepth(TaskId('A'));
+      const endTime = Date.now();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBe(3); // A -> B -> D -> F
+      expect(endTime - startTime).toBeLessThan(10); // Should be near-instant with memoization
+    });
+  });
 });

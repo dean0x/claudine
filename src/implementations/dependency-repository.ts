@@ -135,6 +135,15 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         );
       }
 
+      // SECURITY: Check current dependency count to prevent exceeding 100 total
+      const existingDepsCount = (this.getDependenciesStmt.all(taskId) as Record<string, any>[]).length;
+      if (existingDepsCount >= 100) {
+        throw new ClaudineError(
+          ErrorCode.INVALID_OPERATION,
+          `Task cannot have more than 100 dependencies (currently has ${existingDepsCount})`
+        );
+      }
+
       // Check if dependency already exists
       const existsResult = this.checkDependencyExistsStmt.get(taskId, dependsOnTaskId) as { count: number };
       if (existsResult.count > 0) {
@@ -168,6 +177,20 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         throw new ClaudineError(
           ErrorCode.INVALID_OPERATION,
           `Cannot add dependency: would create cycle (${taskId} -> ${dependsOnTaskId})`
+        );
+      }
+
+      // SECURITY: Check dependency chain depth to prevent stack overflow
+      const depthCheck = graph.getMaxDepth(dependsOnTaskId);
+      if (!depthCheck.ok) {
+        throw depthCheck.error;
+      }
+
+      const resultingDepth = 1 + depthCheck.value;
+      if (resultingDepth > 100) {
+        throw new ClaudineError(
+          ErrorCode.INVALID_OPERATION,
+          `Cannot add dependency: would create dependency chain depth of ${resultingDepth} (maximum 100). Task ${dependsOnTaskId} has chain depth ${depthCheck.value}.`
         );
       }
 
@@ -209,6 +232,182 @@ export class SQLiteDependencyRepository implements DependencyRepository {
           ErrorCode.SYSTEM_ERROR,
           `Failed to add dependency: ${error}`,
           { taskId, dependsOnTaskId }
+        );
+      }
+    );
+  }
+
+  /**
+   * Add multiple dependencies atomically in a single transaction
+   *
+   * Uses synchronous better-sqlite3 transaction for atomicity.
+   * All dependencies succeed or all fail together (no partial state).
+   * Performs cycle detection for each proposed dependency before persisting any.
+   *
+   * @param taskId - The task that depends on other tasks
+   * @param dependsOn - Array of task IDs to depend on
+   * @returns Result containing array of created TaskDependency objects or error if:
+   *   - Any dependency would create a cycle (ErrorCode.INVALID_OPERATION)
+   *   - Any dependency already exists (ErrorCode.INVALID_OPERATION)
+   *   - Any task doesn't exist (ErrorCode.TASK_NOT_FOUND)
+   *   - Empty array provided (ErrorCode.INVALID_OPERATION)
+   *
+   * @example
+   * ```typescript
+   * const result = await dependencyRepo.addDependencies(taskC.id, [taskA.id, taskB.id]);
+   * if (!result.ok) {
+   *   console.error('Failed to add dependencies:', result.error.message);
+   * } else {
+   *   console.log(`Added ${result.value.length} dependencies atomically`);
+   * }
+   * ```
+   */
+  async addDependencies(taskId: TaskId, dependsOn: readonly TaskId[]): Promise<Result<readonly TaskDependency[]>> {
+    // VALIDATION: Reject empty arrays
+    if (dependsOn.length === 0) {
+      return err(new ClaudineError(
+        ErrorCode.INVALID_OPERATION,
+        'Cannot add dependencies: empty array provided'
+      ));
+    }
+
+    // SECURITY: Prevent DoS attacks with excessive dependencies
+    // Limit to 100 dependencies per task for reasonable production workflows
+    if (dependsOn.length > 100) {
+      return err(new ClaudineError(
+        ErrorCode.INVALID_OPERATION,
+        `Cannot add ${dependsOn.length} dependencies: task cannot have more than 100 dependencies`
+      ));
+    }
+
+    // SECURITY: TOCTOU Fix - Use synchronous .transaction() for true atomicity
+    // All validation and insertion happens within single atomic transaction
+    const addDependenciesTransaction = this.db.transaction((taskId: TaskId, dependsOn: readonly TaskId[]) => {
+      // ALL operations below are synchronous - no await, no yielding to event loop
+
+      // VALIDATION: Check dependent task exists
+      const taskExistsResult = this.checkTaskExistsStmt.get(taskId) as { count: number };
+      if (taskExistsResult.count === 0) {
+        throw new ClaudineError(
+          ErrorCode.TASK_NOT_FOUND,
+          `Task not found: ${taskId}`
+        );
+      }
+
+      // SECURITY: Check current dependency count to prevent exceeding 100 total
+      const existingDepsCount = (this.getDependenciesStmt.all(taskId) as Record<string, any>[]).length;
+      if (existingDepsCount + dependsOn.length > 100) {
+        throw new ClaudineError(
+          ErrorCode.INVALID_OPERATION,
+          `Cannot add ${dependsOn.length} dependencies: task would exceed maximum of 100 dependencies (currently has ${existingDepsCount})`
+        );
+      }
+
+      // VALIDATION: Check all dependency targets exist
+      for (const depId of dependsOn) {
+        const depExistsResult = this.checkTaskExistsStmt.get(depId) as { count: number };
+        if (depExistsResult.count === 0) {
+          throw new ClaudineError(
+            ErrorCode.TASK_NOT_FOUND,
+            `Task not found: ${depId}`
+          );
+        }
+      }
+
+      // VALIDATION: Check for existing dependencies
+      for (const depId of dependsOn) {
+        const existsResult = this.checkDependencyExistsStmt.get(taskId, depId) as { count: number };
+        if (existsResult.count > 0) {
+          throw new ClaudineError(
+            ErrorCode.INVALID_OPERATION,
+            `Dependency already exists: ${taskId} depends on ${depId}`
+          );
+        }
+      }
+
+      // Build dependency graph for cycle detection
+      let graph: DependencyGraph;
+      if (this.cachedGraph) {
+        graph = this.cachedGraph;
+      } else {
+        const allDepsRows = this.findAllStmt.all() as Record<string, any>[];
+        const allDeps = allDepsRows.map(row => this.rowToDependency(row));
+        graph = new DependencyGraph(allDeps);
+        this.cachedGraph = graph;
+      }
+
+      // VALIDATION: Check each proposed dependency for cycles
+      for (const depId of dependsOn) {
+        const cycleCheck = graph.wouldCreateCycle(taskId, depId);
+
+        if (!cycleCheck.ok) {
+          throw cycleCheck.error;
+        }
+
+        if (cycleCheck.value) {
+          throw new ClaudineError(
+            ErrorCode.INVALID_OPERATION,
+            `Cannot add dependency: would create cycle (${taskId} -> ${depId})`
+          );
+        }
+
+        // SECURITY: Check dependency chain depth to prevent stack overflow
+        // Calculate depth of the dependency we're adding to
+        const depthCheck = graph.getMaxDepth(depId);
+        if (!depthCheck.ok) {
+          throw depthCheck.error;
+        }
+
+        // If adding this dependency would create chain > 100 deep, reject it
+        // Depth calculation: 1 (taskId -> depId) + depId's max depth
+        const resultingDepth = 1 + depthCheck.value;
+        if (resultingDepth > 100) {
+          throw new ClaudineError(
+            ErrorCode.INVALID_OPERATION,
+            `Cannot add dependency: would create dependency chain depth of ${resultingDepth} (maximum 100). Task ${depId} has chain depth ${depthCheck.value}.`
+          );
+        }
+      }
+
+      // All validations passed - insert all dependencies atomically
+      const createdAt = Date.now();
+      const createdDependencies: TaskDependency[] = [];
+
+      for (const depId of dependsOn) {
+        const result = this.addDependencyStmt.run(taskId, depId, createdAt);
+        const row = this.getDependencyByIdStmt.get(result.lastInsertRowid) as Record<string, any>;
+        createdDependencies.push(this.rowToDependency(row));
+      }
+
+      // PERFORMANCE: Invalidate cache after successful batch insertion
+      this.cachedGraph = null;
+
+      return createdDependencies;
+    });
+
+    // Execute the transaction and wrap result
+    return tryCatch(
+      () => addDependenciesTransaction(taskId, dependsOn),
+      (error) => {
+        // Preserve semantic ClaudineError types
+        if (error instanceof ClaudineError) {
+          return error;
+        }
+
+        // Handle UNIQUE constraint violation
+        if (error instanceof Error && error.message.includes('UNIQUE constraint')) {
+          return new ClaudineError(
+            ErrorCode.INVALID_OPERATION,
+            `One or more dependencies already exist for task: ${taskId}`,
+            { taskId, dependsOn }
+          );
+        }
+
+        // Unknown errors become SYSTEM_ERROR
+        return new ClaudineError(
+          ErrorCode.SYSTEM_ERROR,
+          `Failed to add dependencies: ${error}`,
+          { taskId, dependsOn }
         );
       }
     );
