@@ -183,7 +183,7 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.message).toContain('more than 100');
+      expect(result.error.message).toContain('exceed maximum of 100');
       expect(result.error.message).toContain('currently has 100');
 
       // Verify only 100 dependencies exist

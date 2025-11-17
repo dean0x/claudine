@@ -110,131 +110,17 @@ export class SQLiteDependencyRepository implements DependencyRepository {
    * ```
    */
   async addDependency(taskId: TaskId, dependsOnTaskId: TaskId): Promise<Result<TaskDependency>> {
-    // SECURITY: TOCTOU Fix - Use synchronous .transaction() for true atomicity
-    // Per Wikipedia TOCTOU principles: check and use must be atomic
-    // better-sqlite3's .transaction() ensures no JavaScript event loop interleaving
-    // Rationale: Async functions with BEGIN/COMMIT allow race conditions
-    const addDependencyTransaction = this.db.transaction((taskId: TaskId, dependsOnTaskId: TaskId) => {
-      // ALL operations below are synchronous - no await, no yielding to event loop
-      // This guarantees atomicity: no other transaction can interleave
+    // REFACTOR: Delegate to addDependencies() to eliminate duplicate validation logic
+    // This centralizes all validation (task existence, cycle detection, depth check, etc.)
+    // in a single location, improving maintainability and consistency
+    const batchResult = await this.addDependencies(taskId, [dependsOnTaskId]);
 
-      // VALIDATION: Check both tasks exist (foreign key validation)
-      const taskExistsResult = this.checkTaskExistsStmt.get(taskId) as { count: number };
-      if (taskExistsResult.count === 0) {
-        throw new ClaudineError(
-          ErrorCode.TASK_NOT_FOUND,
-          `Task not found: ${taskId}`
-        );
-      }
+    if (!batchResult.ok) {
+      return batchResult;
+    }
 
-      const dependsOnTaskExistsResult = this.checkTaskExistsStmt.get(dependsOnTaskId) as { count: number };
-      if (dependsOnTaskExistsResult.count === 0) {
-        throw new ClaudineError(
-          ErrorCode.TASK_NOT_FOUND,
-          `Task not found: ${dependsOnTaskId}`
-        );
-      }
-
-      // SECURITY: Check current dependency count to prevent exceeding 100 total
-      const existingDepsCount = (this.getDependenciesStmt.all(taskId) as Record<string, any>[]).length;
-      if (existingDepsCount >= 100) {
-        throw new ClaudineError(
-          ErrorCode.INVALID_OPERATION,
-          `Task cannot have more than 100 dependencies (currently has ${existingDepsCount})`
-        );
-      }
-
-      // Check if dependency already exists
-      const existsResult = this.checkDependencyExistsStmt.get(taskId, dependsOnTaskId) as { count: number };
-      if (existsResult.count > 0) {
-        throw new ClaudineError(
-          ErrorCode.INVALID_OPERATION,
-          `Dependency already exists: ${taskId} depends on ${dependsOnTaskId}`
-        );
-      }
-
-      // Perform cycle detection using cached or newly built graph
-      // PERFORMANCE: Reuse cached graph if available, avoiding N+1 query problem
-      let graph: DependencyGraph;
-      if (this.cachedGraph) {
-        graph = this.cachedGraph;
-      } else {
-        // Build graph from all dependencies (synchronous)
-        const allDepsRows = this.findAllStmt.all() as Record<string, any>[];
-        const allDeps = allDepsRows.map(row => this.rowToDependency(row));
-        graph = new DependencyGraph(allDeps);
-        this.cachedGraph = graph;
-      }
-
-      // Check for cycles (synchronous DFS algorithm)
-      const cycleCheck = graph.wouldCreateCycle(taskId, dependsOnTaskId);
-
-      if (!cycleCheck.ok) {
-        throw cycleCheck.error;
-      }
-
-      if (cycleCheck.value) {
-        throw new ClaudineError(
-          ErrorCode.INVALID_OPERATION,
-          `Cannot add dependency: would create cycle (${taskId} -> ${dependsOnTaskId})`
-        );
-      }
-
-      // SECURITY: Check dependency chain depth to prevent stack overflow
-      const depthCheck = graph.getMaxDepth(dependsOnTaskId);
-      if (!depthCheck.ok) {
-        throw depthCheck.error;
-      }
-
-      const resultingDepth = 1 + depthCheck.value;
-      if (resultingDepth > 100) {
-        throw new ClaudineError(
-          ErrorCode.INVALID_OPERATION,
-          `Cannot add dependency: would create dependency chain depth of ${resultingDepth} (maximum 100). Task ${dependsOnTaskId} has chain depth ${depthCheck.value}.`
-        );
-      }
-
-      // Insert dependency (synchronous)
-      const createdAt = Date.now();
-      const result = this.addDependencyStmt.run(taskId, dependsOnTaskId, createdAt);
-
-      // Fetch the created dependency (synchronous)
-      const row = this.getDependencyByIdStmt.get(result.lastInsertRowid) as Record<string, any>;
-
-      // PERFORMANCE: Invalidate cache after successful insertion
-      // This ensures next cycle detection builds fresh graph with new dependency
-      this.cachedGraph = null;
-
-      return this.rowToDependency(row);
-    });
-
-    // Execute the transaction and wrap result
-    return tryCatch(
-      () => addDependencyTransaction(taskId, dependsOnTaskId),
-      (error) => {
-        // Preserve semantic ClaudineError types (TASK_NOT_FOUND, INVALID_OPERATION for cycles)
-        // This allows upstream code to handle validation failures vs system errors correctly
-        if (error instanceof ClaudineError) {
-          return error;
-        }
-
-        // Handle UNIQUE constraint violation
-        if (error instanceof Error && error.message.includes('UNIQUE constraint')) {
-          return new ClaudineError(
-            ErrorCode.INVALID_OPERATION,
-            `Dependency already exists: ${taskId} depends on ${dependsOnTaskId}`,
-            { taskId, dependsOnTaskId }
-          );
-        }
-
-        // Unknown errors become SYSTEM_ERROR
-        return new ClaudineError(
-          ErrorCode.SYSTEM_ERROR,
-          `Failed to add dependency: ${error}`,
-          { taskId, dependsOnTaskId }
-        );
-      }
-    );
+    // Extract the single dependency from the batch result
+    return ok(batchResult.value[0]);
   }
 
   /**
