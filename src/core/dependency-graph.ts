@@ -360,33 +360,27 @@ export class DependencyGraph {
    * Algorithm: DFS with memoization to compute longest path to leaf nodes
    *
    * @param taskId - The task to calculate max depth for
-   * @returns Result containing max depth, or error if calculation fails
+   * @returns Max depth (number of edges in longest dependency chain)
    *
    * @example
    * ```typescript
    * // A -> B -> C -> D has depth 3
    * // A -> [B, C] where B -> D has depth 2
-   * const result = graph.getMaxDepth(taskA.id);
-   * if (result.ok && result.value > 100) {
+   * const depth = graph.getMaxDepth(taskA.id);
+   * if (depth > 100) {
    *   // Chain too deep
    * }
    * ```
    */
-  getMaxDepth(taskId: TaskId): Result<number> {
+  getMaxDepth(taskId: TaskId): number {
     const taskIdStr = taskId as string;
     const memo = new Map<string, number>();
-    const visited = new Set<string>();
 
     /**
      * Recursive DFS to calculate max depth with memoization
      * Prevents exponential time complexity on diamond-shaped graphs
      */
     const calculateDepth = (node: string, currentPath: Set<string>): number => {
-      // Check for cycle (shouldn't happen in valid DAG, but defensive)
-      if (currentPath.has(node)) {
-        return 0;
-      }
-
       // Return memoized result if available
       if (memo.has(node)) {
         return memo.get(node)!;
@@ -420,7 +414,6 @@ export class DependencyGraph {
       return nodeDepth;
     };
 
-    const depth = calculateDepth(taskIdStr, new Set());
-    return ok(depth);
+    return calculateDepth(taskIdStr, new Set());
   }
 }

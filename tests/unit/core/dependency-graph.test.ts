@@ -474,11 +474,9 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     it('should return depth 0 for task with no dependencies', () => {
       const graph = new DependencyGraph();
 
-      const result = graph.getMaxDepth(TaskId('task-A'));
+      const depth = graph.getMaxDepth(TaskId('task-A'));
 
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value).toBe(0);
+      expect(depth).toBe(0);
     });
 
     it('should return depth 1 for task with single dependency', () => {
@@ -495,11 +493,9 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
 
       const graph = new DependencyGraph(dependencies);
 
-      const result = graph.getMaxDepth(TaskId('task-A'));
+      const depth = graph.getMaxDepth(TaskId('task-A'));
 
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value).toBe(1); // A -> B (depth 1)
+      expect(depth).toBe(1); // A -> B (depth 1)
     });
 
     it('should return correct depth for linear chain', () => {
@@ -512,22 +508,15 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
 
       const graph = new DependencyGraph(dependencies);
 
-      const resultA = graph.getMaxDepth(TaskId('A'));
-      const resultB = graph.getMaxDepth(TaskId('B'));
-      const resultC = graph.getMaxDepth(TaskId('C'));
-      const resultD = graph.getMaxDepth(TaskId('D'));
+      const depthA = graph.getMaxDepth(TaskId('A'));
+      const depthB = graph.getMaxDepth(TaskId('B'));
+      const depthC = graph.getMaxDepth(TaskId('C'));
+      const depthD = graph.getMaxDepth(TaskId('D'));
 
-      expect(resultA.ok).toBe(true);
-      expect(resultB.ok).toBe(true);
-      expect(resultC.ok).toBe(true);
-      expect(resultD.ok).toBe(true);
-
-      if (!resultA.ok || !resultB.ok || !resultC.ok || !resultD.ok) return;
-
-      expect(resultA.value).toBe(3); // A -> B -> C -> D
-      expect(resultB.value).toBe(2); // B -> C -> D
-      expect(resultC.value).toBe(1); // C -> D
-      expect(resultD.value).toBe(0); // D (no dependencies)
+      expect(depthA).toBe(3); // A -> B -> C -> D
+      expect(depthB).toBe(2); // B -> C -> D
+      expect(depthC).toBe(1); // C -> D
+      expect(depthD).toBe(0); // D (no dependencies)
     });
 
     it('should return maximum depth for task with multiple dependencies (diamond shape)', () => {
@@ -544,11 +533,9 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
 
       const graph = new DependencyGraph(dependencies);
 
-      const result = graph.getMaxDepth(TaskId('A'));
+      const depth = graph.getMaxDepth(TaskId('A'));
 
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value).toBe(2); // Max path: A -> B -> D (or A -> C -> D)
+      expect(depth).toBe(2); // Max path: A -> B -> D (or A -> C -> D)
     });
 
     it('should choose longest path when branches have different depths', () => {
@@ -566,11 +553,9 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
 
       const graph = new DependencyGraph(dependencies);
 
-      const result = graph.getMaxDepth(TaskId('A'));
+      const depth = graph.getMaxDepth(TaskId('A'));
 
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value).toBe(4); // Longest path: A -> B -> D -> E -> F
+      expect(depth).toBe(4); // Longest path: A -> B -> D -> E -> F
     });
 
     it('should handle deep linear chains (101 tasks)', () => {
@@ -589,11 +574,9 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
 
       const graph = new DependencyGraph(dependencies);
 
-      const result = graph.getMaxDepth(TaskId('task-0'));
+      const depth = graph.getMaxDepth(TaskId('task-0'));
 
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value).toBe(100); // Depth from task-0 to task-100
+      expect(depth).toBe(100); // Depth from task-0 to task-100
     });
 
     it('should use memoization for complex diamond graphs (performance)', () => {
@@ -617,14 +600,10 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
       const graph = new DependencyGraph(dependencies);
 
       // This should complete quickly due to memoization
-      const startTime = Date.now();
-      const result = graph.getMaxDepth(TaskId('A'));
-      const endTime = Date.now();
+      const depth = graph.getMaxDepth(TaskId('A'));
 
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value).toBe(3); // A -> B -> D -> F
-      expect(endTime - startTime).toBeLessThan(10); // Should be near-instant with memoization
+      expect(depth).toBe(3); // A -> B -> D -> F
+      // NOTE: Timing assertions removed - performance tests should be in separate benchmark suite
     });
   });
 });

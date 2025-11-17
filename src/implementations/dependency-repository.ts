@@ -14,6 +14,10 @@ import { Database } from './database.js';
 import { DependencyGraph } from '../core/dependency-graph.js';
 
 export class SQLiteDependencyRepository implements DependencyRepository {
+  // SECURITY: Hard limits to prevent DoS attacks and stack overflow
+  private static readonly MAX_DEPENDENCIES_PER_TASK = 100;
+  private static readonly MAX_DEPENDENCY_CHAIN_DEPTH = 100;
+
   private readonly db: SQLite.Database;
   private readonly addDependencyStmt: SQLite.Statement;
   private readonly getDependenciesStmt: SQLite.Statement;
@@ -158,11 +162,11 @@ export class SQLiteDependencyRepository implements DependencyRepository {
     }
 
     // SECURITY: Prevent DoS attacks with excessive dependencies
-    // Limit to 100 dependencies per task for reasonable production workflows
-    if (dependsOn.length > 100) {
+    // Limit to MAX_DEPENDENCIES_PER_TASK for reasonable production workflows
+    if (dependsOn.length > SQLiteDependencyRepository.MAX_DEPENDENCIES_PER_TASK) {
       return err(new ClaudineError(
         ErrorCode.INVALID_OPERATION,
-        `Cannot add ${dependsOn.length} dependencies: task cannot have more than 100 dependencies`
+        `Cannot add ${dependsOn.length} dependencies: task cannot have more than ${SQLiteDependencyRepository.MAX_DEPENDENCIES_PER_TASK} dependencies`
       ));
     }
 
@@ -180,12 +184,12 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         );
       }
 
-      // SECURITY: Check current dependency count to prevent exceeding 100 total
+      // SECURITY: Check current dependency count to prevent exceeding MAX_DEPENDENCIES_PER_TASK total
       const existingDepsCount = (this.getDependenciesStmt.all(taskId) as Record<string, any>[]).length;
-      if (existingDepsCount + dependsOn.length > 100) {
+      if (existingDepsCount + dependsOn.length > SQLiteDependencyRepository.MAX_DEPENDENCIES_PER_TASK) {
         throw new ClaudineError(
           ErrorCode.INVALID_OPERATION,
-          `Cannot add ${dependsOn.length} dependencies: task would exceed maximum of 100 dependencies (currently has ${existingDepsCount})`
+          `Cannot add ${dependsOn.length} dependencies: task would exceed maximum of ${SQLiteDependencyRepository.MAX_DEPENDENCIES_PER_TASK} dependencies (currently has ${existingDepsCount})`
         );
       }
 
@@ -236,23 +240,30 @@ export class SQLiteDependencyRepository implements DependencyRepository {
             `Cannot add dependency: would create cycle (${taskId} -> ${depId})`
           );
         }
+      }
 
-        // SECURITY: Check dependency chain depth to prevent stack overflow
-        // Calculate depth of the dependency we're adding to
-        const depthCheck = graph.getMaxDepth(depId);
-        if (!depthCheck.ok) {
-          throw depthCheck.error;
-        }
+      // SECURITY: Check dependency chain depth to prevent stack overflow
+      // PERFORMANCE: Calculate max depth ONCE for all dependencies (not per-dependency in loop)
+      // This changes complexity from O(N * (V+E)) to O(V+E)
+      let maxDependencyDepth = 0;
+      let deepestTaskId: TaskId | null = null;
 
-        // If adding this dependency would create chain > 100 deep, reject it
-        // Depth calculation: 1 (taskId -> depId) + depId's max depth
-        const resultingDepth = 1 + depthCheck.value;
-        if (resultingDepth > 100) {
-          throw new ClaudineError(
-            ErrorCode.INVALID_OPERATION,
-            `Cannot add dependency: would create dependency chain depth of ${resultingDepth} (maximum 100). Task ${depId} has chain depth ${depthCheck.value}.`
-          );
+      for (const depId of dependsOn) {
+        const depIdDepth = graph.getMaxDepth(depId);
+        if (depIdDepth > maxDependencyDepth) {
+          maxDependencyDepth = depIdDepth;
+          deepestTaskId = depId;
         }
+      }
+
+      // Check if adding ANY of these dependencies would create chain > MAX_DEPENDENCY_CHAIN_DEPTH deep
+      // Depth calculation: 1 (taskId -> depId) + max depth among all depIds
+      const resultingDepth = 1 + maxDependencyDepth;
+      if (resultingDepth > SQLiteDependencyRepository.MAX_DEPENDENCY_CHAIN_DEPTH) {
+        throw new ClaudineError(
+          ErrorCode.INVALID_OPERATION,
+          `Cannot add dependencies: would create dependency chain depth of ${resultingDepth} (maximum ${SQLiteDependencyRepository.MAX_DEPENDENCY_CHAIN_DEPTH}). Task ${deepestTaskId} has chain depth ${maxDependencyDepth}.`
+        );
       }
 
       // All validations passed - insert all dependencies atomically
