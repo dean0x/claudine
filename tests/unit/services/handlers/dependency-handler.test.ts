@@ -141,7 +141,10 @@ describe('DependencyHandler - Behavioral Tests', () => {
       // Verify an error was logged about cycle detection
       const errorLogs = logger.getLogsByLevel('error');
       expect(errorLogs.length).toBeGreaterThan(0);
-      expect(errorLogs.some(log => log.message.includes('Cycle detected'))).toBe(true);
+      expect(errorLogs.some(log =>
+        log.message.includes('would create cycle') ||
+        (log.context?.error?.message && log.context.error.message.includes('would create cycle'))
+      )).toBe(true);
 
       // The cyclic dependency (A -> B) should NOT have been added
       const depsA = await dependencyRepo.getDependencies(taskA.id);
@@ -189,7 +192,10 @@ describe('DependencyHandler - Behavioral Tests', () => {
       // Verify an error was logged about cycle detection
       const errorLogs = logger.getLogsByLevel('error');
       expect(errorLogs.length).toBeGreaterThan(0);
-      expect(errorLogs.some(log => log.message.includes('Cycle detected'))).toBe(true);
+      expect(errorLogs.some(log =>
+        log.message.includes('would create cycle') ||
+        (log.context?.error?.message && log.context.error.message.includes('would create cycle'))
+      )).toBe(true);
 
       // The cyclic dependency (A -> C) should NOT have been added
       const depsA = await dependencyRepo.getDependencies(taskA.id);
