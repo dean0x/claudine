@@ -240,6 +240,47 @@ describe('DependencyHandler - Behavioral Tests', () => {
   });
 
   describe('Task completion dependency resolution', () => {
+    it('should use batch resolution method for performance', async () => {
+      // Arrange - Create tasks A (parent) and B, C (dependents)
+      const taskA = createTask({ prompt: 'task A' });
+      const taskB = createTask({ prompt: 'task B', dependsOn: [taskA.id] });
+      const taskC = createTask({ prompt: 'task C', dependsOn: [taskA.id] });
+
+      await taskRepo.save(taskA);
+      await taskRepo.save(taskB);
+      await taskRepo.save(taskC);
+
+      // Create dependencies
+      await eventBus.emit('TaskDelegated', { task: taskB });
+      await eventBus.emit('TaskDelegated', { task: taskC });
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Spy on the batch resolution method to verify it's called
+      let batchCalled = false;
+      let batchCallCount = 0;
+      const originalBatch = dependencyRepo.resolveDependenciesBatch.bind(dependencyRepo);
+      dependencyRepo.resolveDependenciesBatch = async (taskId, resolution) => {
+        batchCalled = true;
+        batchCallCount++;
+        return originalBatch(taskId, resolution);
+      };
+
+      // Act - Complete task A
+      await eventBus.emit('TaskCompleted', { taskId: taskA.id });
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Assert - Verify batch method was called exactly once
+      expect(batchCalled).toBe(true);
+      expect(batchCallCount).toBe(1);
+
+      // Verify dependencies were actually resolved
+      const depsB = await dependencyRepo.getDependencies(taskB.id);
+      const depsC = await dependencyRepo.getDependencies(taskC.id);
+
+      expect(depsB.ok && depsB.value[0].resolution).toBe('completed');
+      expect(depsC.ok && depsC.value[0].resolution).toBe('completed');
+    });
+
     it('should resolve dependency when parent task completes', async () => {
       // Arrange - Create parent and child with dependency
       const parent = createTask({ prompt: 'parent' });

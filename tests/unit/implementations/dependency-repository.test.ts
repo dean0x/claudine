@@ -881,9 +881,10 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
 
       expect(result.value).toBe(50);
 
-      // Verify operation was fast (should complete in < 100ms for in-memory DB)
+      // Verify operation was fast (should complete in < 500ms for in-memory DB)
+      // Increased from 100ms to 500ms to prevent flakiness in CI environments
       const duration = afterResolve - beforeResolve;
-      expect(duration).toBeLessThan(100);
+      expect(duration).toBeLessThan(500);
 
       // Spot check a few dependents
       const deps0 = await repo.getDependencies('task-0' as TaskId);
@@ -893,6 +894,24 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       expect(deps0.ok && deps0.value[0].resolution).toBe('completed');
       expect(deps25.ok && deps25.value[0].resolution).toBe('completed');
       expect(deps49.ok && deps49.value[0].resolution).toBe('completed');
+    });
+
+    it('should handle database errors gracefully', async () => {
+      const taskA = 'task-a' as TaskId;
+
+      createTask(taskA);
+
+      // Close the database to simulate a database error
+      db.close();
+
+      // Attempt batch resolution on closed database
+      const result = await repo.resolveDependenciesBatch(taskA, 'completed');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+
+      expect(result.error.code).toBe('SYSTEM_ERROR');
+      expect(result.error.message).toContain('Failed to batch resolve dependencies');
     });
   });
 

@@ -9,6 +9,7 @@ import { DependencyRepository, Logger, TaskRepository } from '../../core/interfa
 import { Result, ok, err } from '../../core/result.js';
 import { BaseEventHandler } from '../../core/events/handlers.js';
 import { EventBus } from '../../core/events/event-bus.js';
+import { TaskId } from '../../core/domain.js';
 import {
   TaskDelegatedEvent,
   TaskCompletedEvent,
@@ -202,14 +203,14 @@ export class DependencyHandler extends BaseEventHandler {
    * @param resolution Resolution state
    */
   private async resolveDependencies(
-    completedTaskId: string,
+    completedTaskId: TaskId,
     resolution: 'completed' | 'failed' | 'cancelled'
   ): Promise<Result<void>> {
     // PERFORMANCE: Get dependents BEFORE batch resolution to emit events and check unblocked state
     // This is necessary because we need the list of affected tasks for:
     // 1. Emitting TaskDependencyResolved events (one per dependency)
     // 2. Checking which tasks became unblocked (requires isBlocked check per task)
-    const dependentsResult = await this.dependencyRepo.getDependents(completedTaskId as any);
+    const dependentsResult = await this.dependencyRepo.getDependents(completedTaskId);
     if (!dependentsResult.ok) {
       this.logger.error('Failed to get dependents', dependentsResult.error, {
         taskId: completedTaskId
@@ -233,7 +234,7 @@ export class DependencyHandler extends BaseEventHandler {
     // PERFORMANCE: Batch resolve ALL dependencies in single UPDATE query (7-10× faster)
     // Replaces N individual UPDATE queries with one query that updates all pending dependents
     const batchResolveResult = await this.dependencyRepo.resolveDependenciesBatch(
-      completedTaskId as any,
+      completedTaskId,
       resolution
     );
 
