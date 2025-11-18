@@ -108,6 +108,13 @@ export interface DependencyRepository {
   addDependency(taskId: TaskId, dependsOnTaskId: TaskId): Promise<Result<TaskDependency>>;
 
   /**
+   * Add multiple dependencies atomically in a single transaction
+   * All dependencies succeed or all fail together
+   * @returns Error if any dependency would create a cycle or if validation fails
+   */
+  addDependencies(taskId: TaskId, dependsOn: readonly TaskId[]): Promise<Result<readonly TaskDependency[]>>;
+
+  /**
    * Get all tasks that the given task depends on (blocking tasks)
    */
   getDependencies(taskId: TaskId): Promise<Result<readonly TaskDependency[]>>;

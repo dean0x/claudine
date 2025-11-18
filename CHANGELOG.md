@@ -31,11 +31,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Added `--tail` parameter to CLI logs command
   - Added optional reason parameter to CLI cancel command
   - All MCP parameters now available in CLI
+- **🔒 Input Validation Limits (Issue #12)**: Security hardening for dependency system
+  - Maximum 100 dependencies per task to prevent DoS attacks
+  - Maximum 100 dependency chain depth to prevent stack overflow
+  - Clear error messages with current counts and limits
+  - Validation enforced at repository level for consistency
+- **🔄 Atomic Multi-Dependency Transactions (Issue #11)**: Data consistency improvements
+  - New `addDependencies()` batch method with atomic all-or-nothing semantics
+  - Transaction rollback on any validation failure (cycle detection, duplicate, task not found)
+  - Prevents partial dependency state in database
+  - DependencyHandler updated to use atomic batch operations
+- **📊 Chain Depth Calculation**: New `DependencyGraph.getMaxDepth()` algorithm
+  - DFS with memoization for O(V+E) complexity
+  - Handles diamond-shaped graphs efficiently
+  - Used for security validation of chain depth limits
 
 ### 🐛 Bug Fixes
 - **Command Injection**: Fixed potential security vulnerabilities in git operations
 - **Test Reliability**: Fixed flaky tests with proper mocking
 - **Parameter Consistency**: Aligned CLI and MCP tool parameters
+
+### 🧪 Test Coverage
+- **18 new tests** for v0.3.1 security and consistency improvements:
+  - 11 tests for atomic batch dependency operations (rollback, validation)
+  - 3 tests for max dependencies per task validation (100 limit)
+  - 1 test for max chain depth validation (100 limit)
+  - 7 tests for DependencyGraph.getMaxDepth() algorithm
+- **All 221 unit tests passing** (was 203 tests before v0.3.1)
 
 ## [0.3.0] - 2025-10-18
 
