@@ -60,6 +60,99 @@ export class DependencyGraph {
   }
 
   /**
+   * Add a dependency edge to the graph (public API for incremental updates)
+   *
+   * PERFORMANCE: Allows incremental graph updates without rebuilding from database.
+   * Call this after successfully persisting a dependency to maintain graph consistency.
+   *
+   * @param taskId - The task that depends on another task
+   * @param dependsOnTaskId - The task to depend on
+   *
+   * @example
+   * ```typescript
+   * // After persisting to database:
+   * graph.addEdge(taskB.id, taskA.id);
+   * ```
+   */
+  addEdge(taskId: TaskId, dependsOnTaskId: TaskId): void {
+    this.addEdgeInternal(taskId, dependsOnTaskId);
+  }
+
+  /**
+   * Remove a dependency edge from the graph
+   *
+   * PERFORMANCE: Allows incremental graph updates when dependencies are deleted.
+   * Call this after successfully deleting a dependency to maintain graph consistency.
+   *
+   * @param taskId - The task that depended on another task
+   * @param dependsOnTaskId - The task that was depended upon
+   *
+   * @example
+   * ```typescript
+   * // After deleting from database:
+   * graph.removeEdge(taskB.id, taskA.id);
+   * ```
+   */
+  removeEdge(taskId: TaskId, dependsOnTaskId: TaskId): void {
+    const taskIdStr = taskId as string;
+    const dependsOnStr = dependsOnTaskId as string;
+
+    // Remove from forward graph
+    const deps = this.graph.get(taskIdStr);
+    if (deps) {
+      deps.delete(dependsOnStr);
+    }
+
+    // Remove from reverse graph
+    const reverseDeps = this.reverseGraph.get(dependsOnStr);
+    if (reverseDeps) {
+      reverseDeps.delete(taskIdStr);
+    }
+  }
+
+  /**
+   * Remove all edges related to a task (when task is deleted)
+   *
+   * PERFORMANCE: Bulk removal for task deletion scenarios.
+   * Removes all edges where task is either source or target.
+   *
+   * @param taskId - The task to remove all edges for
+   *
+   * @example
+   * ```typescript
+   * // After deleting task from database:
+   * graph.removeTask(taskA.id);
+   * ```
+   */
+  removeTask(taskId: TaskId): void {
+    const taskIdStr = taskId as string;
+
+    // Remove all outgoing edges (tasks this task depends on)
+    const outgoing = this.graph.get(taskIdStr);
+    if (outgoing) {
+      for (const dep of outgoing) {
+        const reverseDeps = this.reverseGraph.get(dep);
+        if (reverseDeps) {
+          reverseDeps.delete(taskIdStr);
+        }
+      }
+      this.graph.delete(taskIdStr);
+    }
+
+    // Remove all incoming edges (tasks that depend on this task)
+    const incoming = this.reverseGraph.get(taskIdStr);
+    if (incoming) {
+      for (const dependent of incoming) {
+        const deps = this.graph.get(dependent);
+        if (deps) {
+          deps.delete(taskIdStr);
+        }
+      }
+      this.reverseGraph.delete(taskIdStr);
+    }
+  }
+
+  /**
    * Check if adding a dependency would create a cycle
    * Uses DFS to detect cycles in O(V + E) time
    *
