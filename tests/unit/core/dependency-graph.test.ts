@@ -606,4 +606,286 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
       // NOTE: Timing assertions removed - performance tests should be in separate benchmark suite
     });
   });
+
+  describe('Incremental Graph Updates', () => {
+    describe('addEdge', () => {
+      it('should add edge to empty graph', () => {
+        const graph = new DependencyGraph();
+
+        graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+
+        expect(graph.hasTask(TaskId('task-A'))).toBe(true);
+        expect(graph.hasTask(TaskId('task-B'))).toBe(true);
+        expect(graph.size()).toBe(2);
+
+        const deps = graph.getDirectDependencies(TaskId('task-A'));
+        expect(deps.ok).toBe(true);
+        expect(deps.value).toContain(TaskId('task-B'));
+      });
+
+      it('should add edge to existing graph', () => {
+        const dependencies: TaskDependency[] = [
+          { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        ];
+        const graph = new DependencyGraph(dependencies);
+
+        graph.addEdge(TaskId('task-B'), TaskId('task-C'));
+
+        expect(graph.size()).toBe(3);
+        const depsB = graph.getDirectDependencies(TaskId('task-B'));
+        expect(depsB.value).toContain(TaskId('task-C'));
+      });
+
+      it('should maintain reverse graph correctly', () => {
+        const graph = new DependencyGraph();
+
+        graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+
+        const dependents = graph.getDirectDependents(TaskId('task-B'));
+        expect(dependents.ok).toBe(true);
+        expect(dependents.value).toContain(TaskId('task-A'));
+      });
+
+      it('should allow adding multiple edges incrementally', () => {
+        const graph = new DependencyGraph();
+
+        // Build chain: A -> B -> C -> D
+        graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+        graph.addEdge(TaskId('task-B'), TaskId('task-C'));
+        graph.addEdge(TaskId('task-C'), TaskId('task-D'));
+
+        expect(graph.size()).toBe(4);
+
+        // Verify transitive dependencies
+        const allDeps = graph.getAllDependencies(TaskId('task-A'));
+        expect(allDeps.value).toHaveLength(3);
+        expect(allDeps.value).toContain(TaskId('task-B'));
+        expect(allDeps.value).toContain(TaskId('task-C'));
+        expect(allDeps.value).toContain(TaskId('task-D'));
+      });
+
+      it('should enable cycle detection after incremental adds', () => {
+        const graph = new DependencyGraph();
+
+        // Add A -> B
+        graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+
+        // Check that B -> A would create cycle
+        const cycleCheck = graph.wouldCreateCycle(TaskId('task-B'), TaskId('task-A'));
+        expect(cycleCheck.ok).toBe(true);
+        expect(cycleCheck.value).toBe(true);
+      });
+    });
+
+    describe('removeEdge', () => {
+      it('should remove edge from graph', () => {
+        const dependencies: TaskDependency[] = [
+          { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        ];
+        const graph = new DependencyGraph(dependencies);
+
+        graph.removeEdge(TaskId('task-A'), TaskId('task-B'));
+
+        const deps = graph.getDirectDependencies(TaskId('task-A'));
+        expect(deps.ok).toBe(true);
+        expect(deps.value).toHaveLength(0);
+      });
+
+      it('should remove edge from reverse graph', () => {
+        const dependencies: TaskDependency[] = [
+          { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        ];
+        const graph = new DependencyGraph(dependencies);
+
+        graph.removeEdge(TaskId('task-A'), TaskId('task-B'));
+
+        const dependents = graph.getDirectDependents(TaskId('task-B'));
+        expect(dependents.ok).toBe(true);
+        expect(dependents.value).toHaveLength(0);
+      });
+
+      it('should handle removing non-existent edge gracefully', () => {
+        const graph = new DependencyGraph();
+
+        // Should not throw
+        graph.removeEdge(TaskId('task-A'), TaskId('task-B'));
+        expect(graph.size()).toBe(0);
+      });
+
+      it('should allow adding then removing edge', () => {
+        const graph = new DependencyGraph();
+
+        graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+        expect(graph.size()).toBe(2);
+
+        graph.removeEdge(TaskId('task-A'), TaskId('task-B'));
+
+        const deps = graph.getDirectDependencies(TaskId('task-A'));
+        expect(deps.value).toHaveLength(0);
+      });
+
+      it('should break cycle when edge removed', () => {
+        const dependencies: TaskDependency[] = [
+          { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+          { id: 2, taskId: TaskId('task-B'), dependsOnTaskId: TaskId('task-A'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        ];
+        const graph = new DependencyGraph(dependencies);
+
+        // Graph has cycle
+        const cycleCheckBefore = graph.hasCycle();
+        expect(cycleCheckBefore.value).toBe(true);
+
+        // Remove one edge to break cycle
+        graph.removeEdge(TaskId('task-B'), TaskId('task-A'));
+
+        // Cycle should be gone
+        const cycleCheckAfter = graph.hasCycle();
+        expect(cycleCheckAfter.value).toBe(false);
+      });
+    });
+
+    describe('removeTask', () => {
+      it('should remove all outgoing edges', () => {
+        const dependencies: TaskDependency[] = [
+          { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+          { id: 2, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        ];
+        const graph = new DependencyGraph(dependencies);
+
+        graph.removeTask(TaskId('task-A'));
+
+        // Task A should have no dependencies
+        const deps = graph.getDirectDependencies(TaskId('task-A'));
+        expect(deps.value).toHaveLength(0);
+
+        // B and C should have no dependents
+        const dependentsB = graph.getDirectDependents(TaskId('task-B'));
+        const dependentsC = graph.getDirectDependents(TaskId('task-C'));
+        expect(dependentsB.value).toHaveLength(0);
+        expect(dependentsC.value).toHaveLength(0);
+      });
+
+      it('should remove all incoming edges', () => {
+        const dependencies: TaskDependency[] = [
+          { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+          { id: 2, taskId: TaskId('task-B'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        ];
+        const graph = new DependencyGraph(dependencies);
+
+        graph.removeTask(TaskId('task-C'));
+
+        // C should have no dependents
+        const dependents = graph.getDirectDependents(TaskId('task-C'));
+        expect(dependents.value).toHaveLength(0);
+
+        // A and B should have no dependencies on C
+        const depsA = graph.getDirectDependencies(TaskId('task-A'));
+        const depsB = graph.getDirectDependencies(TaskId('task-B'));
+        expect(depsA.value).toHaveLength(0);
+        expect(depsB.value).toHaveLength(0);
+      });
+
+      it('should handle removing task with both incoming and outgoing edges', () => {
+        // A -> B -> C
+        const dependencies: TaskDependency[] = [
+          { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+          { id: 2, taskId: TaskId('task-B'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        ];
+        const graph = new DependencyGraph(dependencies);
+
+        graph.removeTask(TaskId('task-B'));
+
+        // A should have no dependencies
+        const depsA = graph.getDirectDependencies(TaskId('task-A'));
+        expect(depsA.value).toHaveLength(0);
+
+        // C should have no dependents
+        const dependentsC = graph.getDirectDependents(TaskId('task-C'));
+        expect(dependentsC.value).toHaveLength(0);
+      });
+
+      it('should handle removing non-existent task gracefully', () => {
+        const graph = new DependencyGraph();
+
+        // Should not throw
+        graph.removeTask(TaskId('task-A'));
+        expect(graph.size()).toBe(0);
+      });
+
+      it('should maintain graph consistency for remaining tasks', () => {
+        // A -> B, C -> D
+        const dependencies: TaskDependency[] = [
+          { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
+          { id: 2, taskId: TaskId('task-C'), dependsOnTaskId: TaskId('task-D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        ];
+        const graph = new DependencyGraph(dependencies);
+
+        graph.removeTask(TaskId('task-A'));
+
+        // C -> D should remain intact
+        const depsC = graph.getDirectDependencies(TaskId('task-C'));
+        expect(depsC.value).toContain(TaskId('task-D'));
+
+        const dependentsD = graph.getDirectDependents(TaskId('task-D'));
+        expect(dependentsD.value).toContain(TaskId('task-C'));
+      });
+    });
+
+    describe('Integration - Incremental Updates with Cycle Detection', () => {
+      it('should maintain valid graph after mixed add/remove operations', () => {
+        const graph = new DependencyGraph();
+
+        // Build: A -> B -> C
+        graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+        graph.addEdge(TaskId('task-B'), TaskId('task-C'));
+
+        // Remove B (breaks chain)
+        graph.removeTask(TaskId('task-B'));
+
+        // Add A -> C directly
+        graph.addEdge(TaskId('task-A'), TaskId('task-C'));
+
+        // Verify final state
+        const depsA = graph.getDirectDependencies(TaskId('task-A'));
+        expect(depsA.value).toContain(TaskId('task-C'));
+        expect(depsA.value).not.toContain(TaskId('task-B'));
+      });
+
+      it('should maintain cycle detection after incremental updates', () => {
+        const graph = new DependencyGraph();
+
+        // Build: A -> B -> C
+        graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+        graph.addEdge(TaskId('task-B'), TaskId('task-C'));
+
+        // Should detect potential cycle
+        const cycleCheck1 = graph.wouldCreateCycle(TaskId('task-C'), TaskId('task-A'));
+        expect(cycleCheck1.value).toBe(true);
+
+        // Remove B -> C edge
+        graph.removeEdge(TaskId('task-B'), TaskId('task-C'));
+
+        // Now C -> A should be valid (no cycle)
+        const cycleCheck2 = graph.wouldCreateCycle(TaskId('task-C'), TaskId('task-A'));
+        expect(cycleCheck2.value).toBe(false);
+      });
+
+      it('should maintain max depth calculations after incremental updates', () => {
+        const graph = new DependencyGraph();
+
+        // Build: A -> B -> C -> D
+        graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+        graph.addEdge(TaskId('task-B'), TaskId('task-C'));
+        graph.addEdge(TaskId('task-C'), TaskId('task-D'));
+
+        expect(graph.getMaxDepth(TaskId('task-A'))).toBe(3);
+
+        // Remove C -> D
+        graph.removeEdge(TaskId('task-C'), TaskId('task-D'));
+
+        // Depth should now be 2
+        expect(graph.getMaxDepth(TaskId('task-A'))).toBe(2);
+      });
+    });
+  });
 });
