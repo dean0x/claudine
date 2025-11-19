@@ -256,6 +256,12 @@ export class DependencyHandler extends BaseEventHandler {
     // NOTE: We still iterate over dependents for event emission and unblock checks
     // This is unavoidable because each dependent may have different blocking state
     for (const dep of dependents) {
+      // Only process dependencies that were pending before the batch update
+      // The batch UPDATE only affects pending dependencies, so skip already-resolved ones
+      if (dep.resolution !== 'pending') {
+        continue;
+      }
+
       this.logger.debug('Dependency resolved', {
         taskId: dep.taskId,
         dependsOnTaskId: dep.dependsOnTaskId,

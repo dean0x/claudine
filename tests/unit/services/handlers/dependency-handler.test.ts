@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DependencyHandler } from '../../../../src/services/handlers/dependency-handler';
 import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
 import { SQLiteTaskRepository } from '../../../../src/implementations/task-repository';
@@ -256,22 +256,15 @@ describe('DependencyHandler - Behavioral Tests', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Spy on the batch resolution method to verify it's called
-      let batchCalled = false;
-      let batchCallCount = 0;
-      const originalBatch = dependencyRepo.resolveDependenciesBatch.bind(dependencyRepo);
-      dependencyRepo.resolveDependenciesBatch = async (taskId, resolution) => {
-        batchCalled = true;
-        batchCallCount++;
-        return originalBatch(taskId, resolution);
-      };
+      const batchSpy = vi.spyOn(dependencyRepo, 'resolveDependenciesBatch');
 
       // Act - Complete task A
       await eventBus.emit('TaskCompleted', { taskId: taskA.id });
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Assert - Verify batch method was called exactly once
-      expect(batchCalled).toBe(true);
-      expect(batchCallCount).toBe(1);
+      expect(batchSpy).toHaveBeenCalledTimes(1);
+      expect(batchSpy).toHaveBeenCalledWith(taskA.id, 'completed');
 
       // Verify dependencies were actually resolved
       const depsB = await dependencyRepo.getDependencies(taskB.id);
