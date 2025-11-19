@@ -719,6 +719,202 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
     });
   });
 
+  describe('resolveDependenciesBatch()', () => {
+    it('should batch resolve all pending dependencies in single query', async () => {
+      const taskA = 'task-a' as TaskId;
+      const taskB = 'task-b' as TaskId;
+      const taskC = 'task-c' as TaskId;
+      const taskD = 'task-d' as TaskId;
+
+      // Create tasks: A is dependency, B, C, D depend on A
+      createTask(taskA);
+      createTask(taskB);
+      createTask(taskC);
+      createTask(taskD);
+
+      // Create dependencies: B->A, C->A, D->A
+      await repo.addDependency(taskB, taskA);
+      await repo.addDependency(taskC, taskA);
+      await repo.addDependency(taskD, taskA);
+
+      // Batch resolve all dependencies on A as 'completed'
+      const result = await repo.resolveDependenciesBatch(taskA, 'completed');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      // Should have resolved 3 dependencies
+      expect(result.value).toBe(3);
+
+      // Verify all dependencies are marked as completed
+      const depsB = await repo.getDependencies(taskB);
+      const depsC = await repo.getDependencies(taskC);
+      const depsD = await repo.getDependencies(taskD);
+
+      expect(depsB.ok && depsB.value[0].resolution).toBe('completed');
+      expect(depsC.ok && depsC.value[0].resolution).toBe('completed');
+      expect(depsD.ok && depsD.value[0].resolution).toBe('completed');
+
+      // Verify timestamps were set
+      expect(depsB.ok && depsB.value[0].resolvedAt).toBeGreaterThan(0);
+      expect(depsC.ok && depsC.value[0].resolvedAt).toBeGreaterThan(0);
+      expect(depsD.ok && depsD.value[0].resolvedAt).toBeGreaterThan(0);
+    });
+
+    it('should only resolve pending dependencies, skip already resolved', async () => {
+      const taskA = 'task-a' as TaskId;
+      const taskB = 'task-b' as TaskId;
+      const taskC = 'task-c' as TaskId;
+
+      createTask(taskA);
+      createTask(taskB);
+      createTask(taskC);
+
+      // Create dependencies: B->A, C->A
+      await repo.addDependency(taskB, taskA);
+      await repo.addDependency(taskC, taskA);
+
+      // Manually resolve B->A first
+      await repo.resolveDependency(taskB, taskA, 'failed');
+
+      // Batch resolve all pending dependencies on A
+      const result = await repo.resolveDependenciesBatch(taskA, 'completed');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      // Should only resolve C (B was already resolved)
+      expect(result.value).toBe(1);
+
+      // Verify B kept its original resolution
+      const depsB = await repo.getDependencies(taskB);
+      expect(depsB.ok && depsB.value[0].resolution).toBe('failed');
+
+      // Verify C got new resolution
+      const depsC = await repo.getDependencies(taskC);
+      expect(depsC.ok && depsC.value[0].resolution).toBe('completed');
+    });
+
+    it('should return 0 when no pending dependencies exist', async () => {
+      const taskA = 'task-a' as TaskId;
+
+      createTask(taskA);
+
+      // Batch resolve when task has no dependents
+      const result = await repo.resolveDependenciesBatch(taskA, 'completed');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      expect(result.value).toBe(0);
+    });
+
+    it('should handle failed resolution state', async () => {
+      const taskA = 'task-a' as TaskId;
+      const taskB = 'task-b' as TaskId;
+      const taskC = 'task-c' as TaskId;
+
+      createTask(taskA);
+      createTask(taskB);
+      createTask(taskC);
+
+      await repo.addDependency(taskB, taskA);
+      await repo.addDependency(taskC, taskA);
+
+      // Batch resolve as 'failed'
+      const result = await repo.resolveDependenciesBatch(taskA, 'failed');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      expect(result.value).toBe(2);
+
+      const depsB = await repo.getDependencies(taskB);
+      const depsC = await repo.getDependencies(taskC);
+
+      expect(depsB.ok && depsB.value[0].resolution).toBe('failed');
+      expect(depsC.ok && depsC.value[0].resolution).toBe('failed');
+    });
+
+    it('should handle cancelled resolution state', async () => {
+      const taskA = 'task-a' as TaskId;
+      const taskB = 'task-b' as TaskId;
+
+      createTask(taskA);
+      createTask(taskB);
+
+      await repo.addDependency(taskB, taskA);
+
+      // Batch resolve as 'cancelled'
+      const result = await repo.resolveDependenciesBatch(taskA, 'cancelled');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      expect(result.value).toBe(1);
+
+      const depsB = await repo.getDependencies(taskB);
+      expect(depsB.ok && depsB.value[0].resolution).toBe('cancelled');
+    });
+
+    it('should handle large number of dependents efficiently', async () => {
+      const taskA = 'task-a' as TaskId;
+
+      createTask(taskA);
+
+      // Create 50 tasks that all depend on A
+      const dependents: TaskId[] = [];
+      for (let i = 0; i < 50; i++) {
+        const taskId = `task-${i}` as TaskId;
+        createTask(taskId);
+        dependents.push(taskId);
+        await repo.addDependency(taskId, taskA);
+      }
+
+      // Single batch resolve should update all 50 in one query
+      const beforeResolve = Date.now();
+      const result = await repo.resolveDependenciesBatch(taskA, 'completed');
+      const afterResolve = Date.now();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      expect(result.value).toBe(50);
+
+      // Verify operation was fast (should complete in < 500ms for in-memory DB)
+      // Increased from 100ms to 500ms to prevent flakiness in CI environments
+      const duration = afterResolve - beforeResolve;
+      expect(duration).toBeLessThan(500);
+
+      // Spot check a few dependents
+      const deps0 = await repo.getDependencies('task-0' as TaskId);
+      const deps25 = await repo.getDependencies('task-25' as TaskId);
+      const deps49 = await repo.getDependencies('task-49' as TaskId);
+
+      expect(deps0.ok && deps0.value[0].resolution).toBe('completed');
+      expect(deps25.ok && deps25.value[0].resolution).toBe('completed');
+      expect(deps49.ok && deps49.value[0].resolution).toBe('completed');
+    });
+
+    it('should handle database errors gracefully', async () => {
+      const taskA = 'task-a' as TaskId;
+
+      createTask(taskA);
+
+      // Close the database to simulate a database error
+      db.close();
+
+      // Attempt batch resolution on closed database
+      const result = await repo.resolveDependenciesBatch(taskA, 'completed');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+
+      expect(result.error.code).toBe('SYSTEM_ERROR');
+      expect(result.error.message).toContain('Failed to batch resolve dependencies');
+    });
+  });
+
   describe('getUnresolvedDependencies()', () => {
     it('should return only unresolved dependencies', async () => {
       const taskD = 'task-d' as TaskId;

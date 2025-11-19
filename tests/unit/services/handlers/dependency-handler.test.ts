@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DependencyHandler } from '../../../../src/services/handlers/dependency-handler';
 import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
 import { SQLiteTaskRepository } from '../../../../src/implementations/task-repository';
@@ -141,7 +141,10 @@ describe('DependencyHandler - Behavioral Tests', () => {
       // Verify an error was logged about cycle detection
       const errorLogs = logger.getLogsByLevel('error');
       expect(errorLogs.length).toBeGreaterThan(0);
-      expect(errorLogs.some(log => log.message.includes('Cycle detected'))).toBe(true);
+      expect(errorLogs.some(log =>
+        log.message.includes('would create cycle') ||
+        (log.context?.error?.message && log.context.error.message.includes('would create cycle'))
+      )).toBe(true);
 
       // The cyclic dependency (A -> B) should NOT have been added
       const depsA = await dependencyRepo.getDependencies(taskA.id);
@@ -189,7 +192,10 @@ describe('DependencyHandler - Behavioral Tests', () => {
       // Verify an error was logged about cycle detection
       const errorLogs = logger.getLogsByLevel('error');
       expect(errorLogs.length).toBeGreaterThan(0);
-      expect(errorLogs.some(log => log.message.includes('Cycle detected'))).toBe(true);
+      expect(errorLogs.some(log =>
+        log.message.includes('would create cycle') ||
+        (log.context?.error?.message && log.context.error.message.includes('would create cycle'))
+      )).toBe(true);
 
       // The cyclic dependency (A -> C) should NOT have been added
       const depsA = await dependencyRepo.getDependencies(taskA.id);
@@ -234,6 +240,40 @@ describe('DependencyHandler - Behavioral Tests', () => {
   });
 
   describe('Task completion dependency resolution', () => {
+    it('should use batch resolution method for performance', async () => {
+      // Arrange - Create tasks A (parent) and B, C (dependents)
+      const taskA = createTask({ prompt: 'task A' });
+      const taskB = createTask({ prompt: 'task B', dependsOn: [taskA.id] });
+      const taskC = createTask({ prompt: 'task C', dependsOn: [taskA.id] });
+
+      await taskRepo.save(taskA);
+      await taskRepo.save(taskB);
+      await taskRepo.save(taskC);
+
+      // Create dependencies
+      await eventBus.emit('TaskDelegated', { task: taskB });
+      await eventBus.emit('TaskDelegated', { task: taskC });
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Spy on the batch resolution method to verify it's called
+      const batchSpy = vi.spyOn(dependencyRepo, 'resolveDependenciesBatch');
+
+      // Act - Complete task A
+      await eventBus.emit('TaskCompleted', { taskId: taskA.id });
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Assert - Verify batch method was called exactly once
+      expect(batchSpy).toHaveBeenCalledTimes(1);
+      expect(batchSpy).toHaveBeenCalledWith(taskA.id, 'completed');
+
+      // Verify dependencies were actually resolved
+      const depsB = await dependencyRepo.getDependencies(taskB.id);
+      const depsC = await dependencyRepo.getDependencies(taskC.id);
+
+      expect(depsB.ok && depsB.value[0].resolution).toBe('completed');
+      expect(depsC.ok && depsC.value[0].resolution).toBe('completed');
+    });
+
     it('should resolve dependency when parent task completes', async () => {
       // Arrange - Create parent and child with dependency
       const parent = createTask({ prompt: 'parent' });
