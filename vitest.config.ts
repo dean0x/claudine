@@ -30,11 +30,15 @@ export default defineConfig({
       'dist',
       '.git'
     ],
-    pool: 'forks', // Better isolation for integration tests
+    pool: 'threads', // Better stability than forks pool
     poolOptions: {
-      forks: {
-        singleFork: true, // CRITICAL: Run all tests in single fork to prevent resource exhaustion
-        maxForks: 1 // Only 1 test file at a time
+      threads: {
+        singleThread: true, // CRITICAL: Run all tests in single thread to prevent resource exhaustion
+        maxThreads: 1, // Only 1 test file at a time
+        minThreads: 1,
+        // CRITICAL: Restart workers when they exceed 1GB to prevent memory accumulation
+        // This fixes "Channel closed" errors from worker crashes
+        memoryLimit: '1024MB'
       }
     },
     // CRITICAL: Run ALL tests sequentially to prevent crashes
@@ -43,7 +47,10 @@ export default defineConfig({
       shuffle: false
     },
     // CRITICAL: Disable parallel test execution within files
-    fileParallelism: false
+    fileParallelism: false,
+    // Disable isolation for better performance with singleThread
+    // Safe because we're running sequentially in single thread
+    isolate: false
   },
   resolve: {
     alias: {

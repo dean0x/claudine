@@ -22,11 +22,29 @@ claudine mcp start
 # Development mode (auto-reload)
 npm run dev
 
-# Test
-npm test                    # All tests (sequential, safe)
-npm run test:unit           # Unit tests only
+# Test - Smart Grouping (v0.3.2+)
+npm run test:core           # Core domain logic (~3s) - SAFE in Claude Code
+npm run test:handlers       # Service handlers (~3s) - SAFE in Claude Code
+npm run test:repositories   # Data layer (~2s) - SAFE in Claude Code
+npm run test:adapters       # MCP adapter (~2s) - SAFE in Claude Code
+npm run test:implementations # Other implementations (~2s) - SAFE in Claude Code
+npm run test:cli            # CLI tests (~2s) - SAFE in Claude Code
+npm run test:integration    # Integration tests - SAFE in Claude Code
+npm test                    # ⚠️  BLOCKED - Prints warning and exits (technical safeguard)
+npm run test:all            # Full suite - Use in local terminal/CI only
+npm run test:worker-handler # Worker tests (OPTIONAL)
 npm run test:coverage       # With coverage
 ```
+
+**Why grouped tests?** Vitest workers accumulate memory across test files. Grouped tests provide fast feedback and prevent resource exhaustion. Individual groups are safe to run from Claude Code.
+
+**Technical Safeguard**: `npm test` is blocked with a warning message to prevent accidental full suite runs that crash Claude Code. Use `npm run test:all` for full suite in local terminal/CI.
+
+**Memory Management**:
+- All commands use 2GB memory limit (`--max-old-space-size=2048`)
+- Vitest config: `memoryLimit: '1024MB'` restarts workers at 1GB threshold
+- **Claude Code constraint**: Full suite exhausts system resources even with low limits
+
 
 ## Architecture Notes
 
@@ -108,9 +126,14 @@ gh release create v{version} --notes-file docs/releases/RELEASE_NOTES_v{version}
 
 ### Testing
 
-- **Never run full test suite in parallel** - causes memory exhaustion
-- Use `npm test` (sequential) or specific test commands
-- Worker handler tests require >6GB memory (skipped in CI)
+- **Technical Safeguard**: `npm test` is blocked and prints a warning (prevents accidental crashes)
+- **Use individual groups** from Claude Code: `npm run test:core`, `test:handlers`, etc.
+- **Full suite**: `npm run test:all` (only in local terminal/CI)
+- **ROOT CAUSE of memory exhaustion**: Vitest workers accumulate memory across test files
+- **Solution**: `memoryLimit: '1024MB'` in vitest.config.ts restarts workers at 1GB threshold
+- **Tests are sequential** via vitest config (`singleThread: true`, `isolate: false`)
+- **All commands use 2GB** memory limit (`--max-old-space-size=2048`)
+- **No real process spawning** - all tests use mocks (MockWorkerPool, MockProcessSpawner)
 
 ### Database
 
