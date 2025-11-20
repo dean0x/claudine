@@ -1,8 +1,8 @@
 /**
  * SQLite-based dependency repository implementation
- * ARCHITECTURE: Pure Result pattern for all operations
+ * ARCHITECTURE: Pure Result pattern for all operations, pure data access layer
  * Pattern: Repository pattern with prepared statements for performance
- * Rationale: Efficient dependency DAG management with cycle detection support
+ * Rationale: Efficient dependency persistence without business logic (DAG validation in handler)
  */
 
 import SQLite from 'better-sqlite3';
@@ -11,7 +11,6 @@ import { TaskId } from '../core/domain.js';
 import { Result, ok, err, tryCatch, tryCatchAsync } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
 import { Database } from './database.js';
-import { DependencyGraph } from '../core/dependency-graph.js';
 
 export class SQLiteDependencyRepository implements DependencyRepository {
   // SECURITY: Hard limits to prevent DoS attacks and stack overflow
@@ -31,11 +30,6 @@ export class SQLiteDependencyRepository implements DependencyRepository {
   private readonly checkDependencyExistsStmt: SQLite.Statement;
   private readonly getDependencyByIdStmt: SQLite.Statement;
   private readonly checkTaskExistsStmt: SQLite.Statement;
-
-  // PERFORMANCE: Maintain in-memory dependency graph with incremental updates
-  // ARCHITECTURE: Graph is initialized once from database and kept in sync with mutations
-  // Eliminates O(N) findAll() calls on every dependency addition (70-80% latency reduction)
-  private readonly graph: DependencyGraph;
 
   constructor(database: Database) {
     this.db = database.getDatabase();
@@ -98,24 +92,17 @@ export class SQLiteDependencyRepository implements DependencyRepository {
     this.checkTaskExistsStmt = this.db.prepare(`
       SELECT COUNT(*) as count FROM tasks WHERE id = ?
     `);
-
-    // PERFORMANCE: Initialize graph once from database
-    // Subsequent operations use incremental updates instead of rebuilding
-    const allDepsRows = this.findAllStmt.all() as Record<string, any>[];
-    const allDeps = allDepsRows.map(row => this.rowToDependency(row));
-    this.graph = new DependencyGraph(allDeps);
   }
 
   /**
-   * Add a dependency relationship between two tasks with cycle detection
+   * Add a dependency relationship between two tasks
    *
+   * ARCHITECTURE: Pure data access layer - no business logic (cycle detection in handler)
    * Uses synchronous better-sqlite3 transaction to prevent TOCTOU race conditions.
-   * Performs cycle detection using DFS algorithm before persisting.
    *
    * @param taskId - The task that depends on another task
    * @param dependsOnTaskId - The task to depend on
    * @returns Result containing created TaskDependency or error if:
-   *   - Cycle would be created (ErrorCode.INVALID_OPERATION)
    *   - Dependency already exists (ErrorCode.INVALID_OPERATION)
    *   - Either task doesn't exist (ErrorCode.TASK_NOT_FOUND)
    *
@@ -144,17 +131,17 @@ export class SQLiteDependencyRepository implements DependencyRepository {
   /**
    * Add multiple dependencies atomically in a single transaction
    *
+   * ARCHITECTURE: Pure data access layer - no business logic (cycle detection in handler)
    * Uses synchronous better-sqlite3 transaction for atomicity.
    * All dependencies succeed or all fail together (no partial state).
-   * Performs cycle detection for each proposed dependency before persisting any.
    *
    * @param taskId - The task that depends on other tasks
    * @param dependsOn - Array of task IDs to depend on
    * @returns Result containing array of created TaskDependency objects or error if:
-   *   - Any dependency would create a cycle (ErrorCode.INVALID_OPERATION)
    *   - Any dependency already exists (ErrorCode.INVALID_OPERATION)
    *   - Any task doesn't exist (ErrorCode.TASK_NOT_FOUND)
    *   - Empty array provided (ErrorCode.INVALID_OPERATION)
+   *   - Too many dependencies (ErrorCode.INVALID_OPERATION)
    *
    * @example
    * ```typescript
@@ -229,46 +216,9 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         }
       }
 
-      // VALIDATION: Check each proposed dependency for cycles using in-memory graph
-      // PERFORMANCE: No database query needed - graph is already loaded and synchronized
-      for (const depId of dependsOn) {
-        const cycleCheck = this.graph.wouldCreateCycle(taskId, depId);
-
-        if (!cycleCheck.ok) {
-          throw cycleCheck.error;
-        }
-
-        if (cycleCheck.value) {
-          throw new ClaudineError(
-            ErrorCode.INVALID_OPERATION,
-            `Cannot add dependency: would create cycle (${taskId} -> ${depId})`
-          );
-        }
-      }
-
-      // SECURITY: Check dependency chain depth to prevent stack overflow
-      // PERFORMANCE: Calculate max depth ONCE for all dependencies (not per-dependency in loop)
-      // This changes complexity from O(N * (V+E)) to O(V+E)
-      let maxDependencyDepth = 0;
-      let deepestTaskId: TaskId | null = null;
-
-      for (const depId of dependsOn) {
-        const depIdDepth = this.graph.getMaxDepth(depId);
-        if (depIdDepth > maxDependencyDepth) {
-          maxDependencyDepth = depIdDepth;
-          deepestTaskId = depId;
-        }
-      }
-
-      // Check if adding ANY of these dependencies would create chain > MAX_DEPENDENCY_CHAIN_DEPTH deep
-      // Depth calculation: 1 (taskId -> depId) + max depth among all depIds
-      const resultingDepth = 1 + maxDependencyDepth;
-      if (resultingDepth > SQLiteDependencyRepository.MAX_DEPENDENCY_CHAIN_DEPTH) {
-        throw new ClaudineError(
-          ErrorCode.INVALID_OPERATION,
-          `Cannot add dependencies: would create dependency chain depth of ${resultingDepth} (maximum ${SQLiteDependencyRepository.MAX_DEPENDENCY_CHAIN_DEPTH}). Task ${deepestTaskId} has chain depth ${maxDependencyDepth}.`
-        );
-      }
+      // NOTE: Cycle detection and depth checking removed
+      // ARCHITECTURE: Business logic (DAG validation) moved to DependencyHandler
+      // Repository is now pure data access layer
 
       // All validations passed - insert all dependencies atomically
       const createdAt = Date.now();
@@ -278,10 +228,6 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         const result = this.addDependencyStmt.run(taskId, depId, createdAt);
         const row = this.getDependencyByIdStmt.get(result.lastInsertRowid) as Record<string, any>;
         createdDependencies.push(this.rowToDependency(row));
-
-        // PERFORMANCE: Update graph incrementally (O(1)) instead of invalidating cache
-        // Eliminates expensive findAll() calls on next dependency addition
-        this.graph.addEdge(taskId, depId);
       }
 
       return createdDependencies;
@@ -585,11 +531,11 @@ export class SQLiteDependencyRepository implements DependencyRepository {
   async deleteDependencies(taskId: TaskId): Promise<Result<void>> {
     return tryCatchAsync(
       async () => {
+        // Delete from database (removes edges, NOT the task node itself)
         this.deleteDependenciesStmt.run(taskId, taskId);
 
-        // PERFORMANCE: Update graph incrementally instead of invalidating cache
-        // Removes all edges where task is source or target (O(E) where E = edges for this task)
-        this.graph.removeTask(taskId);
+        // NOTE: Graph updates removed
+        // ARCHITECTURE: DependencyHandler now owns graph and handles updates via events
       },
       (error) => new ClaudineError(
         ErrorCode.SYSTEM_ERROR,
