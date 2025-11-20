@@ -607,6 +607,25 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     });
   });
 
+  /**
+   * Incremental Graph Updates (v0.3.2+)
+   *
+   * PERFORMANCE: These methods enable O(1) graph updates instead of O(N) cache rebuilds.
+   * Used by DependencyHandler to maintain in-memory graph consistency without calling
+   * findAll() on every dependency operation (70-80% latency reduction).
+   *
+   * Architecture: Event-driven incremental updates
+   * - Handler initializes graph once from database (O(N) one-time cost)
+   * - After successful database operations, handler updates graph incrementally (O(1))
+   * - No cache invalidation needed - graph always stays in sync
+   *
+   * Tests cover:
+   * - addEdge(): Add single edge to forward/reverse graphs
+   * - removeEdge(): Remove single edge from both graphs (with memory leak prevention)
+   * - removeTask(): Bulk remove all edges for a task (when task is deleted)
+   * - Memory leak prevention: Verify empty Map entries are cleaned up
+   * - Integration: Mixed operations with cycle detection
+   */
   describe('Incremental Graph Updates', () => {
     describe('addEdge', () => {
       it('should add edge to empty graph', () => {
@@ -828,6 +847,131 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
 
         const dependentsD = graph.getDirectDependents(TaskId('task-D'));
         expect(dependentsD.value).toContain(TaskId('task-C'));
+      });
+    });
+
+    describe('Memory leak prevention', () => {
+      /**
+       * ROOT CAUSE TESTS: Verify that removeEdge() and removeTask() clean up
+       * empty Map entries to prevent memory leaks. Without cleanup, empty Set
+       * objects accumulate indefinitely in long-running processes.
+       */
+
+      it('should clean up empty forward graph entries in removeEdge', () => {
+        // Create graph with A -> B
+        const graph = new DependencyGraph();
+        graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+
+        // Verify task-A exists in graph
+        expect(graph.hasTask(TaskId('task-A'))).toBe(true);
+
+        // Remove the only edge from task-A
+        graph.removeEdge(TaskId('task-A'), TaskId('task-B'));
+
+        // CRITICAL: task-A should be removed from internal Map (no memory leak)
+        // If not cleaned up, empty Set {} remains in Map forever
+        expect(graph.hasTask(TaskId('task-A'))).toBe(false);
+      });
+
+      it('should clean up empty reverse graph entries in removeEdge', () => {
+        // Create graph with A -> B
+        const graph = new DependencyGraph();
+        graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+
+        // task-B exists as a target in reverse graph
+        const dependents = graph.getDirectDependents(TaskId('task-B'));
+        expect(dependents.value).toHaveLength(1);
+
+        // Remove the only edge TO task-B
+        graph.removeEdge(TaskId('task-A'), TaskId('task-B'));
+
+        // CRITICAL: task-B should be removed from reverse graph Map
+        // Without cleanup, empty Set {} leaks memory
+        const dependentsAfter = graph.getDirectDependents(TaskId('task-B'));
+        expect(dependentsAfter.value).toHaveLength(0);
+      });
+
+      it('should clean up empty entries when removing multiple edges incrementally', () => {
+        const graph = new DependencyGraph();
+
+        // Create task-A with 3 dependencies
+        graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+        graph.addEdge(TaskId('task-A'), TaskId('task-C'));
+        graph.addEdge(TaskId('task-A'), TaskId('task-D'));
+
+        expect(graph.hasTask(TaskId('task-A'))).toBe(true);
+
+        // Remove edges one by one
+        graph.removeEdge(TaskId('task-A'), TaskId('task-B'));
+        graph.removeEdge(TaskId('task-A'), TaskId('task-C'));
+
+        // A still has one dependency, should still exist
+        expect(graph.hasTask(TaskId('task-A'))).toBe(true);
+
+        // Remove last edge
+        graph.removeEdge(TaskId('task-A'), TaskId('task-D'));
+
+        // CRITICAL: Now A has zero edges, Map entry should be cleaned up
+        expect(graph.hasTask(TaskId('task-A'))).toBe(false);
+      });
+
+      it('should clean up empty entries in removeTask for outgoing edges', () => {
+        const graph = new DependencyGraph();
+
+        // Create: A -> B -> C
+        graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+        graph.addEdge(TaskId('task-B'), TaskId('task-C'));
+
+        // Remove B (which has outgoing edge to C)
+        graph.removeTask(TaskId('task-B'));
+
+        // CRITICAL: After removing B's outgoing edge to C,
+        // if C has no other dependents, C's reverse graph entry should be cleaned
+        // B should be removed from C's dependents
+        const dependentsC = graph.getDirectDependents(TaskId('task-C'));
+        expect(dependentsC.value).toHaveLength(0);
+      });
+
+      it('should clean up empty entries in removeTask for incoming edges', () => {
+        const graph = new DependencyGraph();
+
+        // Create: A -> C, B -> C
+        graph.addEdge(TaskId('task-A'), TaskId('task-C'));
+        graph.addEdge(TaskId('task-B'), TaskId('task-C'));
+
+        // Remove C (which has incoming edges from A and B)
+        graph.removeTask(TaskId('task-C'));
+
+        // CRITICAL: After removing C's incoming edges,
+        // A and B should have empty dependency Sets that get cleaned up
+        const depsA = graph.getDirectDependencies(TaskId('task-A'));
+        const depsB = graph.getDirectDependencies(TaskId('task-B'));
+
+        expect(depsA.value).toHaveLength(0);
+        expect(depsB.value).toHaveLength(0);
+      });
+
+      it('should prevent memory leak in long-running scenario', () => {
+        const graph = new DependencyGraph();
+
+        // Simulate long-running process with many add/remove cycles
+        for (let i = 0; i < 100; i++) {
+          const taskId = TaskId(`task-${i}`);
+          const depId = TaskId(`dep-${i}`);
+
+          // Add edge
+          graph.addEdge(taskId, depId);
+
+          // Immediately remove it
+          graph.removeEdge(taskId, depId);
+
+          // CRITICAL: After each cycle, both nodes should be cleaned up
+          // Without cleanup, we'd accumulate 200 empty Map entries (100 * 2 nodes)
+        }
+
+        // After 100 add/remove cycles, graph should be empty
+        // If memory leak exists, graph would still have 200 nodes with empty Sets
+        expect(graph.size()).toBe(0);
       });
     });
 

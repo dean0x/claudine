@@ -132,32 +132,8 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       expect(depTaskIds).toContain(taskB);
     });
 
-    it('should invalidate cache after dependency changes to detect cycles', async () => {
-      const taskA = 'task-a' as TaskId;
-      const taskB = 'task-b' as TaskId;
-      const taskC = 'task-c' as TaskId;
-
-      // Create tasks first
-      createTask(taskA);
-      createTask(taskB);
-      createTask(taskC);
-
-      // Add A->B dependency (cache is built during cycle check)
-      const result1 = await repo.addDependency(taskA, taskB);
-      expect(result1.ok).toBe(true);
-
-      // Add B->C dependency (cache should be invalidated and rebuilt)
-      const result2 = await repo.addDependency(taskB, taskC);
-      expect(result2.ok).toBe(true);
-
-      // Try to add C->A dependency (would create transitive cycle: A->B->C->A)
-      // This should fail because cache was invalidated and fresh graph detects cycle
-      const result3 = await repo.addDependency(taskC, taskA);
-      expect(result3.ok).toBe(false);
-      if (result3.ok) return;
-
-      expect(result3.error.message).toContain('cycle');
-    });
+    // NOTE: Cycle detection test removed - cycle detection now in DependencyHandler
+    // Repository is pure data layer and doesn't perform business logic validation
 
     it('should reject adding dependency when task already has 100 dependencies', async () => {
       const taskZ = 'task-z' as TaskId;
@@ -193,30 +169,8 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       expect(depsResult.value).toHaveLength(100);
     });
 
-    it('should reject adding dependency when chain depth exceeds 100', async () => {
-      // Create a chain of 100 tasks: task-0 -> task-1 -> ... -> task-99 -> task-100
-      for (let i = 0; i <= 100; i++) {
-        createTask(`task-${i}` as TaskId);
-      }
-
-      // Build chain: task-0 -> task-1 -> task-2 -> ... -> task-100
-      for (let i = 0; i < 100; i++) {
-        const result = await repo.addDependency(`task-${i}` as TaskId, `task-${i + 1}` as TaskId);
-        expect(result.ok).toBe(true);
-      }
-
-      // Now task-0 has depth 100 (task-0 -> task-1 -> ... -> task-100)
-      // Try to add new-task -> task-0, which would create depth 101
-      const newTask = 'new-task' as TaskId;
-      createTask(newTask);
-
-      const result = await repo.addDependency(newTask, 'task-0' as TaskId);
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error.message).toContain('chain depth');
-      expect(result.error.message).toContain('maximum 100');
-    });
+    // NOTE: Chain depth test removed - depth validation now in DependencyHandler
+    // Repository is pure data layer and doesn't perform business logic validation
   });
 
   describe('addDependencies() - Atomic Batch Operations', () => {
@@ -251,42 +205,8 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       expect(depsResult.value).toHaveLength(2);
     });
 
-    it('should rollback all dependencies on cycle detection failure', async () => {
-      const taskA = 'task-a' as TaskId;
-      const taskB = 'task-b' as TaskId;
-      const taskC = 'task-c' as TaskId;
-
-      // Create tasks first
-      createTask(taskA);
-      createTask(taskB);
-      createTask(taskC);
-
-      // Set up: A -> B (existing dependency)
-      await repo.addDependency(taskA, taskB);
-
-      // Try to add B -> [C, A] atomically
-      // This should fail because B -> A would create cycle (A -> B -> A)
-      const result = await repo.addDependencies(taskB, [taskC, taskA]);
-
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error.message).toContain('cycle');
-
-      // CRITICAL: Verify B -> C was NOT persisted (rollback worked)
-      const bDepsResult = await repo.getDependencies(taskB);
-      expect(bDepsResult.ok).toBe(true);
-      if (!bDepsResult.ok) return;
-      expect(bDepsResult.value).toHaveLength(0);
-
-      // Verify no partial state in database
-      const allDeps = await repo.findAll();
-      expect(allDeps.ok).toBe(true);
-      if (!allDeps.ok) return;
-      // Should only have the original A -> B dependency
-      expect(allDeps.value).toHaveLength(1);
-      expect(allDeps.value[0].taskId).toBe(taskA);
-      expect(allDeps.value[0].dependsOnTaskId).toBe(taskB);
-    });
+    // NOTE: Cycle detection rollback test removed - cycle detection now in DependencyHandler
+    // Repository is pure data layer and doesn't perform business logic validation
 
     it('should rollback all dependencies on duplicate detection', async () => {
       const taskC = 'task-c' as TaskId;
@@ -422,33 +342,8 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       expect(depsResult.value[0].dependsOnTaskId).toBe(taskA);
     });
 
-    it('should invalidate cache after successful batch addition', async () => {
-      const taskA = 'task-a' as TaskId;
-      const taskB = 'task-b' as TaskId;
-      const taskC = 'task-c' as TaskId;
-      const taskD = 'task-d' as TaskId;
-
-      // Create all tasks first
-      createTask(taskA);
-      createTask(taskB);
-      createTask(taskC);
-      createTask(taskD);
-
-      // Add A -> [B, C] atomically (builds and caches graph)
-      const result1 = await repo.addDependencies(taskA, [taskB, taskC]);
-      expect(result1.ok).toBe(true);
-
-      // Try to add D -> A (should detect transitive cycle if cache is invalidated)
-      // This tests that cache invalidation works correctly
-      const result2 = await repo.addDependency(taskB, taskD);
-      expect(result2.ok).toBe(true);
-
-      // Now try to create cycle: D -> A (would create A -> B -> D -> A)
-      const result3 = await repo.addDependency(taskD, taskA);
-      expect(result3.ok).toBe(false);
-      if (result3.ok) return;
-      expect(result3.error.message).toContain('cycle');
-    });
+    // NOTE: Cache invalidation test removed - cycle detection now in DependencyHandler
+    // Repository is pure data layer and doesn't perform business logic validation
 
     it('should reject adding more than 100 dependencies in one batch', async () => {
       const taskZ = 'task-z' as TaskId;
@@ -1353,58 +1248,8 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       expect(allResult.value).toHaveLength(tasks.length - 1);
     });
 
-    it('should prevent TOCTOU race conditions with concurrent cycle attempts', async () => {
-      /**
-       * SECURITY TEST: Verify TOCTOU (Time-of-Check-Time-of-Use) protection
-       *
-       * This tests that the synchronous transaction in addDependency prevents:
-       *   Thread A: check cycle A->B (pass)
-       *   Thread B: check cycle B->A (pass) <- Can't happen, transaction locked
-       *   Thread A: add A->B
-       *   Thread B: add B->A <- Would create cycle
-       *
-       * Expected behavior: One or both operations fail, no cycle created
-       */
-      const taskA = 'task-a' as TaskId;
-      const taskB = 'task-b' as TaskId;
-
-      // Create tasks first
-      createTask(taskA);
-      createTask(taskB);
-
-      // Attempt to create A->B and B->A concurrently
-      // Due to transaction locks, one will see the other's dependency
-      const [resultAB, resultBA] = await Promise.all([
-        repo.addDependency(taskA, taskB),
-        repo.addDependency(taskB, taskA)
-      ]);
-
-      // SECURITY ASSERTION: At least one must fail (both failing is also valid)
-      const failures = [resultAB, resultBA].filter(r => !r.ok);
-      expect(failures.length).toBeGreaterThan(0);
-
-      // Verify at least one failure is due to cycle detection
-      const hasCycleError = failures.some(f =>
-        !f.ok && f.error.message.toLowerCase().includes('cycle')
-      );
-      expect(hasCycleError).toBe(true);
-
-      // SECURITY ASSERTION: No cycle was created in database
-      const allDeps = await repo.findAll();
-      expect(allDeps.ok).toBe(true);
-      if (allDeps.ok) {
-        // Should have at most 1 dependency, NOT 2 (which would be a cycle)
-        expect(allDeps.value.length).toBeLessThanOrEqual(1);
-
-        // If one dependency exists, verify it's valid (not both directions)
-        if (allDeps.value.length === 1) {
-          const dep = allDeps.value[0];
-          const hasBothDirections = allDeps.value.some(d =>
-            d.taskId === dep.dependsOnTaskId && d.dependsOnTaskId === dep.taskId
-          );
-          expect(hasBothDirections).toBe(false);
-        }
-      }
-    });
+    // NOTE: TOCTOU cycle detection test removed - cycle detection now in DependencyHandler
+    // Repository is pure data layer and doesn't perform business logic validation
+    // Concurrent operations are still protected by database transactions for data integrity
   });
 });
