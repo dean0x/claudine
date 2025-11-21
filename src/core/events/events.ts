@@ -77,6 +77,11 @@ export interface TaskCancellationRequestedEvent extends BaseEvent {
   reason?: string;
 }
 
+export interface TaskDeletedEvent extends BaseEvent {
+  type: 'TaskDeleted';
+  taskId: TaskId;
+}
+
 export interface LogsRequestedEvent extends BaseEvent {
   type: 'LogsRequested';
   taskId: TaskId;
@@ -246,6 +251,7 @@ export type ClaudineEvent =
   | TaskCancelledEvent
   | TaskTimeoutEvent
   | TaskCancellationRequestedEvent
+  | TaskDeletedEvent
   | LogsRequestedEvent
   // Query events (pure event-driven architecture)
   | TaskStatusQueryEvent

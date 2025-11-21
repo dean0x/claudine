@@ -1032,4 +1032,156 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
       });
     });
   });
+
+  /**
+   * Input Validation Tests
+   *
+   * These tests verify that graph mutation methods return Result.err for invalid inputs
+   * instead of throwing exceptions or silently failing. This ensures consistent error
+   * handling following the Result pattern used throughout the codebase.
+   *
+   * Methods tested:
+   * - addEdge(): Validates both taskId and dependsOnTaskId
+   * - removeEdge(): Validates both taskId and dependsOnTaskId
+   * - removeTask(): Validates taskId
+   */
+  describe('Input Validation', () => {
+    describe('addEdge validation', () => {
+      it('should return err for empty taskId', () => {
+        const graph = new DependencyGraph();
+
+        const result = graph.addEdge('' as unknown as ReturnType<typeof TaskId>, TaskId('valid'));
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toContain('Invalid taskId');
+      });
+
+      it('should return err for whitespace-only taskId', () => {
+        const graph = new DependencyGraph();
+
+        const result = graph.addEdge('   ' as unknown as ReturnType<typeof TaskId>, TaskId('valid'));
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toContain('Invalid taskId');
+      });
+
+      it('should return err for empty dependsOnTaskId', () => {
+        const graph = new DependencyGraph();
+
+        const result = graph.addEdge(TaskId('valid'), '' as unknown as ReturnType<typeof TaskId>);
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toContain('Invalid dependsOnTaskId');
+      });
+
+      it('should return err for whitespace-only dependsOnTaskId', () => {
+        const graph = new DependencyGraph();
+
+        const result = graph.addEdge(TaskId('valid'), '   ' as unknown as ReturnType<typeof TaskId>);
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toContain('Invalid dependsOnTaskId');
+      });
+
+      it('should return ok for valid inputs', () => {
+        const graph = new DependencyGraph();
+
+        const result = graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+
+        expect(result.ok).toBe(true);
+      });
+    });
+
+    describe('removeEdge validation', () => {
+      it('should return err for empty taskId', () => {
+        const graph = new DependencyGraph();
+
+        const result = graph.removeEdge('' as unknown as ReturnType<typeof TaskId>, TaskId('valid'));
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toContain('Invalid taskId');
+      });
+
+      it('should return err for whitespace-only taskId', () => {
+        const graph = new DependencyGraph();
+
+        const result = graph.removeEdge('   ' as unknown as ReturnType<typeof TaskId>, TaskId('valid'));
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toContain('Invalid taskId');
+      });
+
+      it('should return err for empty dependsOnTaskId', () => {
+        const graph = new DependencyGraph();
+
+        const result = graph.removeEdge(TaskId('valid'), '' as unknown as ReturnType<typeof TaskId>);
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toContain('Invalid dependsOnTaskId');
+      });
+
+      it('should return err for whitespace-only dependsOnTaskId', () => {
+        const graph = new DependencyGraph();
+
+        const result = graph.removeEdge(TaskId('valid'), '   ' as unknown as ReturnType<typeof TaskId>);
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toContain('Invalid dependsOnTaskId');
+      });
+
+      it('should return ok for valid inputs (edge not present)', () => {
+        const graph = new DependencyGraph();
+
+        const result = graph.removeEdge(TaskId('task-A'), TaskId('task-B'));
+
+        expect(result.ok).toBe(true);
+      });
+
+      it('should return ok for valid inputs (edge present)', () => {
+        const graph = new DependencyGraph();
+        graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+
+        const result = graph.removeEdge(TaskId('task-A'), TaskId('task-B'));
+
+        expect(result.ok).toBe(true);
+      });
+    });
+
+    describe('removeTask validation', () => {
+      it('should return err for empty taskId', () => {
+        const graph = new DependencyGraph();
+
+        const result = graph.removeTask('' as unknown as ReturnType<typeof TaskId>);
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toContain('Invalid taskId');
+      });
+
+      it('should return err for whitespace-only taskId', () => {
+        const graph = new DependencyGraph();
+
+        const result = graph.removeTask('   ' as unknown as ReturnType<typeof TaskId>);
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toContain('Invalid taskId');
+      });
+
+      it('should return ok for valid inputs (task not present)', () => {
+        const graph = new DependencyGraph();
+
+        const result = graph.removeTask(TaskId('task-A'));
+
+        expect(result.ok).toBe(true);
+      });
+
+      it('should return ok for valid inputs (task present)', () => {
+        const graph = new DependencyGraph();
+        graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+
+        const result = graph.removeTask(TaskId('task-A'));
+
+        expect(result.ok).toBe(true);
+      });
+    });
+  });
 });

@@ -409,20 +409,21 @@ export async function bootstrap(): Promise<Result<Container>> {
 
     // 7. Dependency Handler - manages task dependencies with DAG validation
     // ARCHITECTURE: Event-driven dependency tracking with cycle detection
+    // Uses factory pattern to guarantee fully initialized handler
     const dependencyRepoResult = getFromContainerSafe<any>(container, 'dependencyRepository');
     if (!dependencyRepoResult.ok) return dependencyRepoResult;
 
-    const dependencyHandler = new DependencyHandler(
+    const dependencyHandlerResult = await DependencyHandler.create(
       dependencyRepoResult.value,
       repository,
-      logger.child({ module: 'DependencyHandler' })
+      logger,
+      eventBus
     );
-    const dependencySetup = await dependencyHandler.setup(eventBus);
-    if (!dependencySetup.ok) {
+    if (!dependencyHandlerResult.ok) {
       return err(new ClaudineError(
         ErrorCode.SYSTEM_ERROR,
-        `Failed to setup DependencyHandler: ${dependencySetup.error.message}`,
-        { error: dependencySetup.error }
+        `Failed to create DependencyHandler: ${dependencyHandlerResult.error.message}`,
+        { error: dependencyHandlerResult.error }
       ));
     }
 

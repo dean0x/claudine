@@ -33,16 +33,17 @@ export class DependencyGraph {
 
   /**
    * Validate a TaskId parameter
-   * @throws ClaudineError if TaskId is invalid (null, undefined, empty string)
+   * @returns Result<void> - err() if TaskId is invalid (null, undefined, empty string)
    */
-  private validateTaskId(taskId: TaskId, paramName: string): void {
+  private validateTaskId(taskId: TaskId, paramName: string): Result<void> {
     if (!taskId || (taskId as string).trim() === '') {
-      throw new ClaudineError(
+      return err(new ClaudineError(
         ErrorCode.INVALID_OPERATION,
         `Invalid ${paramName}: must be non-empty string`,
         { taskId }
-      );
+      ));
     }
+    return ok(undefined);
   }
 
   /**
@@ -81,18 +82,22 @@ export class DependencyGraph {
    *
    * @param taskId - The task that depends on another task
    * @param dependsOnTaskId - The task to depend on
-   * @throws ClaudineError if either parameter is invalid
+   * @returns Result<void> - err() if either parameter is invalid
    *
    * @example
    * ```typescript
    * // After persisting to database:
-   * graph.addEdge(taskB.id, taskA.id);
+   * const result = graph.addEdge(taskB.id, taskA.id);
+   * if (!result.ok) { handle error }
    * ```
    */
-  addEdge(taskId: TaskId, dependsOnTaskId: TaskId): void {
-    this.validateTaskId(taskId, 'taskId');
-    this.validateTaskId(dependsOnTaskId, 'dependsOnTaskId');
+  addEdge(taskId: TaskId, dependsOnTaskId: TaskId): Result<void> {
+    const v1 = this.validateTaskId(taskId, 'taskId');
+    if (!v1.ok) return v1;
+    const v2 = this.validateTaskId(dependsOnTaskId, 'dependsOnTaskId');
+    if (!v2.ok) return v2;
     this.addEdgeInternal(taskId, dependsOnTaskId);
+    return ok(undefined);
   }
 
   /**
@@ -103,17 +108,20 @@ export class DependencyGraph {
    *
    * @param taskId - The task that depended on another task
    * @param dependsOnTaskId - The task that was depended upon
-   * @throws ClaudineError if either parameter is invalid
+   * @returns Result<void> - err() if either parameter is invalid
    *
    * @example
    * ```typescript
    * // After deleting from database:
-   * graph.removeEdge(taskB.id, taskA.id);
+   * const result = graph.removeEdge(taskB.id, taskA.id);
+   * if (!result.ok) { handle error }
    * ```
    */
-  removeEdge(taskId: TaskId, dependsOnTaskId: TaskId): void {
-    this.validateTaskId(taskId, 'taskId');
-    this.validateTaskId(dependsOnTaskId, 'dependsOnTaskId');
+  removeEdge(taskId: TaskId, dependsOnTaskId: TaskId): Result<void> {
+    const v1 = this.validateTaskId(taskId, 'taskId');
+    if (!v1.ok) return v1;
+    const v2 = this.validateTaskId(dependsOnTaskId, 'dependsOnTaskId');
+    if (!v2.ok) return v2;
 
     const taskIdStr = taskId as string;
     const dependsOnStr = dependsOnTaskId as string;
@@ -155,6 +163,8 @@ export class DependencyGraph {
     if (phantomReverse && phantomReverse.size === 0) {
       this.reverseGraph.delete(taskIdStr);
     }
+
+    return ok(undefined);
   }
 
   /**
@@ -164,16 +174,18 @@ export class DependencyGraph {
    * Removes all edges where task is either source or target.
    *
    * @param taskId - The task to remove all edges for
-   * @throws ClaudineError if parameter is invalid
+   * @returns Result<void> - err() if parameter is invalid
    *
    * @example
    * ```typescript
    * // After deleting task from database:
-   * graph.removeTask(taskA.id);
+   * const result = graph.removeTask(taskA.id);
+   * if (!result.ok) { handle error }
    * ```
    */
-  removeTask(taskId: TaskId): void {
-    this.validateTaskId(taskId, 'taskId');
+  removeTask(taskId: TaskId): Result<void> {
+    const v = this.validateTaskId(taskId, 'taskId');
+    if (!v.ok) return v;
 
     const taskIdStr = taskId as string;
 
@@ -208,6 +220,8 @@ export class DependencyGraph {
       }
       this.reverseGraph.delete(taskIdStr);
     }
+
+    return ok(undefined);
   }
 
   /**

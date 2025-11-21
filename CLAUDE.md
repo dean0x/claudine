@@ -90,7 +90,7 @@ See `docs/TASK-DEPENDENCIES.md` for usage patterns.
 3. **Test everything**:
    ```bash
    npm run build
-   npm test
+   npm run test:all
    ```
 
 ### Release Workflow
