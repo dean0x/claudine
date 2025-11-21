@@ -32,14 +32,17 @@ describe('DependencyHandler - Behavioral Tests', () => {
     dependencyRepo = new SQLiteDependencyRepository(database);
     taskRepo = new SQLiteTaskRepository(database);
 
-    // Create handler with real dependencies
-    handler = new DependencyHandler(dependencyRepo, taskRepo, logger);
-
-    // Setup the handler to register event listeners
-    const setupResult = await handler.setup(eventBus);
-    if (!setupResult.ok) {
-      throw new Error(`Failed to setup DependencyHandler: ${setupResult.error.message}`);
+    // Create handler using factory pattern
+    const handlerResult = await DependencyHandler.create(
+      dependencyRepo,
+      taskRepo,
+      logger,
+      eventBus
+    );
+    if (!handlerResult.ok) {
+      throw new Error(`Failed to create DependencyHandler: ${handlerResult.error.message}`);
     }
+    handler = handlerResult.value;
   });
 
   afterEach(async () => {
@@ -50,15 +53,24 @@ describe('DependencyHandler - Behavioral Tests', () => {
 
   describe('Setup and initialization', () => {
     it('should setup successfully and subscribe to events', async () => {
-      // Arrange - Create a new handler
-      const newHandler = new DependencyHandler(dependencyRepo, taskRepo, logger);
+      // Arrange - Create a fresh event bus for this test
+      const freshEventBus = new InMemoryEventBus(createTestConfiguration(), new TestLogger());
+      const freshLogger = new TestLogger();
 
-      // Act
-      const result = await newHandler.setup(eventBus);
+      // Act - Create handler using factory pattern
+      const result = await DependencyHandler.create(
+        dependencyRepo,
+        taskRepo,
+        freshLogger,
+        freshEventBus
+      );
 
       // Assert
       expect(result.ok).toBe(true);
-      expect(logger.hasLogContaining('DependencyHandler initialized')).toBe(true);
+      expect(freshLogger.hasLogContaining('DependencyHandler initialized')).toBe(true);
+
+      // Cleanup
+      freshEventBus.dispose();
     });
   });
 

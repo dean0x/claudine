@@ -15,7 +15,7 @@ import { Database } from './database.js';
 export class SQLiteDependencyRepository implements DependencyRepository {
   // SECURITY: Hard limits to prevent DoS attacks and stack overflow
   private static readonly MAX_DEPENDENCIES_PER_TASK = 100;
-  private static readonly MAX_DEPENDENCY_CHAIN_DEPTH = 100;
+  // NOTE: MAX_DEPENDENCY_CHAIN_DEPTH moved to DependencyHandler (see line 24)
 
   private readonly db: SQLite.Database;
   private readonly addDependencyStmt: SQLite.Statement;
@@ -216,9 +216,9 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         }
       }
 
-      // NOTE: Cycle detection and depth checking removed
-      // ARCHITECTURE: Business logic (DAG validation) moved to DependencyHandler
-      // Repository is now pure data access layer
+      // NOTE: Cycle detection and depth checking moved to DependencyHandler
+      // ARCHITECTURE: Business logic (DAG validation) now in handler layer
+      // Repository is pure data access layer - see DependencyHandler.handleTaskDelegated()
 
       // All validations passed - insert all dependencies atomically
       const createdAt = Date.now();

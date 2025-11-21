@@ -15,54 +15,107 @@ import {
   TaskCompletedEvent,
   TaskFailedEvent,
   TaskCancelledEvent,
-  TaskTimeoutEvent
+  TaskTimeoutEvent,
+  TaskDeletedEvent
 } from '../../core/events/events.js';
 import { DependencyGraph } from '../../core/dependency-graph.js';
 import { ClaudineError, ErrorCode } from '../../core/errors.js';
 
-export class DependencyHandler extends BaseEventHandler {
-  private eventBus?: EventBus;
-  private graph!: DependencyGraph; // Always initialized, definite assignment assertion
+// SECURITY: Maximum allowed depth for dependency chains (DoS prevention)
+const MAX_DEPENDENCY_CHAIN_DEPTH = 100;
 
-  constructor(
+export class DependencyHandler extends BaseEventHandler {
+  private eventBus: EventBus;
+  private graph: DependencyGraph;
+
+  /**
+   * Private constructor - use DependencyHandler.create() instead
+   * ARCHITECTURE: Factory pattern ensures handler is fully initialized before use
+   */
+  private constructor(
     private readonly dependencyRepo: DependencyRepository,
     private readonly taskRepo: TaskRepository,
-    logger: Logger
+    logger: Logger,
+    eventBus: EventBus,
+    graph: DependencyGraph
   ) {
     super(logger, 'DependencyHandler');
+    this.eventBus = eventBus;
+    this.graph = graph;
   }
 
   /**
-   * Set up event subscriptions for dependency management
-   * ARCHITECTURE: Eager graph initialization for event-driven incremental updates
-   * PERFORMANCE: Graph initialized once, updated incrementally (70-80% latency reduction)
+   * Factory method to create a fully initialized DependencyHandler
+   * ARCHITECTURE: Guarantees handler is ready to use - no uninitialized state possible
+   * PERFORMANCE: Graph initialized once from database (O(N) one-time cost)
+   *
+   * @param dependencyRepo - Repository for dependency persistence
+   * @param taskRepo - Repository for task lookups (needed for TaskUnblocked events)
+   * @param logger - Logger instance
+   * @param eventBus - Event bus for subscriptions
+   * @returns Result containing initialized handler or error
    */
-  async setup(eventBus: EventBus): Promise<Result<void>> {
-    this.eventBus = eventBus;
+  static async create(
+    dependencyRepo: DependencyRepository,
+    taskRepo: TaskRepository,
+    logger: Logger,
+    eventBus: EventBus
+  ): Promise<Result<DependencyHandler>> {
+    const handlerLogger = logger.child ? logger.child({ module: 'DependencyHandler' }) : logger;
 
     // PERFORMANCE: Initialize graph eagerly (one-time O(N) cost)
     // Subsequent operations use incremental O(1) updates instead of rebuilding
-    this.logger.debug('Initializing dependency graph from database');
-    const allDepsResult = await this.dependencyRepo.findAll();
+    handlerLogger.debug('Initializing dependency graph from database');
+    const allDepsResult = await dependencyRepo.findAll();
     if (!allDepsResult.ok) {
-      this.logger.error('Failed to initialize dependency graph', allDepsResult.error);
+      handlerLogger.error('Failed to initialize dependency graph', allDepsResult.error);
       return err(allDepsResult.error);
     }
 
-    this.graph = new DependencyGraph(allDepsResult.value);
-    this.logger.info('Dependency graph initialized', {
-      nodeCount: this.graph.size(),
+    const graph = new DependencyGraph(allDepsResult.value);
+    handlerLogger.info('Dependency graph initialized', {
+      nodeCount: graph.size(),
       dependencyCount: allDepsResult.value.length
     });
 
+    // Create handler with initialized graph
+    const handler = new DependencyHandler(
+      dependencyRepo,
+      taskRepo,
+      handlerLogger,
+      eventBus,
+      graph
+    );
+
+    // Subscribe to events
+    const subscribeResult = handler.subscribeToEvents();
+    if (!subscribeResult.ok) {
+      return subscribeResult;
+    }
+
+    handlerLogger.info('DependencyHandler initialized with incremental graph updates', {
+      pattern: 'event-driven incremental updates',
+      maxDepth: MAX_DEPENDENCY_CHAIN_DEPTH
+    });
+
+    return ok(handler);
+  }
+
+  /**
+   * Subscribe to all relevant events
+   * ARCHITECTURE: Called by factory after graph initialization
+   */
+  private subscribeToEvents(): Result<void> {
     const subscriptions = [
       // Listen for new tasks to add dependencies
-      eventBus.subscribe('TaskDelegated', this.handleTaskDelegated.bind(this)),
+      this.eventBus.subscribe('TaskDelegated', this.handleTaskDelegated.bind(this)),
       // Listen for task completions to resolve dependencies
-      eventBus.subscribe('TaskCompleted', this.handleTaskCompleted.bind(this)),
-      eventBus.subscribe('TaskFailed', this.handleTaskFailed.bind(this)),
-      eventBus.subscribe('TaskCancelled', this.handleTaskCancelled.bind(this)),
-      eventBus.subscribe('TaskTimeout', this.handleTaskTimeout.bind(this))
+      this.eventBus.subscribe('TaskCompleted', this.handleTaskCompleted.bind(this)),
+      this.eventBus.subscribe('TaskFailed', this.handleTaskFailed.bind(this)),
+      this.eventBus.subscribe('TaskCancelled', this.handleTaskCancelled.bind(this)),
+      this.eventBus.subscribe('TaskTimeout', this.handleTaskTimeout.bind(this)),
+      // Listen for task deletions to maintain graph consistency
+      this.eventBus.subscribe('TaskDeleted', this.handleTaskDeleted.bind(this))
       // NOTE: No longer subscribe to TaskDependencyAdded - we update graph directly
     ];
 
@@ -73,7 +126,6 @@ export class DependencyHandler extends BaseEventHandler {
       }
     }
 
-    this.logger.info('DependencyHandler initialized - DAG validation and dependency tracking active');
     return ok(undefined);
   }
 
@@ -123,20 +175,47 @@ export class DependencyHandler extends BaseEventHandler {
             dependsOnTaskId: depId
           });
 
-          // Emit failure event
-          if (this.eventBus) {
-            await this.eventBus.emit('TaskDependencyFailed', {
-              taskId: task.id,
-              failedDependencyId: depId,
-              error
-            });
-          }
+          // Emit batch failure event (indicates entire batch was rejected)
+          await this.eventBus.emit('TaskDependencyFailed', {
+            taskId: task.id,
+            failedDependencyId: depId,
+            requestedDependencies: task.dependsOn, // Include full batch for context
+            error
+          });
+
+          return err(error);
+        }
+
+        // SECURITY: Check depth to prevent DoS via deeply nested chains
+        const depDepth = this.graph.getMaxDepth(depId);
+        const resultingDepth = 1 + depDepth;
+        if (resultingDepth > MAX_DEPENDENCY_CHAIN_DEPTH) {
+          const error = new ClaudineError(
+            ErrorCode.INVALID_OPERATION,
+            `Cannot add dependency: would create chain depth of ${resultingDepth} (max ${MAX_DEPENDENCY_CHAIN_DEPTH})`,
+            { taskId: task.id, dependsOnTaskId: depId, depth: resultingDepth }
+          );
+
+          this.logger.warn('Depth limit exceeded, rejecting dependency', {
+            taskId: task.id,
+            dependsOnTaskId: depId,
+            resultingDepth,
+            maxDepth: MAX_DEPENDENCY_CHAIN_DEPTH
+          });
+
+          // Emit batch failure event
+          await this.eventBus.emit('TaskDependencyFailed', {
+            taskId: task.id,
+            failedDependencyId: depId,
+            requestedDependencies: task.dependsOn,
+            error
+          });
 
           return err(error);
         }
       }
 
-      // All cycle checks passed - persist to database
+      // All cycle and depth checks passed - persist to database
       // Repository is now pure data layer (no business logic)
       const addResult = await this.dependencyRepo.addDependencies(task.id, task.dependsOn);
 
@@ -147,13 +226,11 @@ export class DependencyHandler extends BaseEventHandler {
         });
 
         // Emit failure event for the batch
-        if (this.eventBus) {
-          await this.eventBus.emit('TaskDependencyFailed', {
-            taskId: task.id,
-            failedDependencyId: task.dependsOn[0], // First dependency for compatibility
-            error: addResult.error
-          });
-        }
+        await this.eventBus.emit('TaskDependencyFailed', {
+          taskId: task.id,
+          failedDependencyId: task.dependsOn[0], // First dependency for compatibility
+          error: addResult.error
+        });
 
         return addResult;
       }
@@ -167,8 +244,21 @@ export class DependencyHandler extends BaseEventHandler {
 
       // CRITICAL: Update handler's graph AFTER successful database operation
       // This maintains graph-database synchronization via event-driven architecture
+      //
+      // ERROR RECOVERY: If addEdge() fails after DB write, graph-database desync occurs.
+      // Recovery path: Handler re-initializes graph from database on next restart (setup() calls findAll()).
+      // This is acceptable because addEdge() should never fail for valid data - database already
+      // validated that task IDs exist and no cycles would be created.
       for (const dependency of addResult.value) {
-        this.graph.addEdge(dependency.taskId, dependency.dependsOnTaskId);
+        const edgeResult = this.graph.addEdge(dependency.taskId, dependency.dependsOnTaskId);
+        if (!edgeResult.ok) {
+          // This should never happen for valid data, but log if it does
+          this.logger.error('Unexpected error updating graph after DB write', edgeResult.error, {
+            taskId: dependency.taskId,
+            dependsOnTaskId: dependency.dependsOnTaskId
+          });
+          // Continue - graph will be reconciled on restart
+        }
         this.logger.debug('Graph updated with new dependency', {
           taskId: dependency.taskId,
           dependsOnTaskId: dependency.dependsOnTaskId
@@ -176,13 +266,11 @@ export class DependencyHandler extends BaseEventHandler {
       }
 
       // Emit success event for each dependency (for compatibility with existing listeners)
-      if (this.eventBus) {
-        for (const dependency of addResult.value) {
-          await this.eventBus.emit('TaskDependencyAdded', {
-            taskId: dependency.taskId,
-            dependsOnTaskId: dependency.dependsOnTaskId
-          });
-        }
+      for (const dependency of addResult.value) {
+        await this.eventBus.emit('TaskDependencyAdded', {
+          taskId: dependency.taskId,
+          dependsOnTaskId: dependency.dependsOnTaskId
+        });
       }
 
       return ok(undefined);
@@ -225,6 +313,24 @@ export class DependencyHandler extends BaseEventHandler {
   private async handleTaskTimeout(event: TaskTimeoutEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
       await this.resolveDependencies(event.taskId, 'failed');
+      return ok(undefined);
+    });
+  }
+
+  /**
+   * Handle task deletion - remove task from in-memory graph to maintain consistency
+   * ARCHITECTURE: Maintains graph-database synchronization when tasks are deleted
+   */
+  private async handleTaskDeleted(event: TaskDeletedEvent): Promise<void> {
+    await this.handleEvent(event, async (event) => {
+      const removeResult = this.graph.removeTask(event.taskId);
+      if (!removeResult.ok) {
+        this.logger.error('Failed to remove task from graph', removeResult.error, {
+          taskId: event.taskId
+        });
+        return removeResult;
+      }
+      this.logger.debug('Graph updated: task removed', { taskId: event.taskId });
       return ok(undefined);
     });
   }
@@ -302,13 +408,11 @@ export class DependencyHandler extends BaseEventHandler {
       });
 
       // Emit resolution event
-      if (this.eventBus) {
-        await this.eventBus.emit('TaskDependencyResolved', {
-          taskId: dep.taskId,
-          dependsOnTaskId: dep.dependsOnTaskId,
-          resolution
-        });
-      }
+      await this.eventBus.emit('TaskDependencyResolved', {
+        taskId: dep.taskId,
+        dependsOnTaskId: dep.dependsOnTaskId,
+        resolution
+      });
 
       // Check if this task is now unblocked
       const isBlockedResult = await this.dependencyRepo.isBlocked(dep.taskId);
@@ -333,12 +437,10 @@ export class DependencyHandler extends BaseEventHandler {
           continue;
         }
 
-        if (this.eventBus) {
-          await this.eventBus.emit('TaskUnblocked', {
-            taskId: dep.taskId,
-            task: taskResult.value
-          });
-        }
+        await this.eventBus.emit('TaskUnblocked', {
+          taskId: dep.taskId,
+          task: taskResult.value
+        });
       }
     }
 
