@@ -525,4 +525,157 @@ describe('DependencyHandler - Behavioral Tests', () => {
       }
     });
   });
+
+  describe('Graph consistency on failures', () => {
+    /**
+     * ROOT CAUSE TESTS: Verify event-driven graph updates maintain consistency
+     * when repository operations fail. The handler updates its graph AFTER
+     * successful database operations - these tests verify it doesn't update
+     * the graph when operations fail.
+     */
+
+    it('should not update graph when dependency addition fails', async () => {
+      // Arrange - Create tasks
+      const parent = createTask({ prompt: 'parent task' });
+      const child = createTask({ prompt: 'child task' });
+
+      await taskRepo.save(parent);
+      await taskRepo.save(child);
+
+      // Create a dependency that will succeed
+      const childWithValidDep = { ...child, dependsOn: [parent.id] };
+      await eventBus.emit('TaskDelegated', { task: childWithValidDep });
+
+      // Verify dependency was added to both database AND graph
+      const depsResult = await dependencyRepo.getDependencies(child.id);
+      expect(depsResult.ok).toBe(true);
+      if (!depsResult.ok) throw new Error('Setup failed');
+      expect(depsResult.value).toHaveLength(1);
+
+      // Now try to add a DUPLICATE dependency (will fail)
+      const duplicateAttempt = { ...child, dependsOn: [parent.id] };
+      await eventBus.emit('TaskDelegated', { task: duplicateAttempt });
+
+      // CRITICAL ASSERTION: Graph should still show only ONE dependency
+      // If graph was updated before checking transaction success, we'd have duplicates
+      const allDeps = await dependencyRepo.findAll();
+      expect(allDeps.ok).toBe(true);
+      if (!allDeps.ok) throw new Error('Failed to get all deps');
+
+      // Should have exactly 1 dependency (not 2)
+      expect(allDeps.value).toHaveLength(1);
+      expect(allDeps.value[0].taskId).toBe(child.id);
+      expect(allDeps.value[0].dependsOnTaskId).toBe(parent.id);
+    });
+
+    it('should not update graph when cycle is detected', async () => {
+      // Arrange - Create a dependency chain: A -> B
+      const taskA = createTask({ prompt: 'task A' });
+      const taskB = createTask({ prompt: 'task B' });
+
+      await taskRepo.save(taskA);
+      await taskRepo.save(taskB);
+
+      // Create A -> B
+      const taskBWithDep = { ...taskB, dependsOn: [taskA.id] };
+      await eventBus.emit('TaskDelegated', { task: taskBWithDep });
+
+      // Verify A -> B exists
+      const bDeps = await dependencyRepo.getDependencies(taskB.id);
+      expect(bDeps.ok).toBe(true);
+      if (!bDeps.ok) throw new Error('Setup failed');
+      expect(bDeps.value).toHaveLength(1);
+
+      // Now try to create B -> A (would create cycle)
+      const taskAWithCycle = { ...taskA, dependsOn: [taskB.id] };
+      await eventBus.emit('TaskDelegated', { task: taskAWithCycle });
+
+      // CRITICAL ASSERTION: Graph should NOT have B -> A edge
+      // If handler updated graph before checking cycle, graph would be corrupted
+      const aDeps = await dependencyRepo.getDependencies(taskA.id);
+      expect(aDeps.ok).toBe(true);
+      if (!aDeps.ok) throw new Error('Failed to get A deps');
+
+      // A should have ZERO dependencies (cycle was rejected)
+      expect(aDeps.value).toHaveLength(0);
+
+      // Verify database also doesn't have the cycle
+      const allDeps = await dependencyRepo.findAll();
+      expect(allDeps.ok).toBe(true);
+      if (!allDeps.ok) throw new Error('Failed to get all deps');
+      expect(allDeps.value).toHaveLength(1); // Only A -> B, not B -> A
+    });
+
+    it('should not update graph when task does not exist', async () => {
+      // Arrange - Create only child task, not parent
+      const child = createTask({ prompt: 'child task' });
+      const nonExistentParent = 'non-existent-task' as TaskId;
+
+      await taskRepo.save(child);
+
+      // Try to create dependency to non-existent task (will fail)
+      const childWithInvalidDep = { ...child, dependsOn: [nonExistentParent] };
+      await eventBus.emit('TaskDelegated', { task: childWithInvalidDep });
+
+      // CRITICAL ASSERTION: Graph should have NO dependencies
+      // If handler updated graph before validating task existence, graph would be corrupted
+      const deps = await dependencyRepo.getDependencies(child.id);
+      expect(deps.ok).toBe(true);
+      if (!deps.ok) throw new Error('Failed to get deps');
+
+      // Should have ZERO dependencies (task not found error)
+      expect(deps.value).toHaveLength(0);
+
+      // Verify database is also empty
+      const allDeps = await dependencyRepo.findAll();
+      expect(allDeps.ok).toBe(true);
+      if (!allDeps.ok) throw new Error('Failed to get all deps');
+      expect(allDeps.value).toHaveLength(0);
+    });
+
+    it('should maintain graph consistency across multiple failed operations', async () => {
+      // Arrange - Create valid dependency chain: A -> B -> C
+      const taskA = createTask({ prompt: 'task A' });
+      const taskB = createTask({ prompt: 'task B' });
+      const taskC = createTask({ prompt: 'task C' });
+
+      await taskRepo.save(taskA);
+      await taskRepo.save(taskB);
+      await taskRepo.save(taskC);
+
+      // Create A -> B
+      const taskBWithDep = { ...taskB, dependsOn: [taskA.id] };
+      await eventBus.emit('TaskDelegated', { task: taskBWithDep });
+
+      // Create B -> C
+      const taskCWithDep = { ...taskC, dependsOn: [taskB.id] };
+      await eventBus.emit('TaskDelegated', { task: taskCWithDep });
+
+      // Now attempt multiple failing operations
+      // 1. Try to create C -> A (transitive cycle)
+      const taskAWithCycle = { ...taskA, dependsOn: [taskC.id] };
+      await eventBus.emit('TaskDelegated', { task: taskAWithCycle });
+
+      // 2. Try to add duplicate B -> C
+      const duplicateC = { ...taskC, dependsOn: [taskB.id] };
+      await eventBus.emit('TaskDelegated', { task: duplicateC });
+
+      // 3. Try to add non-existent dependency
+      const nonExistent = 'non-existent' as TaskId;
+      const taskAWithInvalid = { ...taskA, dependsOn: [nonExistent] };
+      await eventBus.emit('TaskDelegated', { task: taskAWithInvalid });
+
+      // CRITICAL ASSERTION: Graph should maintain original state
+      const allDeps = await dependencyRepo.findAll();
+      expect(allDeps.ok).toBe(true);
+      if (!allDeps.ok) throw new Error('Failed to get all deps');
+
+      // Should have exactly 2 dependencies: A -> B and B -> C
+      expect(allDeps.value).toHaveLength(2);
+
+      const depPairs = allDeps.value.map(d => `${d.taskId}->${d.dependsOnTaskId}`);
+      expect(depPairs).toContain(`${taskB.id}->${taskA.id}`);
+      expect(depPairs).toContain(`${taskC.id}->${taskB.id}`);
+    });
+  });
 });

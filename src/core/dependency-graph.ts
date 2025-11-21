@@ -32,6 +32,20 @@ export class DependencyGraph {
   }
 
   /**
+   * Validate a TaskId parameter
+   * @throws ClaudineError if TaskId is invalid (null, undefined, empty string)
+   */
+  private validateTaskId(taskId: TaskId, paramName: string): void {
+    if (!taskId || (taskId as string).trim() === '') {
+      throw new ClaudineError(
+        ErrorCode.INVALID_OPERATION,
+        `Invalid ${paramName}: must be non-empty string`,
+        { taskId }
+      );
+    }
+  }
+
+  /**
    * Add a dependency edge to the graph (internal, no validation)
    */
   private addEdgeInternal(taskId: TaskId, dependsOnTaskId: TaskId): void {
@@ -56,6 +70,143 @@ export class DependencyGraph {
     }
     if (!this.reverseGraph.has(taskIdStr)) {
       this.reverseGraph.set(taskIdStr, new Set());
+    }
+  }
+
+  /**
+   * Add a dependency edge to the graph (public API for incremental updates)
+   *
+   * PERFORMANCE: Allows incremental graph updates without rebuilding from database.
+   * Call this after successfully persisting a dependency to maintain graph consistency.
+   *
+   * @param taskId - The task that depends on another task
+   * @param dependsOnTaskId - The task to depend on
+   * @throws ClaudineError if either parameter is invalid
+   *
+   * @example
+   * ```typescript
+   * // After persisting to database:
+   * graph.addEdge(taskB.id, taskA.id);
+   * ```
+   */
+  addEdge(taskId: TaskId, dependsOnTaskId: TaskId): void {
+    this.validateTaskId(taskId, 'taskId');
+    this.validateTaskId(dependsOnTaskId, 'dependsOnTaskId');
+    this.addEdgeInternal(taskId, dependsOnTaskId);
+  }
+
+  /**
+   * Remove a dependency edge from the graph
+   *
+   * PERFORMANCE: Allows incremental graph updates when dependencies are deleted.
+   * Call this after successfully deleting a dependency to maintain graph consistency.
+   *
+   * @param taskId - The task that depended on another task
+   * @param dependsOnTaskId - The task that was depended upon
+   * @throws ClaudineError if either parameter is invalid
+   *
+   * @example
+   * ```typescript
+   * // After deleting from database:
+   * graph.removeEdge(taskB.id, taskA.id);
+   * ```
+   */
+  removeEdge(taskId: TaskId, dependsOnTaskId: TaskId): void {
+    this.validateTaskId(taskId, 'taskId');
+    this.validateTaskId(dependsOnTaskId, 'dependsOnTaskId');
+
+    const taskIdStr = taskId as string;
+    const dependsOnStr = dependsOnTaskId as string;
+
+    // Remove from forward graph
+    const deps = this.graph.get(taskIdStr);
+    if (deps) {
+      deps.delete(dependsOnStr);
+      // Clean up empty Set to prevent memory leak
+      if (deps.size === 0) {
+        this.graph.delete(taskIdStr);
+      }
+    }
+
+    // Remove from reverse graph
+    const reverseDeps = this.reverseGraph.get(dependsOnStr);
+    if (reverseDeps) {
+      reverseDeps.delete(taskIdStr);
+      // Clean up empty Set to prevent memory leak
+      if (reverseDeps.size === 0) {
+        this.reverseGraph.delete(dependsOnStr);
+      }
+    }
+
+    // ROOT CAUSE FIX: Clean up phantom empty entries created by addEdgeInternal
+    // When adding A->B, addEdgeInternal creates:
+    //   - graph[B] = {} (empty Set for target node, line 68-69)
+    //   - reverseGraph[A] = {} (empty Set for source node, line 71-72)
+    // These phantom entries must be cleaned up to prevent memory leaks
+
+    // Check if target node has empty forward Set (phantom from addEdgeInternal)
+    const phantomForward = this.graph.get(dependsOnStr);
+    if (phantomForward && phantomForward.size === 0) {
+      this.graph.delete(dependsOnStr);
+    }
+
+    // Check if source node has empty reverse Set (phantom from addEdgeInternal)
+    const phantomReverse = this.reverseGraph.get(taskIdStr);
+    if (phantomReverse && phantomReverse.size === 0) {
+      this.reverseGraph.delete(taskIdStr);
+    }
+  }
+
+  /**
+   * Remove all edges related to a task (when task is deleted)
+   *
+   * PERFORMANCE: Bulk removal for task deletion scenarios.
+   * Removes all edges where task is either source or target.
+   *
+   * @param taskId - The task to remove all edges for
+   * @throws ClaudineError if parameter is invalid
+   *
+   * @example
+   * ```typescript
+   * // After deleting task from database:
+   * graph.removeTask(taskA.id);
+   * ```
+   */
+  removeTask(taskId: TaskId): void {
+    this.validateTaskId(taskId, 'taskId');
+
+    const taskIdStr = taskId as string;
+
+    // Remove all outgoing edges (tasks this task depends on)
+    const outgoing = this.graph.get(taskIdStr);
+    if (outgoing) {
+      for (const dep of outgoing) {
+        const reverseDeps = this.reverseGraph.get(dep);
+        if (reverseDeps) {
+          reverseDeps.delete(taskIdStr);
+          // Clean up empty Set to prevent memory leak
+          if (reverseDeps.size === 0) {
+            this.reverseGraph.delete(dep);
+          }
+        }
+      }
+      this.graph.delete(taskIdStr);
+    }
+
+    // Remove all incoming edges (tasks that depend on this task)
+    const incoming = this.reverseGraph.get(taskIdStr);
+    if (incoming) {
+      for (const dependent of incoming) {
+        const deps = this.graph.get(dependent);
+        if (deps) {
+          deps.delete(taskIdStr);
+          // Clean up empty Set to prevent memory leak
+          if (deps.size === 0) {
+            this.graph.delete(dependent);
+          }
+        }
+      }
+      this.reverseGraph.delete(taskIdStr);
     }
   }
 
