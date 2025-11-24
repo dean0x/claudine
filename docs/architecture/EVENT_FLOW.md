@@ -331,7 +331,7 @@ Result: Only 3 workers spawn instead of 10
 
 ## Event Handler Registration
 
-All handlers follow this pattern:
+Most handlers follow this standard pattern:
 
 ```typescript
 class MyHandler extends BaseEventHandler {
@@ -355,6 +355,45 @@ class MyHandler extends BaseEventHandler {
   }
 }
 ```
+
+**Exception: Factory Pattern for Async Initialization**
+
+Handlers requiring async initialization (e.g., loading data from database) use factory pattern instead:
+
+```typescript
+class DependencyHandler extends BaseEventHandler {
+  private constructor(/* dependencies + initialized state */) {
+    super(logger, 'DependencyHandler');
+  }
+
+  static async create(
+    /* dependencies */
+  ): Promise<Result<DependencyHandler>> {
+    // Load initial state asynchronously
+    const data = await repository.loadData();
+    if (!data.ok) return data;
+
+    // Create handler with initialized state
+    const handler = new DependencyHandler(/* deps + state */);
+
+    // Subscribe to events
+    await handler.subscribeToEvents();
+
+    return ok(handler);
+  }
+}
+
+// Usage in bootstrap
+const handlerResult = await DependencyHandler.create(/* deps */);
+if (!handlerResult.ok) return handlerResult;
+const handler = handlerResult.value;
+```
+
+**Why Factory Pattern?**
+- Eliminates definite assignment assertions for async-initialized fields
+- Makes invalid states unrepresentable (can't use handler before initialization)
+- Follows Result pattern consistently
+- Prevents TOCTOU issues by loading state before handler is active
 
 ## Debugging Event Flows
 

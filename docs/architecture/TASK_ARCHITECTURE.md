@@ -100,8 +100,12 @@ The dependency system integrates at these lifecycle points:
 4. **TaskCompleted/Failed/Cancelled** → Task terminal state
    - **Handler**: `DependencyHandler` (Lines 157-192)
    - **Action**: Resolves dependencies, emits `TaskUnblocked` for dependents
-   
-5. **TaskUnblocked** → Dependent tasks now ready (all dependencies met)
+
+5. **TaskDeleted** → Task removed from system
+   - **Handler**: `DependencyHandler`
+   - **Action**: Removes task from dependency graph to maintain graph-database consistency
+
+6. **TaskUnblocked** → Dependent tasks now ready (all dependencies met)
    - **Handler**: `QueueHandler` (Lines 305-355)
    - **Action**: Enqueues unblocked tasks for execution
 
@@ -173,6 +177,13 @@ export interface TaskDependencyFailedEvent extends BaseEvent {
   taskId: TaskId;
   failedDependencyId: TaskId;
   error: ClaudineError;
+  requestedDependencies?: readonly TaskId[];  // All deps that were requested
+}
+
+// Event: A task was deleted (for graph cleanup)
+export interface TaskDeletedEvent extends BaseEvent {
+  type: 'TaskDeleted';
+  taskId: TaskId;
 }
 ```
 
@@ -189,6 +200,9 @@ export interface TaskDependencyFailedEvent extends BaseEvent {
 │  TaskCompleted/Failed/Cancelled → Resolves dependencies     │
 │                 Emits: TaskDependencyResolved               │
 │                 Checks dependents → TaskUnblocked           │
+│                                                               │
+│  TaskDeleted → Removes task from graph (consistency)        │
+│                Updates in-memory graph state                │
 │                                                               │
 │  Emits: TaskDependencyFailed if cycle detected              │
 └─────────────────────────────────────────────────────────────┘
@@ -387,6 +401,8 @@ async addDependency(taskId: TaskId, dependsOnTaskId: TaskId): Promise<Result<Tas
 
 ### 6.2 Dependency Handler - Resolution Flow
 **File**: `/workspace/claudine/src/services/handlers/dependency-handler.ts`
+
+**DoS Prevention**: Handler enforces `MAX_DEPENDENCY_CHAIN_DEPTH = 100` to prevent deep dependency chains that could cause performance degradation or stack overflow during graph traversal.
 
 #### Dependency Addition (Lines 64-152)
 ```typescript
@@ -610,16 +626,73 @@ const updatedTask = { ...task, status: TaskStatus.COMPLETED };
 ```
 
 ### 8.3 Dependency Injection
-All components receive dependencies in constructor:
+All components receive dependencies in constructor. For handlers requiring async initialization, use factory pattern:
+
 ```typescript
-export class DependencyHandler extends BaseEventHandler {
+// Standard handler - constructor pattern
+export class QueueHandler extends BaseEventHandler {
   constructor(
-    private readonly dependencyRepo: DependencyRepository,
-    private readonly taskRepo: TaskRepository,
+    private readonly queue: TaskQueue,
     logger: Logger
   ) { }
 }
+
+// Handler with async initialization - factory pattern
+export class DependencyHandler extends BaseEventHandler {
+  private constructor(
+    private readonly dependencyRepo: DependencyRepository,
+    private readonly taskRepo: TaskRepository,
+    logger: Logger,
+    eventBus: EventBus,
+    graph: DependencyGraph
+  ) {
+    super(logger, 'DependencyHandler');
+    this.eventBus = eventBus;
+    this.graph = graph;
+  }
+
+  static async create(
+    dependencyRepo: DependencyRepository,
+    taskRepo: TaskRepository,
+    logger: Logger,
+    eventBus: EventBus
+  ): Promise<Result<DependencyHandler>> {
+    // Initialize dependency graph from database
+    const allDeps = await dependencyRepo.findAll();
+    if (!allDeps.ok) return allDeps;
+
+    const graph = new DependencyGraph(allDeps.value);
+    const handler = new DependencyHandler(
+      dependencyRepo,
+      taskRepo,
+      logger,
+      eventBus,
+      graph
+    );
+
+    // Subscribe to events
+    await handler.subscribeToEvents();
+
+    return ok(handler);
+  }
+}
+
+// Usage in bootstrap
+const handlerResult = await DependencyHandler.create(
+  dependencyRepo,
+  taskRepo,
+  logger,
+  eventBus
+);
+if (!handlerResult.ok) return handlerResult;
+const dependencyHandler = handlerResult.value;
 ```
+
+**Why Factory Pattern?**
+- Makes invalid states unrepresentable (graph always initialized)
+- Eliminates definite assignment assertions (`graph!: DependencyGraph`)
+- Follows Result pattern for async initialization
+- Self-documenting API (can't accidentally use uninitialized handler)
 
 ### 8.4 Event-Driven Architecture
 All state changes flow through events:
