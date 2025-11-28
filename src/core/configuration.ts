@@ -131,6 +131,14 @@ export function loadConfiguration(): Configuration {
   if (parseResult.success) {
     return parseResult.data; // Guaranteed complete and valid
   } else {
+    // SECURITY: Log warning when config validation fails (don't silently fallback)
+    // This helps users discover misconfigured environment variables
+    const errors = parseResult.error.errors.map(e =>
+      `  - ${e.path.join('.')}: ${e.message}`
+    ).join('\n');
+    console.warn(
+      `[Claudine] Configuration validation failed, using defaults:\n${errors}`
+    );
     // If validation fails (invalid env values), use pure defaults from schema
     return ConfigurationSchema.parse({}); // Empty object gets all defaults
   }
