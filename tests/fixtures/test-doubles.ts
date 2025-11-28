@@ -539,6 +539,10 @@ export class TestResourceMonitor implements ResourceMonitor {
     this.setMemory(2000000000, 8000000000);
     this.setCanSpawnWorker(true);
   }
+
+  recordSpawn(): void {
+    // No-op for test double
+  }
 }
 
 /**
