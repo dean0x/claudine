@@ -410,6 +410,10 @@ export class TestResourceMonitor implements ResourceMonitor {
     this.canSpawn = canSpawn;
   }
 
+  recordSpawn(): void {
+    // No-op for test implementation - settling workers tracking not needed in tests
+  }
+
   getSpawnCheckCount(): number {
     return this.spawnCheckCount;
   }
