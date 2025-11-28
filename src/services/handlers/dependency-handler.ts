@@ -153,66 +153,68 @@ export class DependencyHandler extends BaseEventHandler {
 
       // ARCHITECTURE: Handler performs cycle detection BEFORE repository call
       // This is business logic (DAG validation), not data access
-      for (const depId of task.dependsOn) {
-        const cycleCheck = this.graph.wouldCreateCycle(task.id, depId);
-        if (!cycleCheck.ok) {
-          this.logger.error('Cycle detection failed', cycleCheck.error, {
-            taskId: task.id,
-            dependsOnTaskId: depId
-          });
-          return err(cycleCheck.error);
+      // PERFORMANCE: Validate all dependencies in parallel (Issue #14)
+      // Each check is read-only (uses temp graph), so concurrent execution is safe
+      const validationResults = await Promise.all(
+        task.dependsOn.map(async (depId) => {
+          // Cycle detection
+          const cycleCheck = this.graph.wouldCreateCycle(task.id, depId);
+          if (!cycleCheck.ok) {
+            return { depId, error: cycleCheck.error, type: 'system' as const };
+          }
+          if (cycleCheck.value) {
+            return {
+              depId,
+              error: new ClaudineError(
+                ErrorCode.INVALID_OPERATION,
+                `Cannot add dependency: would create cycle (${task.id} -> ${depId})`,
+                { taskId: task.id, dependsOnTaskId: depId }
+              ),
+              type: 'cycle' as const
+            };
+          }
+
+          // Depth check
+          const depDepth = this.graph.getMaxDepth(depId);
+          const resultingDepth = 1 + depDepth;
+          if (resultingDepth > MAX_DEPENDENCY_CHAIN_DEPTH) {
+            return {
+              depId,
+              error: new ClaudineError(
+                ErrorCode.INVALID_OPERATION,
+                `Cannot add dependency: would create chain depth of ${resultingDepth} (max ${MAX_DEPENDENCY_CHAIN_DEPTH})`,
+                { taskId: task.id, dependsOnTaskId: depId, depth: resultingDepth }
+              ),
+              type: 'depth' as const
+            };
+          }
+
+          return { depId, error: null, type: 'ok' as const };
+        })
+      );
+
+      // Check for any validation failures
+      const failure = validationResults.find(r => r.error !== null);
+      if (failure && failure.error) {
+        const context = { taskId: task.id, dependsOnTaskId: failure.depId };
+
+        if (failure.type === 'system') {
+          this.logger.error('Validation failed', failure.error, context);
+        } else if (failure.type === 'cycle') {
+          this.logger.warn('Cycle detected, rejecting dependency', context);
+        } else {
+          this.logger.warn('Depth limit exceeded, rejecting dependency', context);
         }
 
-        if (cycleCheck.value) {
-          const error = new ClaudineError(
-            ErrorCode.INVALID_OPERATION,
-            `Cannot add dependency: would create cycle (${task.id} -> ${depId})`,
-            { taskId: task.id, dependsOnTaskId: depId }
-          );
+        // Emit batch failure event (indicates entire batch was rejected)
+        await this.eventBus.emit('TaskDependencyFailed', {
+          taskId: task.id,
+          failedDependencyId: failure.depId,
+          requestedDependencies: task.dependsOn,
+          error: failure.error
+        });
 
-          this.logger.warn('Cycle detected, rejecting dependency', {
-            taskId: task.id,
-            dependsOnTaskId: depId
-          });
-
-          // Emit batch failure event (indicates entire batch was rejected)
-          await this.eventBus.emit('TaskDependencyFailed', {
-            taskId: task.id,
-            failedDependencyId: depId,
-            requestedDependencies: task.dependsOn, // Include full batch for context
-            error
-          });
-
-          return err(error);
-        }
-
-        // SECURITY: Check depth to prevent DoS via deeply nested chains
-        const depDepth = this.graph.getMaxDepth(depId);
-        const resultingDepth = 1 + depDepth;
-        if (resultingDepth > MAX_DEPENDENCY_CHAIN_DEPTH) {
-          const error = new ClaudineError(
-            ErrorCode.INVALID_OPERATION,
-            `Cannot add dependency: would create chain depth of ${resultingDepth} (max ${MAX_DEPENDENCY_CHAIN_DEPTH})`,
-            { taskId: task.id, dependsOnTaskId: depId, depth: resultingDepth }
-          );
-
-          this.logger.warn('Depth limit exceeded, rejecting dependency', {
-            taskId: task.id,
-            dependsOnTaskId: depId,
-            resultingDepth,
-            maxDepth: MAX_DEPENDENCY_CHAIN_DEPTH
-          });
-
-          // Emit batch failure event
-          await this.eventBus.emit('TaskDependencyFailed', {
-            taskId: task.id,
-            failedDependencyId: depId,
-            requestedDependencies: task.dependsOn,
-            error
-          });
-
-          return err(error);
-        }
+        return err(failure.error);
       }
 
       // All cycle and depth checks passed - persist to database

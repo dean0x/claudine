@@ -1,8 +1,8 @@
-# Claudine v0.2.1 - Current Features
+# Claudine v0.3.x - Current Features
 
-This document lists all features that are **currently implemented and working** in Claudine v0.2.1.
+This document lists all features that are **currently implemented and working** in Claudine v0.3.x.
 
-Last Updated: September 2025
+Last Updated: November 2025
 
 ## ✅ Core Task Delegation
 
