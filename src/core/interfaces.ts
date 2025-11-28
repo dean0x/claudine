@@ -52,7 +52,7 @@ export interface ResourceMonitor {
    * Call immediately after spawning to track workers during their settling period
    * (before they appear in system metrics like load average)
    */
-  recordSpawn?(): void;
+  recordSpawn(): void;
 }
 
 /**
