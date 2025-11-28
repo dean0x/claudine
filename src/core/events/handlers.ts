@@ -19,6 +19,48 @@ export abstract class BaseEventHandler {
   ) {}
 
   /**
+   * Emit an event with standardized error handling.
+   * Reduces boilerplate for event emission across handlers.
+   *
+   * @param eventBus - The event bus to emit on
+   * @param eventType - The event type name (e.g., 'TaskQueued')
+   * @param payload - The event payload (without type/eventId - those are added automatically)
+   * @param options - Optional settings for error handling
+   * @returns Result indicating success or failure
+   *
+   * @example
+   * ```typescript
+   * await this.emitEvent(this.eventBus, 'TaskQueued', { taskId, task }, {
+   *   logOnError: true,   // Log if emit fails (default: true)
+   *   context: { taskId } // Extra context for error logs
+   * });
+   * ```
+   */
+  protected async emitEvent<T extends ClaudineEvent['type']>(
+    eventBus: EventBus,
+    eventType: T,
+    payload: Record<string, unknown>,
+    options?: {
+      logOnError?: boolean;
+      context?: Record<string, unknown>;
+    }
+  ): Promise<Result<void>> {
+    // ARCHITECTURE EXCEPTION: Using 'as any' for EventBus.emit type compatibility
+    // The EventBus interface requires specific event type inference that doesn't compose well
+    // with the helper pattern. The payload is validated at the emit() call site.
+    const result = await eventBus.emit(eventType as any, payload as any);
+
+    if (!result.ok && (options?.logOnError ?? true)) {
+      this.logger.error(`Failed to emit ${eventType} event`, result.error, {
+        handlerName: this.name,
+        ...options?.context
+      });
+    }
+
+    return result;
+  }
+
+  /**
    * Handle an event with error logging
    * ARCHITECTURE: Returns Result instead of throwing to maintain consistency
    */

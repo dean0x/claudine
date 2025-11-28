@@ -219,3 +219,55 @@ export const toClaudineError = (error: unknown): ClaudineError => {
 
   return systemError(String(error));
 };
+
+/**
+ * Create a standardized error handler for tryCatchAsync operations.
+ * Reduces boilerplate by providing a consistent error format across the codebase.
+ *
+ * @param operation - Description of the operation (e.g., 'get dependencies', 'resolve dependency')
+ * @param context - Optional context object to include in the error
+ * @returns Error handler function compatible with tryCatchAsync
+ *
+ * @example
+ * ```typescript
+ * return tryCatchAsync(
+ *   async () => db.query(...),
+ *   operationErrorHandler('get dependencies', { taskId })
+ * );
+ * ```
+ */
+export const operationErrorHandler = (
+  operation: string,
+  context?: Record<string, unknown>
+): ((error: unknown) => ClaudineError) => {
+  return (error: unknown): ClaudineError => {
+    const message = error instanceof Error ? error.message : String(error);
+    return new ClaudineError(
+      ErrorCode.SYSTEM_ERROR,
+      `Failed to ${operation}: ${message}`,
+      context
+    );
+  };
+};
+
+/**
+ * Create a ClaudineError for a failed operation with context.
+ * Use this for one-off error creation; use operationErrorHandler for tryCatchAsync.
+ *
+ * @param operation - Description of the operation that failed
+ * @param error - The original error
+ * @param context - Optional context object
+ * @returns ClaudineError with standardized message format
+ */
+export const operationFailed = (
+  operation: string,
+  error: unknown,
+  context?: Record<string, unknown>
+): ClaudineError => {
+  const message = error instanceof Error ? error.message : String(error);
+  return new ClaudineError(
+    ErrorCode.SYSTEM_ERROR,
+    `Failed to ${operation}: ${message}`,
+    context
+  );
+};

@@ -474,58 +474,83 @@ export class TestWorktreeManager {
 
 /**
  * TestResourceMonitor - Controllable resource monitor for testing
+ * Implements ResourceMonitor interface from src/core/interfaces.ts
  */
 export class TestResourceMonitor implements ResourceMonitor {
-  private resources: SystemResources = {
-    cpuUsage: 50,
-    cpuAvailable: 50,
-    memoryUsed: 4000000000,
-    memoryFree: 4000000000,
-    memoryTotal: 8000000000,
-    loadAverage: [1.0, 1.0, 1.0],
-    canSpawnWorker: true
-  };
+  private cpuUsage = 50;
+  private availableMemory = 4_000_000_000;
+  private totalMemory = 8_000_000_000;
+  private loadAvg: readonly [number, number, number] = [1.0, 1.0, 1.0];
+  private workerCount = 0;
+  private canSpawn = true;
+  private cpuThreshold = 80;
+  private memoryReserve = 1_000_000_000;
 
-  private monitoring = false;
-
-  async getSystemResources(): Promise<Result<SystemResources, Error>> {
-    return ok({ ...this.resources });
+  async getResources(): Promise<Result<SystemResources>> {
+    return ok({
+      cpuUsage: this.cpuUsage,
+      availableMemory: this.availableMemory,
+      totalMemory: this.totalMemory,
+      loadAverage: this.loadAvg,
+      workerCount: this.workerCount,
+    });
   }
 
-  async hasAvailableResources(): Promise<boolean> {
-    return this.resources.canSpawnWorker;
+  async canSpawnWorker(): Promise<Result<boolean>> {
+    if (!this.canSpawn) {
+      return ok(false);
+    }
+    return ok(
+      this.cpuUsage < this.cpuThreshold &&
+      this.availableMemory > this.memoryReserve
+    );
   }
 
-  startMonitoring(): void {
-    this.monitoring = true;
+  getThresholds(): { readonly maxCpuPercent: number; readonly minMemoryBytes: number } {
+    return {
+      maxCpuPercent: this.cpuThreshold,
+      minMemoryBytes: this.memoryReserve,
+    };
   }
 
-  stopMonitoring(): void {
-    this.monitoring = false;
+  incrementWorkerCount(): void {
+    this.workerCount++;
+  }
+
+  decrementWorkerCount(): void {
+    if (this.workerCount > 0) {
+      this.workerCount--;
+    }
+  }
+
+  recordSpawn(): void {
+    // No-op for test double - settling workers tracking not needed in tests
   }
 
   // Test-specific methods
   setResources(resources: Partial<SystemResources>): void {
-    this.resources = { ...this.resources, ...resources };
+    if (resources.cpuUsage !== undefined) this.cpuUsage = resources.cpuUsage;
+    if (resources.availableMemory !== undefined) this.availableMemory = resources.availableMemory;
+    if (resources.totalMemory !== undefined) this.totalMemory = resources.totalMemory;
+    if (resources.loadAverage !== undefined) this.loadAvg = resources.loadAverage;
+    if (resources.workerCount !== undefined) this.workerCount = resources.workerCount;
   }
 
   setCpuUsage(percent: number): void {
-    this.resources.cpuUsage = percent;
-    this.resources.cpuAvailable = 100 - percent;
+    this.cpuUsage = percent;
   }
 
   setMemory(used: number, total: number): void {
-    this.resources.memoryUsed = used;
-    this.resources.memoryTotal = total;
-    this.resources.memoryFree = total - used;
+    this.availableMemory = total - used;
+    this.totalMemory = total;
   }
 
   setCanSpawnWorker(can: boolean): void {
-    this.resources.canSpawnWorker = can;
+    this.canSpawn = can;
   }
 
-  isMonitoring(): boolean {
-    return this.monitoring;
+  getCurrentWorkerCount(): number {
+    return this.workerCount;
   }
 
   simulateHighLoad(): void {
@@ -538,10 +563,6 @@ export class TestResourceMonitor implements ResourceMonitor {
     this.setCpuUsage(20);
     this.setMemory(2000000000, 8000000000);
     this.setCanSpawnWorker(true);
-  }
-
-  recordSpawn(): void {
-    // No-op for test double
   }
 }
 

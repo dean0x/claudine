@@ -95,17 +95,11 @@ export class QueueHandler extends BaseEventHandler {
 
       // Emit event that task is now queued - critical for worker spawning
       if (this.eventBus) {
-        const emitResult = await this.eventBus.emit('TaskQueued', {
+        await this.emitEvent(this.eventBus, 'TaskQueued', {
           taskId: event.task.id,
           task: event.task
-        });
-
-        if (!emitResult.ok) {
-          this.logger.error('Failed to emit TaskQueued event', emitResult.error, {
-            taskId: event.task.id
-          });
-          // Don't fail the enqueue operation - the task is in the queue
-        }
+        }, { context: { taskId: event.task.id } });
+        // Don't fail the enqueue operation - the task is in the queue
       } else {
         this.logger.error('No eventBus available to emit TaskQueued event', undefined, {
           taskId: event.task.id
@@ -219,17 +213,11 @@ export class QueueHandler extends BaseEventHandler {
 
       // CRITICAL: Emit TaskQueued event to trigger worker spawning for requeued task
       if (this.eventBus) {
-        const emitResult = await this.eventBus.emit('TaskQueued', {
+        await this.emitEvent(this.eventBus, 'TaskQueued', {
           taskId: task.id,
           task: task
-        });
-
-        if (!emitResult.ok) {
-          this.logger.error('Failed to emit TaskQueued event for requeued task', emitResult.error, {
-            taskId: task.id
-          });
-          // Don't fail the requeue operation - the task is in the queue
-        }
+        }, { context: { taskId: task.id, operation: 'requeue' } });
+        // Don't fail the requeue operation - the task is in the queue
       }
 
       return ok(undefined);
@@ -283,17 +271,11 @@ export class QueueHandler extends BaseEventHandler {
 
     // CRITICAL: Emit TaskQueued event to trigger worker spawning for requeued task
     if (this.eventBus) {
-      const emitResult = await this.eventBus.emit('TaskQueued', {
+      await this.emitEvent(this.eventBus, 'TaskQueued', {
         taskId: task.id,
         task: task
-      });
-
-      if (!emitResult.ok) {
-        this.logger.error('Failed to emit TaskQueued event for requeued task', emitResult.error, {
-          taskId: task.id
-        });
-        // Don't fail the requeue operation - the task is in the queue
-      }
+      }, { context: { taskId: task.id, operation: 'legacy-requeue' } });
+      // Don't fail the requeue operation - the task is in the queue
     }
 
     return ok(undefined);
@@ -353,16 +335,10 @@ export class QueueHandler extends BaseEventHandler {
 
       // Emit TaskQueued event to trigger worker spawning
       if (this.eventBus) {
-        const emitResult = await this.eventBus.emit('TaskQueued', {
+        await this.emitEvent(this.eventBus, 'TaskQueued', {
           taskId: task.id,
           task: task
-        });
-
-        if (!emitResult.ok) {
-          this.logger.error('Failed to emit TaskQueued event for unblocked task', emitResult.error, {
-            taskId: task.id
-          });
-        }
+        }, { context: { taskId: task.id, operation: 'unblocked' } });
       }
 
       return ok(undefined);

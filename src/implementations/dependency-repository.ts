@@ -9,7 +9,7 @@ import SQLite from 'better-sqlite3';
 import { DependencyRepository, TaskDependency } from '../core/interfaces.js';
 import { TaskId } from '../core/domain.js';
 import { Result, ok, err, tryCatch, tryCatchAsync } from '../core/result.js';
-import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { ClaudineError, ErrorCode, operationErrorHandler } from '../core/errors.js';
 import { Database } from './database.js';
 
 export class SQLiteDependencyRepository implements DependencyRepository {
@@ -284,11 +284,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         const rows = this.getDependenciesStmt.all(taskId) as Record<string, any>[];
         return rows.map(row => this.rowToDependency(row));
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to get dependencies: ${error}`,
-        { taskId }
-      )
+      operationErrorHandler('get dependencies', { taskId })
     );
   }
 
@@ -315,11 +311,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         const rows = this.getDependentsStmt.all(taskId) as Record<string, any>[];
         return rows.map(row => this.rowToDependency(row));
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to get dependents: ${error}`,
-        { taskId }
-      )
+      operationErrorHandler('get dependents', { taskId })
     );
   }
 
@@ -363,11 +355,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
           );
         }
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to resolve dependency: ${error}`,
-        { taskId, dependsOnTaskId, resolution }
-      )
+      operationErrorHandler('resolve dependency', { taskId, dependsOnTaskId, resolution })
     );
   }
 
@@ -403,11 +391,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         const result = this.resolveDependenciesBatchStmt.run(resolution, resolvedAt, dependsOnTaskId);
         return result.changes;
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to batch resolve dependencies: ${error}`,
-        { dependsOnTaskId, resolution }
-      )
+      operationErrorHandler('batch resolve dependencies', { dependsOnTaskId, resolution })
     );
   }
 
@@ -434,11 +418,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         const rows = this.getUnresolvedDependenciesStmt.all(taskId) as Record<string, any>[];
         return rows.map(row => this.rowToDependency(row));
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to get unresolved dependencies: ${error}`,
-        { taskId }
-      )
+      operationErrorHandler('get unresolved dependencies', { taskId })
     );
   }
 
@@ -466,11 +446,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         const result = this.isBlockedStmt.get(taskId) as { count: number };
         return result.count > 0;
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to check if task is blocked: ${error}`,
-        { taskId }
-      )
+      operationErrorHandler('check if task is blocked', { taskId })
     );
   }
 
@@ -500,10 +476,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         const rows = this.findAllStmt.all() as Record<string, any>[];
         return rows.map(row => this.rowToDependency(row));
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to find all dependencies: ${error}`
-      )
+      operationErrorHandler('find all dependencies')
     );
   }
 
@@ -537,11 +510,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         // NOTE: Graph updates removed
         // ARCHITECTURE: DependencyHandler now owns graph and handles updates via events
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to delete dependencies: ${error}`,
-        { taskId }
-      )
+      operationErrorHandler('delete dependencies', { taskId })
     );
   }
 
