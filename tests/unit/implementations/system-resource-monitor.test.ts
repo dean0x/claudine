@@ -215,9 +215,41 @@ describe('SystemResourceMonitor', () => {
       vi.useRealTimers();
     });
 
-    it('should record spawn events', () => {
-      // recordSpawn() should not throw
-      expect(() => monitor.recordSpawn()).not.toThrow();
+    it('should record spawn events and affect spawn eligibility', async () => {
+      // Set MAX_WORKERS to low value to see the effect
+      const originalMaxWorkers = process.env.MAX_WORKERS;
+      process.env.MAX_WORKERS = '1';
+
+      try {
+        const limitedConfig = createTestConfiguration({
+          cpuCoresReserved: 2,
+          memoryReserve: MEMORY_1GB
+        });
+        const limitedMonitor = new SystemResourceMonitor(limitedConfig, eventBus, logger);
+
+        // Before recordSpawn, should be able to spawn
+        const beforeResult = await limitedMonitor.canSpawnWorker();
+        expect(beforeResult.ok).toBe(true);
+        if (beforeResult.ok) {
+          expect(beforeResult.value).toBe(true);
+        }
+
+        // Record a spawn - this should affect eligibility
+        limitedMonitor.recordSpawn();
+
+        // After recordSpawn, should NOT be able to spawn (at maxWorkers)
+        const afterResult = await limitedMonitor.canSpawnWorker();
+        expect(afterResult.ok).toBe(true);
+        if (afterResult.ok) {
+          expect(afterResult.value).toBe(false);
+        }
+      } finally {
+        if (originalMaxWorkers !== undefined) {
+          process.env.MAX_WORKERS = originalMaxWorkers;
+        } else {
+          delete process.env.MAX_WORKERS;
+        }
+      }
     });
 
     it('should include settling workers in effective worker count', async () => {
