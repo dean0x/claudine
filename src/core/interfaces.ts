@@ -47,6 +47,12 @@ export interface ResourceMonitor {
   };
   incrementWorkerCount(): void;
   decrementWorkerCount(): void;
+  /**
+   * Record a spawn event for settling worker tracking
+   * Call immediately after spawning to track workers during their settling period
+   * (before they appear in system metrics like load average)
+   */
+  recordSpawn?(): void;
 }
 
 /**
