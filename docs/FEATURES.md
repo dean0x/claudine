@@ -36,6 +36,12 @@ Last Updated: September 2025
 - **Worker Lifecycle**: Automatic cleanup on completion/failure
 - **Resource Tracking**: Per-worker CPU and memory monitoring
 
+### Settling Workers Tracking (v0.3.1+)
+- **Problem Solved**: Load average is a 1-minute rolling average that doesn't reflect recent spawns
+- **Settling Window**: Recently spawned workers are tracked for 15 seconds (configurable via `WORKER_SETTLING_WINDOW_MS`)
+- **Resource Projection**: Includes settling workers in resource calculations to prevent spawn burst overload
+- **Spawn Delay**: Minimum 1 second between spawns for stability (configurable via `WORKER_MIN_SPAWN_DELAY_MS`)
+
 ## ✅ Task Persistence & Recovery
 
 ### Database Storage

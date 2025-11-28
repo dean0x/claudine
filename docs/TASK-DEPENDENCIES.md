@@ -703,5 +703,5 @@ If dependency operations are slow:
 
 - Cycle detection: `src/core/dependency-graph.ts:240` (wouldCreateCycle method)
 - Dependency-aware queueing: `src/services/handlers/queue-handler.ts:63` (handleTaskPersisted)
-- Dependency resolution: `src/services/handlers/dependency-handler.ts:199` (resolveDependencies)
+- Dependency resolution: `src/services/handlers/dependency-handler.ts:344` (resolveDependencies)
 - Task unblocking: `src/services/handlers/queue-handler.ts:306` (handleTaskUnblocked)
