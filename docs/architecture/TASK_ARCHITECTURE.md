@@ -497,15 +497,18 @@ export class DependencyGraph {
 ```
 
 ### 7.2 Cycle Detection Algorithm
-**File**: `/workspace/claudine/src/core/dependency-graph.ts` (Lines 73-110)
+**File**: `/workspace/claudine/src/core/dependency-graph.ts` (Lines 240-280)
 
 ```typescript
 wouldCreateCycle(taskId: TaskId, dependsOnTaskId: TaskId): Result<boolean> {
   // 1. Check self-dependency
   if (taskId === dependsOnTaskId) return ok(true);
-  
-  // 2. Create temporary graph with proposed edge
-  const tempGraph = new Map(this.graph);
+
+  // 2. Create temporary graph with proposed edge (DEEP COPY required!)
+  // Shallow copy (new Map(this.graph)) corrupts graph - Set values are references
+  const tempGraph = new Map(
+    Array.from(this.graph.entries()).map(([k, v]) => [k, new Set(v)])
+  );
   tempGraph.get(taskId)!.add(dependsOnTaskId);
   
   // 3. Run DFS to detect cycle
