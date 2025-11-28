@@ -27,7 +27,7 @@ export class SystemResourceMonitor implements ResourceMonitor {
   // SETTLING WORKERS TRACKING (Issue: load average is lagging indicator)
   // Workers that were recently spawned but may not yet be reflected in system metrics
   // This prevents spawning too many workers before load average catches up
-  private readonly SETTLING_WINDOW_MS = 15000; // 15 seconds for worker to "settle"
+  private readonly settlingWindowMs: number;
   private recentSpawnTimestamps: number[] = [];
 
   constructor(
@@ -38,6 +38,7 @@ export class SystemResourceMonitor implements ResourceMonitor {
     this.cpuCoresReserved = config.cpuCoresReserved;
     this.memoryReserve = config.memoryReserve;
     this.monitoringIntervalMs = config.resourceMonitorIntervalMs!;
+    this.settlingWindowMs = config.settlingWindowMs!;
 
     // Dynamic max workers based on system resources
     const totalCores = os.cpus().length;
@@ -80,7 +81,7 @@ export class SystemResourceMonitor implements ResourceMonitor {
     // Clean up old spawn timestamps (outside settling window)
     const now = Date.now();
     this.recentSpawnTimestamps = this.recentSpawnTimestamps.filter(
-      t => now - t < this.SETTLING_WINDOW_MS
+      t => now - t < this.settlingWindowMs
     );
     const settlingWorkers = this.recentSpawnTimestamps.length;
 
@@ -173,10 +174,15 @@ export class SystemResourceMonitor implements ResourceMonitor {
    * Call this immediately after spawning a worker to track it during settling period
    */
   recordSpawn(): void {
-    this.recentSpawnTimestamps.push(Date.now());
+    const now = Date.now();
+    // Clean up expired timestamps to prevent unbounded array growth
+    this.recentSpawnTimestamps = this.recentSpawnTimestamps.filter(
+      t => now - t < this.settlingWindowMs
+    );
+    this.recentSpawnTimestamps.push(now);
     this.logger?.debug('Recorded spawn for settling tracking', {
       settlingWorkers: this.recentSpawnTimestamps.length,
-      settlingWindowMs: this.SETTLING_WINDOW_MS
+      settlingWindowMs: this.settlingWindowMs
     });
   }
 

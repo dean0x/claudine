@@ -293,7 +293,7 @@ export class WorkerHandler extends BaseEventHandler {
       this.resourceMonitor.incrementWorkerCount();
 
       // Record spawn for settling worker tracking (accounts for lag in load average)
-      this.resourceMonitor.recordSpawn?.();
+      this.resourceMonitor.recordSpawn();
 
       // Emit worker spawned and task started events
       await Promise.all([
