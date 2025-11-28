@@ -16,7 +16,7 @@ import {
   NextTaskQueryEvent,
   createEvent
 } from '../../core/events/events.js';
-import { Task, TaskId, TaskStatus } from '../../core/domain.js';
+import { Task, TaskId, TaskStatus, Worker } from '../../core/domain.js';
 import { ClaudineError, ErrorCode, taskNotFound } from '../../core/errors.js';
 import { Configuration } from '../../core/configuration.js';
 
@@ -392,9 +392,9 @@ export class WorkerHandler extends BaseEventHandler {
   /**
    * Get worker statistics
    */
-  getWorkerStats(): { 
-    workerCount: number; 
-    workers: readonly any[];
+  getWorkerStats(): {
+    workerCount: number;
+    workers: readonly Worker[];
     canSpawn: boolean;
   } {
     const workersResult = this.workerPool.getWorkers();
