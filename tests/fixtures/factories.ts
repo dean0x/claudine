@@ -268,7 +268,27 @@ export class ConfigFactory {
     memoryReserve: 1073741824,
     logLevel: 'info',
     maxListenersPerEvent: 100,
-    maxTotalSubscriptions: 1000
+    maxTotalSubscriptions: 1000,
+    // Worktree defaults
+    useWorktreesByDefault: false,
+    maxWorktreeAgeDays: 30,
+    maxWorktrees: 50,
+    worktreeRequireSafetyCheck: true,
+    // Process management defaults
+    killGracePeriodMs: 5000,
+    resourceMonitorIntervalMs: 100, // Fast for tests
+    minSpawnDelayMs: 10, // Fast for tests
+    settlingWindowMs: 15000, // 15 second settling window
+    // Event system defaults
+    eventRequestTimeoutMs: 5000,
+    eventCleanupIntervalMs: 60000,
+    // Storage defaults
+    fileStorageThresholdBytes: 102400,
+    // Retry defaults
+    retryInitialDelayMs: 100, // Fast for tests
+    retryMaxDelayMs: 1000, // Fast for tests
+    // Recovery defaults
+    taskRetentionDays: 7
   };
 
   withTimeout(timeout: number): this {

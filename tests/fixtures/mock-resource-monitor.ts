@@ -59,6 +59,10 @@ export class MockResourceMonitor implements ResourceMonitor {
     // No-op for mock
   }
 
+  recordSpawn(): void {
+    // No-op for mock
+  }
+
   // Test helper methods
   simulateHighCPU(percent: number): void {
     this.cpuUsage = percent;

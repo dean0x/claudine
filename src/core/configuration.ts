@@ -29,7 +29,8 @@ export const ConfigurationSchema = z.object({
   // Process management configuration
   killGracePeriodMs: z.number().min(1000).max(60000).default(5000), // Default: 5 second grace period
   resourceMonitorIntervalMs: z.number().min(1000).max(60000).default(5000), // Default: check every 5 seconds
-  minSpawnDelayMs: z.number().min(10).max(10000).default(50), // Default: 50ms burst protection (reduced from 100ms for better responsiveness)
+  minSpawnDelayMs: z.number().min(10).max(30000).default(1000), // Default: 1s minimum delay between spawns (with settling worker tracking)
+  settlingWindowMs: z.number().min(5000).max(60000).default(15000), // Default: 15s settling window for newly spawned workers
   // Event system configuration
   eventRequestTimeoutMs: z.number().min(1000).max(300000).default(5000), // Default: 5 second timeout
   eventCleanupIntervalMs: z.number().min(10000).max(600000).default(60000), // Default: cleanup every minute
@@ -66,7 +67,8 @@ const DEFAULT_CONFIG: Configuration = {
   // Process management defaults
   killGracePeriodMs: 5000, // Default: 5 seconds grace period for process termination
   resourceMonitorIntervalMs: 5000, // Default: check resources every 5 seconds
-  minSpawnDelayMs: 50, // Default: 50ms burst protection between worker spawns
+  minSpawnDelayMs: 1000, // Default: 1s minimum delay between spawns (with settling worker tracking)
+  settlingWindowMs: 15000, // Default: 15s settling window for newly spawned workers
   // Event system defaults
   eventRequestTimeoutMs: 5000, // Default: 5 second timeout for event requests
   eventCleanupIntervalMs: 60000, // Default: cleanup event history every minute
@@ -118,6 +120,7 @@ export function loadConfiguration(): Configuration {
   if (process.env.PROCESS_KILL_GRACE_PERIOD_MS) envConfig.killGracePeriodMs = parseEnvNumber(process.env.PROCESS_KILL_GRACE_PERIOD_MS, 0);
   if (process.env.RESOURCE_MONITOR_INTERVAL_MS) envConfig.resourceMonitorIntervalMs = parseEnvNumber(process.env.RESOURCE_MONITOR_INTERVAL_MS, 0);
   if (process.env.WORKER_MIN_SPAWN_DELAY_MS) envConfig.minSpawnDelayMs = parseEnvNumber(process.env.WORKER_MIN_SPAWN_DELAY_MS, 0);
+  if (process.env.WORKER_SETTLING_WINDOW_MS) envConfig.settlingWindowMs = parseEnvNumber(process.env.WORKER_SETTLING_WINDOW_MS, 0);
   if (process.env.EVENT_REQUEST_TIMEOUT_MS) envConfig.eventRequestTimeoutMs = parseEnvNumber(process.env.EVENT_REQUEST_TIMEOUT_MS, 0);
   if (process.env.EVENT_CLEANUP_INTERVAL_MS) envConfig.eventCleanupIntervalMs = parseEnvNumber(process.env.EVENT_CLEANUP_INTERVAL_MS, 0);
   if (process.env.FILE_STORAGE_THRESHOLD_BYTES) envConfig.fileStorageThresholdBytes = parseEnvNumber(process.env.FILE_STORAGE_THRESHOLD_BYTES, 0);
@@ -131,6 +134,14 @@ export function loadConfiguration(): Configuration {
   if (parseResult.success) {
     return parseResult.data; // Guaranteed complete and valid
   } else {
+    // SECURITY: Log warning when config validation fails (don't silently fallback)
+    // This helps users discover misconfigured environment variables
+    const errors = parseResult.error.errors.map(e =>
+      `  - ${e.path.join('.')}: ${e.message}`
+    ).join('\n');
+    console.warn(
+      `[Claudine] Configuration validation failed, using defaults:\n${errors}`
+    );
     // If validation fails (invalid env values), use pure defaults from schema
     return ConfigurationSchema.parse({}); // Empty object gets all defaults
   }

@@ -116,6 +116,7 @@ class MockResourceMonitor implements ResourceMonitor {
 
   startMonitoring() {}
   stopMonitoring() {}
+  recordSpawn() {}
 }
 
 describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {

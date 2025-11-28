@@ -6,31 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-### 🚀 Major Features
-- **🌳 Git Worktree Support**: Branch-based task isolation with automatic creation/cleanup
-  - Isolated task execution in separate worktrees
-  - Multiple merge strategies: PR, auto, manual, patch
-  - Automatic branch creation and management
-  - Configurable cleanup behavior
-- **🔀 GitHub Integration**: Automatic PR creation and management
-  - Create PRs with custom titles and descriptions
-  - Automatic PR status checks
-  - Push branches to remote automatically
-  - Secure command execution with simple-git
-- **🔄 Retry Logic**: Exponential backoff for transient failures
-  - Smart error detection (network, rate limits, timeouts)
-  - Configurable retry attempts and delays
-  - Applied to git operations and GitHub API calls
+*No unreleased changes at this time.*
+
+---
+
+## [0.3.1] - Unreleased
+
+### 🔒 Security Fixes
+- **CRITICAL: Graph Corruption Fix (Issue #28)**: Deep copy in `wouldCreateCycle()` prevents dependency graph corruption
+  - Shallow copy (`new Map(this.graph)`) corrupted dependency graph because Set values remained as references
+  - Cycle detection could permanently add edges to the graph, causing unpredictable task execution
+  - Fixed with proper deep copy: `new Map(Array.from(this.graph.entries()).map(([k, v]) => [k, new Set(v)]))`
+- **npm audit vulnerabilities fixed**: Resolved 3 security issues (1 HIGH, 2 MODERATE)
+  - glob CLI command injection (HIGH) - GHSA-5j98-mcp5-4vw2
+  - body-parser denial of service (MODERATE) - GHSA-wqch-xfxh-vrr4
+  - vite path traversal on Windows (MODERATE) - GHSA-93m4-6634-74q7
+- **Configuration validation logging**: No longer silently falls back to defaults when env vars fail validation
+
+### 🚀 Performance Improvements
+- **Settling workers tracking**: Prevents spawn burst overload during high-load scenarios
+  - Load average is a 1-minute rolling average that doesn't reflect recent spawns
+  - New `recordSpawn()` tracks workers in 15-second settling window
+  - Projects resource usage including workers not yet reflected in metrics
+  - Increased `minSpawnDelayMs` from 50ms to 1000ms for additional protection
 
 ### 🛠️ Technical Improvements
-- **Security Enhancements**: Replaced shell command execution with secure libraries
-  - Migrated from exec/shell to simple-git for git operations
-  - Command injection prevention through proper argument handling
-  - Array-based command execution instead of string concatenation
-- **CLI/MCP Alignment**: Perfect parameter parity between interfaces
-  - Added `--tail` parameter to CLI logs command
-  - Added optional reason parameter to CLI cancel command
-  - All MCP parameters now available in CLI
+- **Type safety**: Replaced `any` type with `Worker` in `getWorkerStats()` return type
+- **Test compatibility**: Added `recordSpawn()` to TestResourceMonitor
 - **🔒 Input Validation Limits (Issue #12)**: Security hardening for dependency system
   - Maximum 100 dependencies per task to prevent DoS attacks
   - Maximum 100 dependency chain depth to prevent stack overflow
@@ -52,12 +54,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Parameter Consistency**: Aligned CLI and MCP tool parameters
 
 ### 🧪 Test Coverage
-- **18 new tests** for v0.3.1 security and consistency improvements:
+- **5 new tests** for settling workers tracking in ResourceMonitor
+- **3 regression tests** for graph immutability after cycle checks
+- **18 tests** for v0.3.1 security and consistency improvements:
   - 11 tests for atomic batch dependency operations (rollback, validation)
   - 3 tests for max dependencies per task validation (100 limit)
   - 1 test for max chain depth validation (100 limit)
   - 7 tests for DependencyGraph.getMaxDepth() algorithm
-- **All 221 unit tests passing** (was 203 tests before v0.3.1)
+
+### 📚 Documentation
+- Updated `docs/architecture/TASK_ARCHITECTURE.md` with correct deep copy pattern
+- Fixed stale line numbers in `docs/TASK-DEPENDENCIES.md` (wouldCreateCycle at line 240)
 
 ## [0.3.0] - 2025-10-18
 

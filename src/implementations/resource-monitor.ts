@@ -24,6 +24,12 @@ export class SystemResourceMonitor implements ResourceMonitor {
   private readonly MEMORY_PER_WORKER_MB = 450; // ~410MB observed + buffer
   private readonly CORES_PER_WORKER = 0.15; // ~11-15% of one core observed
 
+  // SETTLING WORKERS TRACKING (Issue: load average is lagging indicator)
+  // Workers that were recently spawned but may not yet be reflected in system metrics
+  // This prevents spawning too many workers before load average catches up
+  private readonly settlingWindowMs: number;
+  private recentSpawnTimestamps: number[] = [];
+
   constructor(
     config: Configuration,
     private readonly eventBus?: EventBus,
@@ -32,6 +38,7 @@ export class SystemResourceMonitor implements ResourceMonitor {
     this.cpuCoresReserved = config.cpuCoresReserved;
     this.memoryReserve = config.memoryReserve;
     this.monitoringIntervalMs = config.resourceMonitorIntervalMs!;
+    this.settlingWindowMs = config.settlingWindowMs!;
 
     // Dynamic max workers based on system resources
     const totalCores = os.cpus().length;
@@ -71,10 +78,20 @@ export class SystemResourceMonitor implements ResourceMonitor {
   }
 
   async canSpawnWorker(): Promise<Result<boolean>> {
-    // Check max workers limit first
-    if (this.workerCount >= this.maxWorkers) {
-      this.logger?.debug('Cannot spawn: Max workers limit reached', {
+    // Clean up old spawn timestamps (outside settling window)
+    const now = Date.now();
+    this.recentSpawnTimestamps = this.recentSpawnTimestamps.filter(
+      t => now - t < this.settlingWindowMs
+    );
+    const settlingWorkers = this.recentSpawnTimestamps.length;
+
+    // Check max workers limit first (include settling workers)
+    const effectiveWorkerCount = this.workerCount + settlingWorkers;
+    if (effectiveWorkerCount >= this.maxWorkers) {
+      this.logger?.debug('Cannot spawn: Max workers limit reached (including settling)', {
         currentWorkers: this.workerCount,
+        settlingWorkers,
+        effectiveWorkerCount,
         maxWorkers: this.maxWorkers
       });
       return ok(false);
@@ -89,41 +106,53 @@ export class SystemResourceMonitor implements ResourceMonitor {
     const resources = resourcesResult.value;
     const totalCores = os.cpus().length;
 
-    // Calculate available CPU cores based on current usage
+    // SETTLING WORKERS: Project resource usage including workers not yet in metrics
+    // Load average is a 1-minute rolling average - doesn't reflect recent spawns
+    const projectedCoresUsed = settlingWorkers * this.CORES_PER_WORKER;
+    const projectedMemoryUsed = settlingWorkers * this.MEMORY_PER_WORKER_MB * 1024 * 1024;
+
+    // Calculate available CPU cores based on current usage + projected settling usage
     const usedCores = (resources.cpuUsage / 100) * totalCores;
-    const availableCores = totalCores - usedCores - this.cpuCoresReserved;
+    const availableCores = totalCores - usedCores - this.cpuCoresReserved - projectedCoresUsed;
 
     // Check if we have enough cores for another worker
     if (availableCores < this.CORES_PER_WORKER) {
       this.logger?.debug('Cannot spawn: Insufficient CPU cores available', {
         totalCores,
         usedCores: usedCores.toFixed(2),
+        projectedCoresUsed: projectedCoresUsed.toFixed(2),
         reservedCores: this.cpuCoresReserved,
         availableCores: availableCores.toFixed(2),
-        requiredCores: this.CORES_PER_WORKER
+        requiredCores: this.CORES_PER_WORKER,
+        settlingWorkers
       });
       return ok(false);
     }
 
-    // Check if we have enough memory for another worker
+    // Check if we have enough memory for another worker (including settling workers)
+    const projectedAvailableMemory = resources.availableMemory - projectedMemoryUsed;
     const requiredMemory = this.memoryReserve + (this.MEMORY_PER_WORKER_MB * 1024 * 1024);
-    if (resources.availableMemory <= requiredMemory) {
+    if (projectedAvailableMemory <= requiredMemory) {
       this.logger?.debug('Cannot spawn: Insufficient memory for new worker', {
         availableMemory: resources.availableMemory,
+        projectedMemoryUsed,
+        projectedAvailableMemory,
         requiredMemory,
-        memoryPerWorkerMB: this.MEMORY_PER_WORKER_MB
+        memoryPerWorkerMB: this.MEMORY_PER_WORKER_MB,
+        settlingWorkers
       });
       return ok(false);
     }
 
-    // Check load average against available cores
-    const maxLoad = totalCores - this.cpuCoresReserved;
+    // Check load average against available cores (adjusted for settling)
+    const maxLoad = totalCores - this.cpuCoresReserved - projectedCoresUsed;
     if (resources.loadAverage[0] > maxLoad) {
       this.logger?.debug('Cannot spawn: System load too high', {
         loadAverage: resources.loadAverage[0],
         maxLoad,
         totalCores,
-        reservedCores: this.cpuCoresReserved
+        reservedCores: this.cpuCoresReserved,
+        settlingWorkers
       });
       return ok(false);
     }
@@ -132,11 +161,29 @@ export class SystemResourceMonitor implements ResourceMonitor {
       totalCores,
       usedCores: usedCores.toFixed(2),
       availableCores: availableCores.toFixed(2),
-      availableMemoryGB: (resources.availableMemory / 1e9).toFixed(2),
+      availableMemoryGB: (projectedAvailableMemory / 1e9).toFixed(2),
       workerCount: this.workerCount,
+      settlingWorkers,
       maxWorkers: this.maxWorkers
     });
     return ok(true);
+  }
+
+  /**
+   * Record a spawn event for settling worker tracking
+   * Call this immediately after spawning a worker to track it during settling period
+   */
+  recordSpawn(): void {
+    const now = Date.now();
+    // Clean up expired timestamps to prevent unbounded array growth
+    this.recentSpawnTimestamps = this.recentSpawnTimestamps.filter(
+      t => now - t < this.settlingWindowMs
+    );
+    this.recentSpawnTimestamps.push(now);
+    this.logger?.debug('Recorded spawn for settling tracking', {
+      settlingWorkers: this.recentSpawnTimestamps.length,
+      settlingWindowMs: this.settlingWindowMs
+    });
   }
 
   getThresholds(): { readonly maxCpuPercent: number; readonly minMemoryBytes: number } {
@@ -367,6 +414,10 @@ export class TestResourceMonitor implements ResourceMonitor {
 
   setCanSpawn(canSpawn: boolean): void {
     this.canSpawn = canSpawn;
+  }
+
+  recordSpawn(): void {
+    // No-op for test implementation - settling workers tracking not needed in tests
   }
 
   getSpawnCheckCount(): number {

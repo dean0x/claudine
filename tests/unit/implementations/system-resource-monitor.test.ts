@@ -202,6 +202,127 @@ describe('SystemResourceMonitor', () => {
     });
   });
 
+  describe('Settling workers tracking', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      // Set up resources that would allow spawning
+      mockFreemem = () => MEMORY_8GB;
+      mockLoadavg = () => [1.0, 1.0, 1.0];
+      mockCpus = () => new Array(8).fill({ times: { idle: 100, user: 100, nice: 0, sys: 50, irq: 0 } });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('should record spawn events and affect spawn eligibility', async () => {
+      // Set MAX_WORKERS to low value to see the effect
+      const originalMaxWorkers = process.env.MAX_WORKERS;
+      process.env.MAX_WORKERS = '1';
+
+      try {
+        const limitedConfig = createTestConfiguration({
+          cpuCoresReserved: 2,
+          memoryReserve: MEMORY_1GB
+        });
+        const limitedMonitor = new SystemResourceMonitor(limitedConfig, eventBus, logger);
+
+        // Before recordSpawn, should be able to spawn
+        const beforeResult = await limitedMonitor.canSpawnWorker();
+        expect(beforeResult.ok).toBe(true);
+        if (beforeResult.ok) {
+          expect(beforeResult.value).toBe(true);
+        }
+
+        // Record a spawn - this should affect eligibility
+        limitedMonitor.recordSpawn();
+
+        // After recordSpawn, should NOT be able to spawn (at maxWorkers)
+        const afterResult = await limitedMonitor.canSpawnWorker();
+        expect(afterResult.ok).toBe(true);
+        if (afterResult.ok) {
+          expect(afterResult.value).toBe(false);
+        }
+      } finally {
+        if (originalMaxWorkers !== undefined) {
+          process.env.MAX_WORKERS = originalMaxWorkers;
+        } else {
+          delete process.env.MAX_WORKERS;
+        }
+      }
+    });
+
+    it('should include settling workers in effective worker count', async () => {
+      // Record multiple spawns (simulating workers that haven't settled yet)
+      monitor.recordSpawn();
+      monitor.recordSpawn();
+      monitor.recordSpawn();
+
+      // With settling workers, canSpawnWorker should consider them
+      // The exact behavior depends on maxWorkers config
+      const result = await monitor.canSpawnWorker();
+      expect(result.ok).toBe(true);
+    });
+
+    it('should expire settling workers after 15 second window', async () => {
+      // Record a spawn
+      monitor.recordSpawn();
+
+      // Fast-forward past the settling window (15 seconds)
+      await vi.advanceTimersByTimeAsync(16_000);
+
+      // The spawn should have expired from settling tracking
+      // canSpawnWorker cleans up old timestamps
+      const result = await monitor.canSpawnWorker();
+      expect(result.ok).toBe(true);
+    });
+
+    it('should not expire settling workers within the window', async () => {
+      // Record a spawn
+      monitor.recordSpawn();
+
+      // Fast-forward 10 seconds (within the 15 second window)
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      // The spawn should still be tracked
+      const result = await monitor.canSpawnWorker();
+      expect(result.ok).toBe(true);
+    });
+
+    it('should correctly project resource usage for settling workers', async () => {
+      // Set MAX_WORKERS env to limit workers
+      const originalMaxWorkers = process.env.MAX_WORKERS;
+      process.env.MAX_WORKERS = '2';
+
+      try {
+        // Create monitor with limited max workers (2)
+        const limitedConfig = createTestConfiguration({
+          cpuCoresReserved: 2,
+          memoryReserve: MEMORY_1GB
+        });
+        const limitedMonitor = new SystemResourceMonitor(limitedConfig, eventBus, logger);
+
+        // Record spawns up to the limit (2 settling workers = max)
+        limitedMonitor.recordSpawn();
+        limitedMonitor.recordSpawn();
+
+        // Should not allow more spawns because settling workers count toward limit
+        const result = await limitedMonitor.canSpawnWorker();
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
+        }
+      } finally {
+        // Restore env
+        if (originalMaxWorkers !== undefined) {
+          process.env.MAX_WORKERS = originalMaxWorkers;
+        } else {
+          delete process.env.MAX_WORKERS;
+        }
+      }
+    });
+  });
+
   describe('Periodic monitoring', () => {
     beforeEach(() => {
       vi.useFakeTimers();

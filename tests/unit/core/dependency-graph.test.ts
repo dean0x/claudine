@@ -245,6 +245,98 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     });
   });
 
+  describe('Cycle Detection - Immutability (Issue #28)', () => {
+    it('should not mutate graph when checking for cycles with existing task', () => {
+      // REGRESSION TEST for Issue #28: Shallow copy in wouldCreateCycle() corrupts graph
+      // Bug: new Map(this.graph) creates shallow copy - Set values are references
+      // When we add to temp graph's Set, we mutate the original graph's Set
+
+      // Setup: A -> B exists in graph
+      const graph = new DependencyGraph();
+      const addResult = graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+      expect(addResult.ok).toBe(true);
+
+      // Capture state BEFORE cycle check
+      const sizeBefore = graph.size();
+      const depsABefore = graph.getDirectDependencies(TaskId('task-A'));
+      expect(depsABefore.ok).toBe(true);
+      expect(depsABefore.value).toHaveLength(1);
+      expect(depsABefore.value).toContain(TaskId('task-B'));
+
+      const depsBBefore = graph.getDirectDependencies(TaskId('task-B'));
+      expect(depsBBefore.ok).toBe(true);
+      expect(depsBBefore.value).toHaveLength(0); // B has no dependencies
+
+      // Check if B -> A would create cycle (it would)
+      const cycleCheck = graph.wouldCreateCycle(TaskId('task-B'), TaskId('task-A'));
+      expect(cycleCheck.ok).toBe(true);
+      expect(cycleCheck.value).toBe(true); // Cycle detected
+
+      // Verify graph state AFTER cycle check - should be unchanged
+      const sizeAfter = graph.size();
+      expect(sizeAfter).toBe(sizeBefore); // Graph size must not change
+
+      const depsAAfter = graph.getDirectDependencies(TaskId('task-A'));
+      expect(depsAAfter.ok).toBe(true);
+      expect(depsAAfter.value).toHaveLength(1);
+      expect(depsAAfter.value).toContain(TaskId('task-B'));
+
+      const depsBAfter = graph.getDirectDependencies(TaskId('task-B'));
+      expect(depsBAfter.ok).toBe(true);
+      expect(depsBAfter.value).toHaveLength(0); // B should STILL have no dependencies
+
+      // CRITICAL: This assertion catches the bug
+      // With shallow copy bug, B -> A edge is added to original graph
+      expect(depsBAfter.value).not.toContain(TaskId('task-A'));
+    });
+
+    it('should not mutate graph when checking non-cycle with existing task', () => {
+      // Additional test: Verify immutability even when no cycle is detected
+
+      // Setup: A -> B exists
+      const graph = new DependencyGraph();
+      graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+
+      const sizeBefore = graph.size();
+
+      // Check if B -> C would create cycle (it wouldn't)
+      const cycleCheck = graph.wouldCreateCycle(TaskId('task-B'), TaskId('task-C'));
+      expect(cycleCheck.ok).toBe(true);
+      expect(cycleCheck.value).toBe(false); // No cycle
+
+      // Graph should still be unchanged
+      expect(graph.size()).toBe(sizeBefore);
+
+      const depsB = graph.getDirectDependencies(TaskId('task-B'));
+      expect(depsB.ok).toBe(true);
+      expect(depsB.value).toHaveLength(0);
+      expect(depsB.value).not.toContain(TaskId('task-C'));
+    });
+
+    it('should not mutate graph with multiple cycle checks', () => {
+      // Test multiple successive cycle checks don't accumulate corruption
+
+      const graph = new DependencyGraph();
+      graph.addEdge(TaskId('task-A'), TaskId('task-B'));
+      graph.addEdge(TaskId('task-B'), TaskId('task-C'));
+
+      const sizeBefore = graph.size();
+
+      // Multiple cycle checks
+      graph.wouldCreateCycle(TaskId('task-C'), TaskId('task-A')); // Would create cycle
+      graph.wouldCreateCycle(TaskId('task-C'), TaskId('task-B')); // Would create cycle
+      graph.wouldCreateCycle(TaskId('task-C'), TaskId('task-D')); // Would not create cycle
+      graph.wouldCreateCycle(TaskId('task-A'), TaskId('task-D')); // Would not create cycle
+
+      // Graph should be completely unchanged
+      expect(graph.size()).toBe(sizeBefore);
+
+      const depsC = graph.getDirectDependencies(TaskId('task-C'));
+      expect(depsC.ok).toBe(true);
+      expect(depsC.value).toHaveLength(0); // C should have no dependencies added
+    });
+  });
+
   describe('Dependency Queries', () => {
     it('should get direct dependencies', () => {
       // A depends on B and C

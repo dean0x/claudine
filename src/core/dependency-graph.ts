@@ -247,7 +247,12 @@ export class DependencyGraph {
     }
 
     // Create temporary graph with the proposed edge
-    const tempGraph = new Map(this.graph);
+    // SECURITY FIX (Issue #28): Deep copy required to prevent graph corruption
+    // Shallow copy (new Map(this.graph)) only copies Map structure - Set values are REFERENCES
+    // When we modify temp graph's Sets, we would mutate the original graph's Sets
+    const tempGraph = new Map(
+      Array.from(this.graph.entries()).map(([k, v]) => [k, new Set(v)])
+    );
 
     // Add proposed edge to temp graph
     if (!tempGraph.has(taskIdStr)) {
