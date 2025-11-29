@@ -524,7 +524,10 @@ export class TestResourceMonitor implements ResourceMonitor {
   }
 
   recordSpawn(): void {
-    // No-op for test double - settling workers tracking not needed in tests
+    // INTENTIONAL NO-OP: Test double doesn't track settling workers because:
+    // 1. Tests use MockWorkerPool - no real processes are spawned
+    // 2. Settling worker tracking is a production autoscaling concern
+    // 3. Tests verify behavior via MockWorkerPool.spawn() calls instead
   }
 
   // Test-specific methods

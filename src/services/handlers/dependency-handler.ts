@@ -153,8 +153,14 @@ export class DependencyHandler extends BaseEventHandler {
 
       // ARCHITECTURE: Handler performs cycle detection BEFORE repository call
       // This is business logic (DAG validation), not data access
+      //
       // PERFORMANCE: Validate all dependencies in parallel (Issue #14)
-      // Each check is read-only (uses temp graph), so concurrent execution is safe
+      // Each check is read-only (uses temp graph), so concurrent execution is safe.
+      // Note: We intentionally run ALL validations even if one fails early because:
+      // 1. Tasks typically have 1-5 dependencies - negligible overhead
+      // 2. Promise.all() starts all checks concurrently (no sequential waiting)
+      // 3. Early termination would require Promise.race() + cancellation complexity
+      // 4. Returning first error is sufficient - user fixes and retries
       const validationResults = await Promise.all(
         task.dependsOn.map(async (depId) => {
           // Cycle detection

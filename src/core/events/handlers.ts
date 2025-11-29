@@ -46,8 +46,10 @@ export abstract class BaseEventHandler {
     }
   ): Promise<Result<void>> {
     // ARCHITECTURE EXCEPTION: Using 'as any' for EventBus.emit type compatibility
-    // The EventBus interface requires specific event type inference that doesn't compose well
-    // with the helper pattern. The payload is validated at the emit() call site.
+    // TypeScript cannot infer the correct payload type from a string event type at this
+    // generic helper call site. This is a TypeScript limitation, not a design flaw.
+    // Safety: EventBus.emit() wraps payload in createEvent() which adds eventId/timestamp.
+    // The alternative would be no DRY helper at all - this trade-off is acceptable.
     const result = await eventBus.emit(eventType as any, payload as any);
 
     if (!result.ok && (options?.logOnError ?? true)) {
