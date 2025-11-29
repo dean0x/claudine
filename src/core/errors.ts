@@ -250,24 +250,3 @@ export const operationErrorHandler = (
   };
 };
 
-/**
- * Create a ClaudineError for a failed operation with context.
- * Use this for one-off error creation; use operationErrorHandler for tryCatchAsync.
- *
- * @param operation - Description of the operation that failed
- * @param error - The original error
- * @param context - Optional context object
- * @returns ClaudineError with standardized message format
- */
-export const operationFailed = (
-  operation: string,
-  error: unknown,
-  context?: Record<string, unknown>
-): ClaudineError => {
-  const message = error instanceof Error ? error.message : String(error);
-  return new ClaudineError(
-    ErrorCode.SYSTEM_ERROR,
-    `Failed to ${operation}: ${message}`,
-    context
-  );
-};
