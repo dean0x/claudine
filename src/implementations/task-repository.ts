@@ -90,7 +90,7 @@ export class SQLiteTaskRepository implements TaskRepository {
           completedAt: task.completedAt || null,
           workerId: task.workerId || null,
           exitCode: task.exitCode ?? null,
-          dependencies: null, // Phase 4: Task dependencies not yet implemented
+          dependencies: null, // Dependencies stored in task_dependencies table
           parentTaskId: task.parentTaskId || null,
           retryCount: task.retryCount || null,
           retryOf: task.retryOf || null

@@ -204,4 +204,4 @@ Last Updated: November 2025
 
 ---
 
-**Note**: This document reflects the actual implemented features as of v0.2.1. For planned features, see [ROADMAP.md](./ROADMAP.md).
+**Note**: This document reflects the actual implemented features as of v0.3.x. For planned features, see [ROADMAP.md](./ROADMAP.md).
