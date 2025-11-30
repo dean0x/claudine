@@ -7,7 +7,7 @@ import SQLite from 'better-sqlite3';
 import { TaskRepository } from '../core/interfaces.js';
 import { Task, TaskId, TaskStatus, Priority, WorkerId } from '../core/domain.js';
 import { Result, ok, err, tryCatchAsync } from '../core/result.js';
-import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { ClaudineError, ErrorCode, operationErrorHandler } from '../core/errors.js';
 import { Database } from './database.js';
 
 export class SQLiteTaskRepository implements TaskRepository {
@@ -98,11 +98,7 @@ export class SQLiteTaskRepository implements TaskRepository {
 
         this.saveStmt.run(dbTask);
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to save task: ${error}`,
-        { taskId: task.id }
-      )
+      operationErrorHandler('save task', { taskId: task.id })
     );
   }
 
@@ -139,11 +135,7 @@ export class SQLiteTaskRepository implements TaskRepository {
 
         return this.rowToTask(row);
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to find task: ${error}`,
-        { taskId }
-      )
+      operationErrorHandler('find task', { taskId })
     );
   }
 
@@ -153,10 +145,7 @@ export class SQLiteTaskRepository implements TaskRepository {
         const rows = this.findAllStmt.all() as Record<string, any>[];
         return rows.map(row => this.rowToTask(row));
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to find all tasks: ${error}`
-      )
+      operationErrorHandler('find all tasks')
     );
   }
 
@@ -166,11 +155,7 @@ export class SQLiteTaskRepository implements TaskRepository {
         const rows = this.findByStatusStmt.all(status) as Record<string, any>[];
         return rows.map(row => this.rowToTask(row));
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to find tasks by status: ${error}`,
-        { status }
-      )
+      operationErrorHandler('find tasks by status', { status })
     );
   }
 
@@ -179,11 +164,7 @@ export class SQLiteTaskRepository implements TaskRepository {
       async () => {
         this.deleteStmt.run(taskId);
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to delete task: ${error}`,
-        { taskId }
-      )
+      operationErrorHandler('delete task', { taskId })
     );
   }
 
@@ -194,10 +175,7 @@ export class SQLiteTaskRepository implements TaskRepository {
         const result = this.cleanupOldTasksStmt.run(cutoffTime);
         return result.changes || 0;
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to cleanup old tasks: ${error}`
-      )
+      operationErrorHandler('cleanup old tasks')
     );
   }
 

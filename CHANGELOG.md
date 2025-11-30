@@ -299,30 +299,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## Development Versions
-
-### Unreleased Features (Future Versions)
-
-#### v0.3.0 - Task Dependencies (Planned Q4 2025)
-- Task dependency resolution and execution ordering
-- Conditional task execution based on dependency outcomes
-- Dependency graph visualization and management
-- Enhanced CLI with dependency support
-
-#### v0.4.0 - Distributed Processing (Planned Q1 2026)
-- Multi-server task distribution
-- Shared task queue across instances  
-- Load balancing and fault tolerance
-- gRPC inter-server communication
-
-#### v0.5.0 - Advanced Orchestration (Planned Q2 2026)
-- Task templates and workflow definitions
-- Conditional logic and loops in workflows
-- Human approval steps
-- YAML-based workflow specifications
-
----
-
 ## Migration Guide
 
 ### Upgrading to v0.2.0
