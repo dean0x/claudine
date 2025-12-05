@@ -79,7 +79,8 @@ export class Database {
   }
 
   private createTables(): void {
-    // SCHEMA MIGRATIONS: Track applied migrations for safe production upgrades
+    // SCHEMA MIGRATIONS: Only create migrations table here
+    // All other tables are created through migrations (single source of truth)
     // Pattern: Version-based migrations with timestamps
     // Rationale: Enables safe schema evolution without data loss
     this.db.exec(`
@@ -93,81 +94,8 @@ export class Database {
     // Get current schema version
     const currentVersion = this.getCurrentSchemaVersion();
 
-    // Apply migrations if needed (currently at v1 - baseline schema)
+    // Apply all pending migrations (schema lives in migrations)
     this.applyMigrations(currentVersion);
-
-    // Tasks table with complete schema
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS tasks (
-        id TEXT PRIMARY KEY,
-        prompt TEXT NOT NULL,
-        status TEXT NOT NULL,
-        priority TEXT NOT NULL,
-        working_directory TEXT,
-        use_worktree INTEGER DEFAULT 0,
-        worktree_cleanup TEXT DEFAULT 'auto',
-        merge_strategy TEXT DEFAULT 'pr',
-        branch_name TEXT,
-        base_branch TEXT,
-        auto_commit INTEGER DEFAULT 1,
-        push_to_remote INTEGER DEFAULT 1,
-        pr_title TEXT,
-        pr_body TEXT,
-        timeout INTEGER,
-        max_output_buffer INTEGER,
-        parent_task_id TEXT,
-        retry_count INTEGER,
-        retry_of TEXT,
-        created_at INTEGER NOT NULL,
-        started_at INTEGER,
-        completed_at INTEGER,
-        worker_id TEXT,
-        exit_code INTEGER,
-        dependencies TEXT
-      )
-    `);
-
-    // Task output table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS task_output (
-        task_id TEXT PRIMARY KEY,
-        stdout TEXT,
-        stderr TEXT,
-        total_size INTEGER,
-        file_path TEXT,
-        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Task dependencies table
-    // ARCHITECTURE: Relational model for task dependencies with DAG validation
-    // Pattern: Normalized dependency tracking with resolution states
-    // Rationale: Enables efficient cycle detection, dependency queries, and state tracking
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS task_dependencies (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        task_id TEXT NOT NULL,
-        depends_on_task_id TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        resolved_at INTEGER,
-        resolution TEXT NOT NULL DEFAULT 'pending',
-        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
-        FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
-        UNIQUE(task_id, depends_on_task_id)
-      )
-    `);
-
-    // Create indexes for performance
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-      CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
-      CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
-      CREATE INDEX IF NOT EXISTS idx_task_dependencies_task_id ON task_dependencies(task_id);
-      CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on ON task_dependencies(depends_on_task_id);
-      CREATE INDEX IF NOT EXISTS idx_task_dependencies_resolution ON task_dependencies(resolution);
-      CREATE INDEX IF NOT EXISTS idx_task_dependencies_blocked ON task_dependencies(task_id, resolution);
-      CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on_resolution ON task_dependencies(depends_on_task_id, resolution);
-    `);
   }
 
   isOpen(): boolean {
@@ -254,6 +182,11 @@ export class Database {
   /**
    * Define all schema migrations
    * Add new migrations here with incrementing version numbers
+   *
+   * ARCHITECTURE: Migrations are the single source of truth for schema
+   * - Fresh databases: All migrations run in order
+   * - Existing databases: Only new migrations run (skips already applied)
+   * - Uses IF NOT EXISTS for idempotency (safe if migration runs twice)
    */
   private getMigrations(): Array<{
     version: number;
@@ -265,8 +198,77 @@ export class Database {
         version: 1,
         description: 'Baseline schema with tasks, dependencies, and output tables',
         up: (db) => {
-          // Migration v1 is the baseline - tables are already created in createTables()
-          // This just records the baseline version
+          // Tasks table - core task data
+          db.exec(`
+            CREATE TABLE IF NOT EXISTS tasks (
+              id TEXT PRIMARY KEY,
+              prompt TEXT NOT NULL,
+              status TEXT NOT NULL,
+              priority TEXT NOT NULL,
+              working_directory TEXT,
+              use_worktree INTEGER DEFAULT 0,
+              worktree_cleanup TEXT DEFAULT 'auto',
+              merge_strategy TEXT DEFAULT 'pr',
+              branch_name TEXT,
+              base_branch TEXT,
+              auto_commit INTEGER DEFAULT 1,
+              push_to_remote INTEGER DEFAULT 1,
+              pr_title TEXT,
+              pr_body TEXT,
+              timeout INTEGER,
+              max_output_buffer INTEGER,
+              parent_task_id TEXT,
+              retry_count INTEGER,
+              retry_of TEXT,
+              created_at INTEGER NOT NULL,
+              started_at INTEGER,
+              completed_at INTEGER,
+              worker_id TEXT,
+              exit_code INTEGER,
+              dependencies TEXT
+            )
+          `);
+
+          // Task output table - stdout/stderr capture
+          db.exec(`
+            CREATE TABLE IF NOT EXISTS task_output (
+              task_id TEXT PRIMARY KEY,
+              stdout TEXT,
+              stderr TEXT,
+              total_size INTEGER,
+              file_path TEXT,
+              FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+            )
+          `);
+
+          // Task dependencies table - DAG for dependency tracking
+          // Pattern: Normalized dependency tracking with resolution states
+          // Rationale: Enables efficient cycle detection, dependency queries, and state tracking
+          db.exec(`
+            CREATE TABLE IF NOT EXISTS task_dependencies (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              task_id TEXT NOT NULL,
+              depends_on_task_id TEXT NOT NULL,
+              created_at INTEGER NOT NULL,
+              resolved_at INTEGER,
+              resolution TEXT NOT NULL DEFAULT 'pending',
+              FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+              FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+              UNIQUE(task_id, depends_on_task_id)
+            )
+          `);
+
+          // Performance indexes
+          db.exec(`
+            CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+            CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
+            CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
+            CREATE INDEX IF NOT EXISTS idx_task_dependencies_task_id ON task_dependencies(task_id);
+            CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on ON task_dependencies(depends_on_task_id);
+            CREATE INDEX IF NOT EXISTS idx_task_dependencies_resolution ON task_dependencies(resolution);
+            CREATE INDEX IF NOT EXISTS idx_task_dependencies_blocked ON task_dependencies(task_id, resolution);
+            CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on_resolution ON task_dependencies(depends_on_task_id, resolution);
+          `);
         }
       }
       // Future migrations go here:
