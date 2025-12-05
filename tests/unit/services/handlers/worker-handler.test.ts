@@ -679,4 +679,191 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       expect(eventBus.hasEmitted('TaskStarting')).toBe(true);
     });
   });
+
+  /**
+   * CHARACTERIZATION TESTS - Decomposition Safety
+   *
+   * These tests capture critical invariants that MUST be preserved when
+   * decomposing processNextTask(). Each test documents a specific behavior
+   * that the refactored code must maintain.
+   *
+   * See: docs/architecture/HANDLER-DECOMPOSITION-INVARIANTS.md
+   */
+  describe('Characterization Tests - Decomposition Safety', () => {
+    describe('processNextTask() Ordering Invariants', () => {
+      it('INVARIANT: TaskStarting emission failure should requeue task without TaskFailed', async () => {
+        // This tests the invariant: TaskStarting failure -> requeue WITHOUT TaskFailed
+        const task = new TaskFactory().withPrompt('test task').build();
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task));
+
+        // Make TaskStarting emit fail
+        eventBus.setEmitFailure('TaskStarting', true);
+
+        await eventBus.emit('TaskQueued', { taskId: task.id, task });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Should have attempted TaskStarting
+        expect(eventBus.hasEmitted('TaskStarting')).toBe(true);
+
+        // Should requeue task
+        expect(eventBus.hasEmitted('RequeueTask')).toBe(true);
+
+        // Should NOT emit TaskFailed (unlike spawn failure)
+        expect(eventBus.hasEmitted('TaskFailed')).toBe(false);
+
+        // Should NOT have spawned worker
+        expect(workerPool.spawnCalls.length).toBe(0);
+      });
+
+      it('INVARIANT: Spawn failure emits BOTH RequeueTask AND TaskFailed', async () => {
+        // This tests the invariant: spawn failure -> RequeueTask + TaskFailed
+        const task = new TaskFactory().withPrompt('test task').build();
+
+        workerPool.spawn = vi.fn().mockResolvedValue(
+          err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {}))
+        );
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task));
+
+        await eventBus.emit('TaskQueued', { taskId: task.id, task });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // BOTH events must be emitted
+        expect(eventBus.hasEmitted('RequeueTask')).toBe(true);
+        expect(eventBus.hasEmitted('TaskFailed')).toBe(true);
+      });
+
+      it('INVARIANT: Resource check happens BEFORE getting task from queue', async () => {
+        // This tests the invariant: resource check is first (after delay check)
+        const task = new TaskFactory().withPrompt('test task').build();
+
+        resourceMonitor.setCanSpawn(false); // Resources constrained
+        eventBus.setRequestResponse('NextTaskQuery', ok(task));
+
+        await eventBus.emit('TaskQueued', { taskId: task.id, task });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Should NOT have queried for next task since resources unavailable
+        const requests = eventBus.getRequestedEvents('NextTaskQuery');
+        expect(requests.length).toBe(0);
+      });
+
+      it('INVARIANT: Success path emits WorkerSpawned and TaskStarted together', async () => {
+        // This tests the invariant: both events emitted on success (via Promise.all)
+        const task = new TaskFactory().withPrompt('test task').build();
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task));
+
+        await eventBus.emit('TaskQueued', { taskId: task.id, task });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Both events should be emitted
+        expect(eventBus.hasEmitted('WorkerSpawned')).toBe(true);
+        expect(eventBus.hasEmitted('TaskStarted')).toBe(true);
+
+        // Verify they were emitted in close succession (within 10ms of each other)
+        const events = eventBus.getAllEmittedEvents();
+        const workerSpawnedEvent = events.find(e => e.type === 'WorkerSpawned');
+        const taskStartedEvent = events.find(e => e.type === 'TaskStarted');
+
+        expect(workerSpawnedEvent).toBeDefined();
+        expect(taskStartedEvent).toBeDefined();
+
+        const timeDiff = Math.abs(workerSpawnedEvent!.timestamp - taskStartedEvent!.timestamp);
+        expect(timeDiff).toBeLessThan(10); // Should be nearly simultaneous
+      });
+
+      it('INVARIANT: Worker count incremented only after successful spawn', async () => {
+        const task = new TaskFactory().withPrompt('test task').build();
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task));
+
+        const initialCount = resourceMonitor.workerCount;
+
+        await eventBus.emit('TaskQueued', { taskId: task.id, task });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Worker count should increase by 1
+        expect(resourceMonitor.workerCount).toBe(initialCount + 1);
+      });
+
+      it('INVARIANT: Worker count NOT incremented on spawn failure', async () => {
+        const task = new TaskFactory().withPrompt('test task').build();
+
+        workerPool.spawn = vi.fn().mockResolvedValue(
+          err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {}))
+        );
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task));
+
+        const initialCount = resourceMonitor.workerCount;
+
+        await eventBus.emit('TaskQueued', { taskId: task.id, task });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Worker count should NOT change on failure
+        expect(resourceMonitor.workerCount).toBe(initialCount);
+      });
+
+      it('INVARIANT: Empty queue returns early without side effects', async () => {
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(null)); // Empty queue
+
+        await eventBus.emit('TaskQueued', { taskId: 'test' as any, task: {} as any });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Should not emit any task lifecycle events
+        expect(eventBus.hasEmitted('TaskStarting')).toBe(false);
+        expect(eventBus.hasEmitted('WorkerSpawned')).toBe(false);
+        expect(eventBus.hasEmitted('TaskStarted')).toBe(false);
+        expect(eventBus.hasEmitted('RequeueTask')).toBe(false);
+        expect(eventBus.hasEmitted('TaskFailed')).toBe(false);
+      });
+    });
+
+    describe('State Consistency Invariants', () => {
+      it('INVARIANT: No partial state on TaskStarting failure', async () => {
+        // Verify that if TaskStarting fails, no state is mutated
+        const task = new TaskFactory().withPrompt('test task').build();
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task));
+        eventBus.setEmitFailure('TaskStarting', true);
+
+        const initialWorkerCount = resourceMonitor.workerCount;
+
+        await eventBus.emit('TaskQueued', { taskId: task.id, task });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // State should be unchanged
+        expect(resourceMonitor.workerCount).toBe(initialWorkerCount);
+        expect(workerPool.spawnCalls.length).toBe(0);
+      });
+
+      it('INVARIANT: No partial state on spawn failure', async () => {
+        const task = new TaskFactory().withPrompt('test task').build();
+
+        workerPool.spawn = vi.fn().mockResolvedValue(
+          err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {}))
+        );
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task));
+
+        const initialWorkerCount = resourceMonitor.workerCount;
+
+        await eventBus.emit('TaskQueued', { taskId: task.id, task });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // State should be unchanged (worker count not incremented)
+        expect(resourceMonitor.workerCount).toBe(initialWorkerCount);
+      });
+    });
+  });
 });
