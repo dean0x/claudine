@@ -749,22 +749,24 @@ All state changes flow through events:
 
 ## 11. CURRENT STATE SUMMARY
 
-**Status**: Phase 4 (Task Dependencies) is **80% complete**
+**Status**: Task Dependencies (v0.3.0+) is **complete**
 
-### What Works:
+### What's Implemented:
 - ✅ DAG-based dependency model with cycle detection
-- ✅ Persistent storage in SQLite
+- ✅ Persistent storage in SQLite with batch resolution
 - ✅ Event-driven dependency resolution
 - ✅ Blocked task queueing (dependencies prevent execution)
 - ✅ Automatic unblocking when dependencies complete
 - ✅ Atomic operations (database transactions)
-- ✅ Performance optimized (O(log n) queue, O(V+E) cycle detection)
+- ✅ Performance optimized (caching, batch operations, O(V+E) cycle detection)
+- ✅ MCP `DelegateTask` tool supports `dependsOn` parameter
+- ✅ TaskStatus shows dependency state (blocked/ready/none)
+- ✅ Security limits (100 deps/task, 100 chain depth)
 
-### What Needs Work:
-- ⚠️ CLI commands for declaring dependencies
-- ⚠️ MCP tools for dependency-aware task delegation
+### Future Enhancements (not blocking):
+- ⚠️ CLI commands for declaring dependencies (use MCP tool for now)
 - ⚠️ Dependency visualization/querying endpoints
-- ⚠️ Dependency failure policy configuration
+- ⚠️ Configurable dependency failure policies
 
 ---
 
