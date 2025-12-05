@@ -193,125 +193,182 @@ export class WorkerHandler extends BaseEventHandler {
     });
   }
 
+  // ============================================================================
+  // EXTRACTED METHODS - processNextTask() decomposition
+  // See docs/architecture/HANDLER-DECOMPOSITION-INVARIANTS.md for constraints
+  // ============================================================================
+
+  /**
+   * Check if spawn should be delayed due to burst protection
+   * PURE: No side effects, returns calculation result
+   */
+  private getSpawnDelayRequired(): { shouldDelay: boolean; delayMs: number } {
+    const now = Date.now();
+    const timeSinceLastSpawn = now - this.lastSpawnTime;
+
+    if (timeSinceLastSpawn < this.minSpawnDelayMs) {
+      return {
+        shouldDelay: true,
+        delayMs: this.minSpawnDelayMs - timeSinceLastSpawn
+      };
+    }
+
+    return { shouldDelay: false, delayMs: 0 };
+  }
+
+  /**
+   * Handle spawn delay requirement - log and schedule retry
+   * INVARIANT: Must schedule retry via setTimeout
+   */
+  private handleSpawnDelayRequired(delayMs: number, timeSinceLastSpawn: number): void {
+    this.logger.debug('Delaying spawn to prevent burst overload', {
+      delay: delayMs,
+      timeSinceLastSpawn,
+      reason: 'fork-bomb prevention'
+    });
+
+    setTimeout(() => this.processNextTask(), delayMs);
+  }
+
+  /**
+   * Handle resource constraint - log and schedule retry with backoff
+   * INVARIANT: Must apply SPAWN_BACKOFF_MS delay
+   */
+  private handleResourcesConstrained(): void {
+    this.logger.debug('Resources constrained, applying backoff', {
+      backoffMs: this.SPAWN_BACKOFF_MS
+    });
+
+    setTimeout(() => this.processNextTask(), this.SPAWN_BACKOFF_MS);
+  }
+
+  /**
+   * Handle TaskStarting emission failure
+   * INVARIANT: Requeue task WITHOUT emitting TaskFailed
+   */
+  private async handleTaskStartingFailure(task: Task, error: Error): Promise<void> {
+    this.logger.error('Failed to emit TaskStarting event', error, {
+      taskId: task.id
+    });
+
+    await this.eventBus.emit('RequeueTask', { task });
+  }
+
+  /**
+   * Handle worker spawn failure
+   * INVARIANT: Requeue task AND emit TaskFailed (both required)
+   */
+  private async handleSpawnFailure(task: Task, error: Error): Promise<void> {
+    this.logger.error('Failed to spawn worker', error, {
+      taskId: task.id
+    });
+
+    // INVARIANT: Both RequeueTask AND TaskFailed must be emitted
+    await this.eventBus.emit('RequeueTask', { task });
+    await this.eventBus.emit('TaskFailed', {
+      taskId: task.id,
+      error,
+      exitCode: 1
+    });
+  }
+
+  /**
+   * Record successful spawn and emit events
+   * INVARIANT: All updates must happen together (atomic success path)
+   * - lastSpawnTime update
+   * - resourceMonitor.incrementWorkerCount()
+   * - resourceMonitor.recordSpawn()
+   * - WorkerSpawned and TaskStarted events (parallel)
+   */
+  private async recordSpawnSuccessAndEmitEvents(worker: Worker, task: Task): Promise<void> {
+    // Update spawn time for throttling
+    this.lastSpawnTime = Date.now();
+
+    // Update resource monitor (both calls together)
+    this.resourceMonitor.incrementWorkerCount();
+    this.resourceMonitor.recordSpawn();
+
+    // Emit events in parallel (invariant: both emitted together)
+    await Promise.all([
+      this.eventBus.emit('WorkerSpawned', {
+        worker,
+        taskId: task.id
+      }),
+      this.eventBus.emit('TaskStarted', {
+        taskId: task.id,
+        workerId: worker.id
+      })
+    ]);
+
+    this.logger.info('Task started with worker', {
+      taskId: task.id,
+      workerId: worker.id,
+      pid: worker.pid
+    });
+  }
+
+  // ============================================================================
+  // MAIN ORCHESTRATION METHOD
+  // ============================================================================
+
   /**
    * Process next task if resources available
    * ARCHITECTURE: Enforces spawn delay to prevent burst fork-bomb scenarios
    * See class-level documentation for justification
+   *
+   * DECOMPOSITION: This method orchestrates extracted methods while
+   * preserving all invariants documented in HANDLER-DECOMPOSITION-INVARIANTS.md
    */
   private async processNextTask(): Promise<void> {
     try {
-      // Enforce minimum delay between spawns to prevent overwhelming the system
-      const now = Date.now();
-      const timeSinceLastSpawn = now - this.lastSpawnTime;
-
-      if (timeSinceLastSpawn < this.minSpawnDelayMs) {
-        const delay = this.minSpawnDelayMs - timeSinceLastSpawn;
-        this.logger.debug('Delaying spawn to prevent burst overload', {
-          delay,
-          timeSinceLastSpawn,
-          reason: 'fork-bomb prevention'
-        });
-
-        // Schedule retry after delay
-        setTimeout(() => this.processNextTask(), delay);
+      // Step 1: Check spawn delay (fork-bomb prevention)
+      const delayCheck = this.getSpawnDelayRequired();
+      if (delayCheck.shouldDelay) {
+        const timeSinceLastSpawn = Date.now() - this.lastSpawnTime;
+        this.handleSpawnDelayRequired(delayCheck.delayMs, timeSinceLastSpawn);
         return;
       }
 
-      // Check if we can spawn a worker based on CPU/memory resources
+      // Step 2: Check resource availability
       const canSpawnResult = await this.resourceMonitor.canSpawnWorker();
-
       if (!canSpawnResult.ok || !canSpawnResult.value) {
-        // Apply backoff when resources are constrained
-        this.logger.debug('Resources constrained, applying backoff', {
-          backoffMs: this.SPAWN_BACKOFF_MS
-        });
-
-        // Schedule retry with backoff
-        setTimeout(() => this.processNextTask(), this.SPAWN_BACKOFF_MS);
-        return; // No resources available
+        this.handleResourcesConstrained();
+        return;
       }
 
-      // Get next task from queue using event-driven query
+      // Step 3: Get next task from queue
       const taskResult = await this.eventBus.request<NextTaskQueryEvent, Task | null>(
         'NextTaskQuery',
         {}
       );
-
       if (!taskResult.ok || !taskResult.value) {
-        return; // No tasks or error getting task
+        return; // No tasks or error
       }
 
       const task = taskResult.value;
-
       this.logger.info('Starting task processing', {
         taskId: task.id,
         priority: task.priority
       });
 
-      // Emit task starting event
+      // Step 4: Emit TaskStarting event
       const startingResult = await this.eventBus.emit('TaskStarting', {
         taskId: task.id
       });
-
       if (!startingResult.ok) {
-        this.logger.error('Failed to emit TaskStarting event', startingResult.error, {
-          taskId: task.id
-        });
-
-        // Put task back in queue using event
-        await this.eventBus.emit('RequeueTask', { task });
+        await this.handleTaskStartingFailure(task, startingResult.error);
         return;
       }
 
-      // Spawn worker
+      // Step 5: Spawn worker
       const workerResult = await this.workerPool.spawn(task);
-      
       if (!workerResult.ok) {
-        this.logger.error('Failed to spawn worker', workerResult.error, {
-          taskId: task.id
-        });
-
-        // Put task back in queue using event
-        await this.eventBus.emit('RequeueTask', { task });
-
-        // Emit task failed event
-        await this.eventBus.emit('TaskFailed', {
-          taskId: task.id,
-          error: workerResult.error,
-          exitCode: 1
-        });
-
+        await this.handleSpawnFailure(task, workerResult.error);
         return;
       }
 
-      const worker = workerResult.value;
-
-      // Record spawn time for throttling
-      this.lastSpawnTime = Date.now();
-
-      // Update resource monitor
-      this.resourceMonitor.incrementWorkerCount();
-
-      // Record spawn for settling worker tracking (accounts for lag in load average)
-      this.resourceMonitor.recordSpawn();
-
-      // Emit worker spawned and task started events
-      await Promise.all([
-        this.eventBus.emit('WorkerSpawned', {
-          worker,
-          taskId: task.id
-        }),
-        this.eventBus.emit('TaskStarted', {
-          taskId: task.id,
-          workerId: worker.id
-        })
-      ]);
-
-      this.logger.info('Task started with worker', {
-        taskId: task.id,
-        workerId: worker.id,
-        pid: worker.pid
-      });
+      // Step 6: Record success and emit events (atomic success path)
+      await this.recordSpawnSuccessAndEmitEvents(workerResult.value, task);
 
     } catch (error) {
       this.logger.error('Error in task processing', error as Error);
