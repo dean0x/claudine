@@ -129,17 +129,164 @@ export class DependencyHandler extends BaseEventHandler {
     return ok(undefined);
   }
 
+  // ============================================================================
+  // EXTRACTED METHODS - handleTaskDelegated() decomposition
+  // See docs/architecture/HANDLER-DECOMPOSITION-INVARIANTS.md for constraints
+  // ============================================================================
+
+  /**
+   * Validate a single dependency - check for cycles and depth limits
+   * PURE: Read-only operation, no side effects
+   *
+   * @returns Validation result with type indicating: ok, cycle, depth, or system error
+   */
+  private validateSingleDependency(
+    taskId: TaskId,
+    depId: TaskId
+  ): { depId: TaskId; error: Error | null; type: 'ok' | 'cycle' | 'depth' | 'system' } {
+    // Cycle detection
+    const cycleCheck = this.graph.wouldCreateCycle(taskId, depId);
+    if (!cycleCheck.ok) {
+      return { depId, error: cycleCheck.error, type: 'system' };
+    }
+    if (cycleCheck.value) {
+      return {
+        depId,
+        error: new ClaudineError(
+          ErrorCode.INVALID_OPERATION,
+          `Cannot add dependency: would create cycle (${taskId} -> ${depId})`,
+          { taskId, dependsOnTaskId: depId }
+        ),
+        type: 'cycle'
+      };
+    }
+
+    // Depth check
+    const depDepth = this.graph.getMaxDepth(depId);
+    const resultingDepth = 1 + depDepth;
+    if (resultingDepth > MAX_DEPENDENCY_CHAIN_DEPTH) {
+      return {
+        depId,
+        error: new ClaudineError(
+          ErrorCode.INVALID_OPERATION,
+          `Cannot add dependency: would create chain depth of ${resultingDepth} (max ${MAX_DEPENDENCY_CHAIN_DEPTH})`,
+          { taskId, dependsOnTaskId: depId, depth: resultingDepth }
+        ),
+        type: 'depth'
+      };
+    }
+
+    return { depId, error: null, type: 'ok' };
+  }
+
+  /**
+   * Handle validation failure - log appropriately and emit failure event
+   * INVARIANT: Must emit TaskDependencyFailed event
+   */
+  private async handleValidationFailure(
+    taskId: TaskId,
+    requestedDependencies: readonly TaskId[],
+    failure: { depId: TaskId; error: Error | null; type: 'ok' | 'cycle' | 'depth' | 'system' }
+  ): Promise<void> {
+    const context = { taskId, dependsOnTaskId: failure.depId };
+
+    // Log based on failure type
+    if (failure.type === 'system') {
+      this.logger.error('Validation failed', failure.error!, context);
+    } else if (failure.type === 'cycle') {
+      this.logger.warn('Cycle detected, rejecting dependency', context);
+    } else {
+      this.logger.warn('Depth limit exceeded, rejecting dependency', context);
+    }
+
+    // Emit batch failure event
+    await this.eventBus.emit('TaskDependencyFailed', {
+      taskId,
+      failedDependencyId: failure.depId,
+      requestedDependencies,
+      error: failure.error!
+    });
+  }
+
+  /**
+   * Handle database write failure - log and emit failure event
+   * INVARIANT: Must emit TaskDependencyFailed event
+   */
+  private async handleDatabaseFailure(
+    taskId: TaskId,
+    dependencies: readonly TaskId[],
+    error: Error
+  ): Promise<void> {
+    this.logger.error('Failed to add dependencies', error, {
+      taskId,
+      dependencies
+    });
+
+    await this.eventBus.emit('TaskDependencyFailed', {
+      taskId,
+      failedDependencyId: dependencies[0], // First dependency for compatibility
+      error
+    });
+  }
+
+  /**
+   * Update in-memory graph after successful database persistence
+   * INVARIANT: Must happen AFTER database write succeeds
+   * RECOVERY: Graph errors are logged but don't fail - reconciled on restart
+   */
+  private updateGraphAfterPersistence(
+    dependencies: readonly { taskId: TaskId; dependsOnTaskId: TaskId }[]
+  ): void {
+    for (const dependency of dependencies) {
+      const edgeResult = this.graph.addEdge(dependency.taskId, dependency.dependsOnTaskId);
+      if (!edgeResult.ok) {
+        // This should never happen for valid data, but log if it does
+        this.logger.error('Unexpected error updating graph after DB write', edgeResult.error, {
+          taskId: dependency.taskId,
+          dependsOnTaskId: dependency.dependsOnTaskId
+        });
+        // Continue - graph will be reconciled on restart
+      }
+      this.logger.debug('Graph updated with new dependency', {
+        taskId: dependency.taskId,
+        dependsOnTaskId: dependency.dependsOnTaskId
+      });
+    }
+  }
+
+  /**
+   * Emit TaskDependencyAdded events for each dependency
+   * INVARIANT: Must happen AFTER graph update
+   */
+  private async emitDependencyAddedEvents(
+    dependencies: readonly { taskId: TaskId; dependsOnTaskId: TaskId }[]
+  ): Promise<void> {
+    for (const dependency of dependencies) {
+      await this.eventBus.emit('TaskDependencyAdded', {
+        taskId: dependency.taskId,
+        dependsOnTaskId: dependency.dependsOnTaskId
+      });
+    }
+  }
+
+  // ============================================================================
+  // MAIN ORCHESTRATION METHOD
+  // ============================================================================
+
   /**
    * Handle new task delegation - add dependencies atomically with cycle detection
    * ARCHITECTURE: DAG validation BEFORE persisting (handler owns validation logic)
    * ATOMICITY: All dependencies succeed or all fail together (no partial state)
    * PERFORMANCE: Cycle detection uses in-memory graph (O(V+E) not O(N) database query)
+   *
+   * DECOMPOSITION: This method orchestrates extracted methods while
+   * preserving all invariants documented in HANDLER-DECOMPOSITION-INVARIANTS.md
    */
   private async handleTaskDelegated(event: TaskDelegatedEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
       const task = event.task;
 
-      // Skip if no dependencies
+      // Step 1: Skip if no dependencies (INVARIANT: early exit)
       if (!task.dependsOn || task.dependsOn.length === 0) {
         this.logger.debug('Task has no dependencies, skipping', { taskId: task.id });
         return ok(undefined);
@@ -151,135 +298,37 @@ export class DependencyHandler extends BaseEventHandler {
         dependencies: task.dependsOn
       });
 
-      // ARCHITECTURE: Handler performs cycle detection BEFORE repository call
-      // This is business logic (DAG validation), not data access
-      //
-      // PERFORMANCE: Validate all dependencies in parallel (Issue #14)
-      // Each check is read-only (uses temp graph), so concurrent execution is safe.
-      // Note: We intentionally run ALL validations even if one fails early because:
-      // 1. Tasks typically have 1-5 dependencies - negligible overhead
-      // 2. Promise.all() starts all checks concurrently (no sequential waiting)
-      // 3. Early termination would require Promise.race() + cancellation complexity
-      // 4. Returning first error is sufficient - user fixes and retries
+      // Step 2: Validate all dependencies in parallel (INVARIANT: all validations run)
+      // PERFORMANCE: Parallel validation per Issue #14
       const validationResults = await Promise.all(
-        task.dependsOn.map(async (depId) => {
-          // Cycle detection
-          const cycleCheck = this.graph.wouldCreateCycle(task.id, depId);
-          if (!cycleCheck.ok) {
-            return { depId, error: cycleCheck.error, type: 'system' as const };
-          }
-          if (cycleCheck.value) {
-            return {
-              depId,
-              error: new ClaudineError(
-                ErrorCode.INVALID_OPERATION,
-                `Cannot add dependency: would create cycle (${task.id} -> ${depId})`,
-                { taskId: task.id, dependsOnTaskId: depId }
-              ),
-              type: 'cycle' as const
-            };
-          }
-
-          // Depth check
-          const depDepth = this.graph.getMaxDepth(depId);
-          const resultingDepth = 1 + depDepth;
-          if (resultingDepth > MAX_DEPENDENCY_CHAIN_DEPTH) {
-            return {
-              depId,
-              error: new ClaudineError(
-                ErrorCode.INVALID_OPERATION,
-                `Cannot add dependency: would create chain depth of ${resultingDepth} (max ${MAX_DEPENDENCY_CHAIN_DEPTH})`,
-                { taskId: task.id, dependsOnTaskId: depId, depth: resultingDepth }
-              ),
-              type: 'depth' as const
-            };
-          }
-
-          return { depId, error: null, type: 'ok' as const };
-        })
+        task.dependsOn.map(depId => this.validateSingleDependency(task.id, depId))
       );
 
-      // Check for any validation failures
+      // Step 3: Check for validation failures (INVARIANT: fail-fast on first error)
       const failure = validationResults.find(r => r.error !== null);
       if (failure && failure.error) {
-        const context = { taskId: task.id, dependsOnTaskId: failure.depId };
-
-        if (failure.type === 'system') {
-          this.logger.error('Validation failed', failure.error, context);
-        } else if (failure.type === 'cycle') {
-          this.logger.warn('Cycle detected, rejecting dependency', context);
-        } else {
-          this.logger.warn('Depth limit exceeded, rejecting dependency', context);
-        }
-
-        // Emit batch failure event (indicates entire batch was rejected)
-        await this.eventBus.emit('TaskDependencyFailed', {
-          taskId: task.id,
-          failedDependencyId: failure.depId,
-          requestedDependencies: task.dependsOn,
-          error: failure.error
-        });
-
+        await this.handleValidationFailure(task.id, task.dependsOn, failure);
         return err(failure.error);
       }
 
-      // All cycle and depth checks passed - persist to database
-      // Repository is now pure data layer (no business logic)
+      // Step 4: Persist to database (INVARIANT: only after all validations pass)
       const addResult = await this.dependencyRepo.addDependencies(task.id, task.dependsOn);
-
       if (!addResult.ok) {
-        this.logger.error('Failed to add dependencies', addResult.error, {
-          taskId: task.id,
-          dependencies: task.dependsOn
-        });
-
-        // Emit failure event for the batch
-        await this.eventBus.emit('TaskDependencyFailed', {
-          taskId: task.id,
-          failedDependencyId: task.dependsOn[0], // First dependency for compatibility
-          error: addResult.error
-        });
-
+        await this.handleDatabaseFailure(task.id, task.dependsOn, addResult.error);
         return addResult;
       }
 
-      // All dependencies added successfully
       this.logger.info('All dependencies added atomically', {
         taskId: task.id,
         count: addResult.value.length,
         dependencyIds: addResult.value.map(d => d.id)
       });
 
-      // CRITICAL: Update handler's graph AFTER successful database operation
-      // This maintains graph-database synchronization via event-driven architecture
-      //
-      // ERROR RECOVERY: If addEdge() fails after DB write, graph-database desync occurs.
-      // Recovery path: Handler re-initializes graph from database on next restart (setup() calls findAll()).
-      // This is acceptable because addEdge() should never fail for valid data - database already
-      // validated that task IDs exist and no cycles would be created.
-      for (const dependency of addResult.value) {
-        const edgeResult = this.graph.addEdge(dependency.taskId, dependency.dependsOnTaskId);
-        if (!edgeResult.ok) {
-          // This should never happen for valid data, but log if it does
-          this.logger.error('Unexpected error updating graph after DB write', edgeResult.error, {
-            taskId: dependency.taskId,
-            dependsOnTaskId: dependency.dependsOnTaskId
-          });
-          // Continue - graph will be reconciled on restart
-        }
-        this.logger.debug('Graph updated with new dependency', {
-          taskId: dependency.taskId,
-          dependsOnTaskId: dependency.dependsOnTaskId
-        });
-      }
+      // Step 5: Update graph (INVARIANT: only after successful DB write)
+      this.updateGraphAfterPersistence(addResult.value);
 
-      // Emit success event for each dependency (for compatibility with existing listeners)
-      for (const dependency of addResult.value) {
-        await this.eventBus.emit('TaskDependencyAdded', {
-          taskId: dependency.taskId,
-          dependsOnTaskId: dependency.dependsOnTaskId
-        });
-      }
+      // Step 6: Emit success events (INVARIANT: only after graph update)
+      await this.emitDependencyAddedEvents(addResult.value);
 
       return ok(undefined);
     });
