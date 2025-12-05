@@ -76,7 +76,7 @@ User/MCP Client
 ┌───────────────────────────────────────────────────────────────┐
 │ 4. WorkerHandler.handleTaskQueued()                           │
 │    • Checks resources (canSpawnWorker)                         │
-│    • Enforces 50ms spawn delay (burst protection)              │
+│    • Enforces 10s spawn delay (burst protection)               │
 │    • Requests: NextTaskQuery                                   │
 └───────────────────────────────────────────────────────────────┘
     │
@@ -220,7 +220,7 @@ Server Startup
     ▼
 ┌───────────────────────────────────────────────────────────────┐
 │ 4. WorkerHandler.handleTaskQueued()                           │
-│    • Enforces 50ms spawn delay between workers                │
+│    • Enforces 10s spawn delay between workers                 │
 │    • Prevents burst spawning during recovery                   │
 │    • See: WorkerHandler JSDoc for fork-bomb prevention        │
 └───────────────────────────────────────────────────────────────┘

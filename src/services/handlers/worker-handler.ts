@@ -61,8 +61,8 @@ export class WorkerHandler extends BaseEventHandler {
     logger: Logger
   ) {
     super(logger, 'WorkerHandler');
-    // Use configured delay, default to 50ms (reduced from 100ms for better responsiveness)
-    this.minSpawnDelayMs = config.minSpawnDelayMs || 50;
+    // Config schema guarantees minSpawnDelayMs has a value (default: 10s)
+    this.minSpawnDelayMs = config.minSpawnDelayMs;
   }
 
   /**
