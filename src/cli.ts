@@ -810,7 +810,7 @@ if (mainCommand === 'mcp') {
     console.log('⚡ Process Management:');
     console.log(`   Kill Grace Period: ${sanitizeValue(process.env.PROCESS_KILL_GRACE_PERIOD_MS || '5000', 'timeout')}`);
     console.log(`   Resource Monitor Interval: ${sanitizeValue(process.env.RESOURCE_MONITOR_INTERVAL_MS || '5000', 'timeout')}`);
-    console.log(`   Min Spawn Delay: ${sanitizeValue(process.env.WORKER_MIN_SPAWN_DELAY_MS || '100', 'timeout')}`);
+    console.log(`   Min Spawn Delay: ${sanitizeValue(process.env.WORKER_MIN_SPAWN_DELAY_MS || '10000', 'timeout')}`);
     console.log('');
     console.log('🔗 Event System:');
     console.log(`   Max Listeners Per Event: ${process.env.EVENTBUS_MAX_LISTENERS_PER_EVENT || '100'}`);
