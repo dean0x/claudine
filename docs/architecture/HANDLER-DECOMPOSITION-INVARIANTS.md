@@ -18,13 +18,39 @@
 
 ## processNextTask() Invariants
 
-Location: `src/services/handlers/worker-handler.ts:201-319`
+Location: `src/services/handlers/worker-handler.ts:377-434`
+
+### Spawn Serialization (CRITICAL - Added 2025-12-06)
+
+**WHY THIS EXISTS:**
+The spawn delay check (`lastSpawnTime`) had a TOCTOU (Time-of-Check Time-of-Use) race condition:
+- Multiple `processNextTask()` calls could pass the delay check simultaneously
+- `lastSpawnTime` was only updated AFTER spawn completed
+- This allowed burst spawning during recovery or batch task submission
+
+**HOW IT WORKS:**
+All spawn logic runs inside `withSpawnLock()` - a promise-chain mutex that ensures only one `processNextTask()` executes at a time.
+
+```typescript
+private async processNextTask(): Promise<void> {
+  await this.withSpawnLock(async () => {
+    // All checks and spawn happen atomically here
+  });
+}
+```
+
+**INVARIANTS:**
+- At most ONE spawn operation runs at any time (no overlap)
+- Subsequent callers wait for the previous to complete
+- After lock release, callers see updated `lastSpawnTime`
+- Lock is ALWAYS released, even on errors (try/finally)
 
 ### Ordering Invariants (CRITICAL)
 
 1. **Spawn delay check FIRST** - Must happen before any other operation
    - Prevents fork bombs by enforcing minimum delay between spawns
    - On violation: schedule retry via setTimeout, return early
+   - **Now protected by spawn lock** - check happens inside serialized section
 
 2. **Resource check SECOND** - Before getting task from queue
    - Prevents spawning when system is overloaded
@@ -163,9 +189,9 @@ After extracting each method:
 
 ### WorkerHandler Gaps
 
-1. **TaskStarting emission failure** - Verify task is requeued
-2. **Concurrent spawn attempts** - Verify delay enforcement
-3. **Resource constraint during processing** - Verify backoff applied
+1. **TaskStarting emission failure** - Verify task is requeued ✅ (Added)
+2. **Concurrent spawn attempts** - Verify serialization prevents overlap ✅ (Added 2025-12-06)
+3. **Resource constraint during processing** - Verify backoff applied ✅ (Added)
 
 ### DependencyHandler Gaps
 
