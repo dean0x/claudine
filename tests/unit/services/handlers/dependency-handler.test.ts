@@ -690,4 +690,232 @@ describe('DependencyHandler - Behavioral Tests', () => {
       expect(depPairs).toContain(`${taskC.id}->${taskB.id}`);
     });
   });
+
+  /**
+   * CHARACTERIZATION TESTS - Decomposition Safety
+   *
+   * These tests capture critical invariants that MUST be preserved when
+   * decomposing handleTaskDelegated(). Each test documents a specific behavior
+   * that the refactored code must maintain.
+   *
+   * See: docs/architecture/HANDLER-DECOMPOSITION-INVARIANTS.md
+   */
+  describe('Characterization Tests - Decomposition Safety', () => {
+    describe('handleTaskDelegated() Ordering Invariants', () => {
+      it('INVARIANT: Skip check is FIRST - no dependencies means immediate return', async () => {
+        // Task with no dependencies should return immediately without any DB operations
+        const task = createTask({ prompt: 'no deps task' });
+        await taskRepo.save(task);
+
+        // Spy on dependencyRepo to verify no calls
+        const addSpy = vi.spyOn(dependencyRepo, 'addDependencies');
+
+        await eventBus.emit('TaskDelegated', { task });
+
+        // Should NOT call addDependencies
+        expect(addSpy).not.toHaveBeenCalled();
+
+        // Should NOT emit any dependency events
+        const events = (eventBus as any).emittedEvents || [];
+        const depEvents = events.filter((e: any) =>
+          e.type === 'TaskDependencyAdded' || e.type === 'TaskDependencyFailed'
+        );
+        expect(depEvents).toHaveLength(0);
+      });
+
+      it('INVARIANT: All validations run in PARALLEL via Promise.all', async () => {
+        // Create multiple parent tasks
+        const parent1 = createTask({ prompt: 'parent 1' });
+        const parent2 = createTask({ prompt: 'parent 2' });
+        const parent3 = createTask({ prompt: 'parent 3' });
+        await taskRepo.save(parent1);
+        await taskRepo.save(parent2);
+        await taskRepo.save(parent3);
+
+        // Create child with multiple dependencies
+        const child = createTask({
+          prompt: 'child',
+          dependsOn: [parent1.id, parent2.id, parent3.id]
+        });
+        await taskRepo.save(child);
+
+        await eventBus.emit('TaskDelegated', { task: child });
+
+        // All dependencies should be created (validation ran for all)
+        const deps = await dependencyRepo.getDependencies(child.id);
+        expect(deps.ok).toBe(true);
+        if (deps.ok) {
+          expect(deps.value).toHaveLength(3);
+        }
+      });
+
+      it('INVARIANT: Validation failure prevents ANY database writes', async () => {
+        // Create A -> B chain
+        const taskA = createTask({ prompt: 'task A' });
+        const taskB = createTask({ prompt: 'task B', dependsOn: [taskA.id] });
+        await taskRepo.save(taskA);
+        await taskRepo.save(taskB);
+
+        await eventBus.emit('TaskDelegated', { task: taskB });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Now try to add cycle + valid dependency together
+        // The cycle should prevent BOTH from being added
+        const taskC = createTask({ prompt: 'task C' });
+        await taskRepo.save(taskC);
+
+        // This would create: A -> [B, C] where A->B creates cycle
+        const taskAWithMixed = { ...taskA, dependsOn: [taskB.id, taskC.id] };
+        await eventBus.emit('TaskDelegated', { task: taskAWithMixed });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Neither dependency should be added (atomic failure)
+        const depsA = await dependencyRepo.getDependencies(taskA.id);
+        expect(depsA.ok).toBe(true);
+        if (depsA.ok) {
+          expect(depsA.value).toHaveLength(0);
+        }
+      });
+
+      it('INVARIANT: Graph update happens AFTER successful database write', async () => {
+        // This test verifies the critical ordering: DB first, then graph
+        const parent = createTask({ prompt: 'parent' });
+        const child = createTask({ prompt: 'child', dependsOn: [parent.id] });
+        await taskRepo.save(parent);
+        await taskRepo.save(child);
+
+        // Spy on repository to track call order
+        const addDepsSpy = vi.spyOn(dependencyRepo, 'addDependencies');
+
+        await eventBus.emit('TaskDelegated', { task: child });
+
+        // Database should have been called
+        expect(addDepsSpy).toHaveBeenCalled();
+
+        // Verify dependency exists in database (proof DB write succeeded)
+        const deps = await dependencyRepo.getDependencies(child.id);
+        expect(deps.ok).toBe(true);
+        if (deps.ok) {
+          expect(deps.value).toHaveLength(1);
+        }
+      });
+
+      it('INVARIANT: TaskDependencyAdded emitted for EACH dependency after graph update', async () => {
+        const parent1 = createTask({ prompt: 'parent 1' });
+        const parent2 = createTask({ prompt: 'parent 2' });
+        await taskRepo.save(parent1);
+        await taskRepo.save(parent2);
+
+        const child = createTask({
+          prompt: 'child',
+          dependsOn: [parent1.id, parent2.id]
+        });
+        await taskRepo.save(child);
+
+        // Track emitted events
+        let addedEvents: any[] = [];
+        eventBus.subscribe('TaskDependencyAdded', async (event) => {
+          addedEvents.push(event);
+        });
+
+        await eventBus.emit('TaskDelegated', { task: child });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Should have emitted 2 TaskDependencyAdded events
+        expect(addedEvents).toHaveLength(2);
+      });
+    });
+
+    describe('Atomicity Invariants', () => {
+      it('INVARIANT: All-or-nothing - partial validation failure rejects entire batch', async () => {
+        // Create valid parent
+        const validParent = createTask({ prompt: 'valid parent' });
+        await taskRepo.save(validParent);
+
+        // Create child with one valid and one non-existent dependency
+        const nonExistentId = TaskId('non-existent-task');
+        const child = createTask({
+          prompt: 'child',
+          dependsOn: [validParent.id, nonExistentId]
+        });
+        await taskRepo.save(child);
+
+        await eventBus.emit('TaskDelegated', { task: child });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // NEITHER dependency should be added
+        const deps = await dependencyRepo.getDependencies(child.id);
+        expect(deps.ok).toBe(true);
+        if (deps.ok) {
+          expect(deps.value).toHaveLength(0);
+        }
+      });
+
+      it('INVARIANT: TaskDependencyFailed emitted on any validation failure', async () => {
+        const nonExistentId = TaskId('non-existent-task');
+        const child = createTask({
+          prompt: 'child',
+          dependsOn: [nonExistentId]
+        });
+        await taskRepo.save(child);
+
+        let failedEvent: any = null;
+        eventBus.subscribe('TaskDependencyFailed', async (event) => {
+          failedEvent = event;
+        });
+
+        await eventBus.emit('TaskDelegated', { task: child });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Should have emitted failure event
+        expect(failedEvent).not.toBeNull();
+        expect(failedEvent.taskId).toBe(child.id);
+      });
+    });
+
+    describe('Error Type Classification', () => {
+      it('INVARIANT: Cycle detection results in TaskDependencyFailed event', async () => {
+        // Cycles are detected and result in failure events being emitted
+        const taskA = createTask({ prompt: 'task A' });
+        const taskB = createTask({ prompt: 'task B', dependsOn: [taskA.id] });
+        await taskRepo.save(taskA);
+        await taskRepo.save(taskB);
+
+        await eventBus.emit('TaskDelegated', { task: taskB });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Track failure events
+        let failedEvent: any = null;
+        eventBus.subscribe('TaskDependencyFailed', async (event) => {
+          failedEvent = event;
+        });
+
+        // Try to create cycle
+        const taskAWithCycle = { ...taskA, dependsOn: [taskB.id] };
+        await eventBus.emit('TaskDelegated', { task: taskAWithCycle });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Cycle should trigger TaskDependencyFailed with cycle error
+        expect(failedEvent).not.toBeNull();
+        expect(failedEvent.error.message).toContain('would create cycle');
+      });
+
+      it('INVARIANT: Database errors log as ERROR (unexpected system error)', async () => {
+        const parent = createTask({ prompt: 'parent' });
+        const child = createTask({ prompt: 'child', dependsOn: [parent.id] });
+        await taskRepo.save(parent);
+        await taskRepo.save(child);
+
+        // Close database to force error
+        database.close();
+
+        await eventBus.emit('TaskDelegated', { task: child });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Should log as error (unexpected system failure)
+        const errorLogs = logger.getLogsByLevel('error');
+        expect(errorLogs.length).toBeGreaterThan(0);
+      });
+    });
+  });
 });

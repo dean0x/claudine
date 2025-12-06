@@ -679,4 +679,331 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       expect(eventBus.hasEmitted('TaskStarting')).toBe(true);
     });
   });
+
+  /**
+   * CHARACTERIZATION TESTS - Decomposition Safety
+   *
+   * These tests capture critical invariants that MUST be preserved when
+   * decomposing processNextTask(). Each test documents a specific behavior
+   * that the refactored code must maintain.
+   *
+   * See: docs/architecture/HANDLER-DECOMPOSITION-INVARIANTS.md
+   */
+  describe('Characterization Tests - Decomposition Safety', () => {
+    describe('processNextTask() Ordering Invariants', () => {
+      it('INVARIANT: TaskStarting emission failure should requeue task without TaskFailed', async () => {
+        // This tests the invariant: TaskStarting failure -> requeue WITHOUT TaskFailed
+        const task = new TaskFactory().withPrompt('test task').build();
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task));
+
+        // Make TaskStarting emit fail
+        eventBus.setEmitFailure('TaskStarting', true);
+
+        await eventBus.emit('TaskQueued', { taskId: task.id, task });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Should have attempted TaskStarting
+        expect(eventBus.hasEmitted('TaskStarting')).toBe(true);
+
+        // Should requeue task
+        expect(eventBus.hasEmitted('RequeueTask')).toBe(true);
+
+        // Should NOT emit TaskFailed (unlike spawn failure)
+        expect(eventBus.hasEmitted('TaskFailed')).toBe(false);
+
+        // Should NOT have spawned worker
+        expect(workerPool.spawnCalls.length).toBe(0);
+      });
+
+      it('INVARIANT: Spawn failure emits BOTH RequeueTask AND TaskFailed', async () => {
+        // This tests the invariant: spawn failure -> RequeueTask + TaskFailed
+        const task = new TaskFactory().withPrompt('test task').build();
+
+        workerPool.spawn = vi.fn().mockResolvedValue(
+          err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {}))
+        );
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task));
+
+        await eventBus.emit('TaskQueued', { taskId: task.id, task });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // BOTH events must be emitted
+        expect(eventBus.hasEmitted('RequeueTask')).toBe(true);
+        expect(eventBus.hasEmitted('TaskFailed')).toBe(true);
+      });
+
+      it('INVARIANT: Resource check happens BEFORE getting task from queue', async () => {
+        // This tests the invariant: resource check is first (after delay check)
+        const task = new TaskFactory().withPrompt('test task').build();
+
+        resourceMonitor.setCanSpawn(false); // Resources constrained
+        eventBus.setRequestResponse('NextTaskQuery', ok(task));
+
+        await eventBus.emit('TaskQueued', { taskId: task.id, task });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Should NOT have queried for next task since resources unavailable
+        const requests = eventBus.getRequestedEvents('NextTaskQuery');
+        expect(requests.length).toBe(0);
+      });
+
+      it('INVARIANT: Success path emits WorkerSpawned and TaskStarted together', async () => {
+        // This tests the invariant: both events emitted on success (via Promise.all)
+        const task = new TaskFactory().withPrompt('test task').build();
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task));
+
+        await eventBus.emit('TaskQueued', { taskId: task.id, task });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Both events should be emitted
+        expect(eventBus.hasEmitted('WorkerSpawned')).toBe(true);
+        expect(eventBus.hasEmitted('TaskStarted')).toBe(true);
+
+        // Verify they were emitted in close succession (within 10ms of each other)
+        const events = eventBus.getAllEmittedEvents();
+        const workerSpawnedEvent = events.find(e => e.type === 'WorkerSpawned');
+        const taskStartedEvent = events.find(e => e.type === 'TaskStarted');
+
+        expect(workerSpawnedEvent).toBeDefined();
+        expect(taskStartedEvent).toBeDefined();
+
+        const timeDiff = Math.abs(workerSpawnedEvent!.timestamp - taskStartedEvent!.timestamp);
+        expect(timeDiff).toBeLessThan(10); // Should be nearly simultaneous
+      });
+
+      it('INVARIANT: Worker count incremented only after successful spawn', async () => {
+        const task = new TaskFactory().withPrompt('test task').build();
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task));
+
+        const initialCount = resourceMonitor.workerCount;
+
+        await eventBus.emit('TaskQueued', { taskId: task.id, task });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Worker count should increase by 1
+        expect(resourceMonitor.workerCount).toBe(initialCount + 1);
+      });
+
+      it('INVARIANT: Worker count NOT incremented on spawn failure', async () => {
+        const task = new TaskFactory().withPrompt('test task').build();
+
+        workerPool.spawn = vi.fn().mockResolvedValue(
+          err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {}))
+        );
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task));
+
+        const initialCount = resourceMonitor.workerCount;
+
+        await eventBus.emit('TaskQueued', { taskId: task.id, task });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Worker count should NOT change on failure
+        expect(resourceMonitor.workerCount).toBe(initialCount);
+      });
+
+      it('INVARIANT: Empty queue returns early without side effects', async () => {
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(null)); // Empty queue
+
+        await eventBus.emit('TaskQueued', { taskId: 'test' as any, task: {} as any });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Should not emit any task lifecycle events
+        expect(eventBus.hasEmitted('TaskStarting')).toBe(false);
+        expect(eventBus.hasEmitted('WorkerSpawned')).toBe(false);
+        expect(eventBus.hasEmitted('TaskStarted')).toBe(false);
+        expect(eventBus.hasEmitted('RequeueTask')).toBe(false);
+        expect(eventBus.hasEmitted('TaskFailed')).toBe(false);
+      });
+    });
+
+    describe('State Consistency Invariants', () => {
+      it('INVARIANT: No partial state on TaskStarting failure', async () => {
+        // Verify that if TaskStarting fails, no state is mutated
+        const task = new TaskFactory().withPrompt('test task').build();
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task));
+        eventBus.setEmitFailure('TaskStarting', true);
+
+        const initialWorkerCount = resourceMonitor.workerCount;
+
+        await eventBus.emit('TaskQueued', { taskId: task.id, task });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // State should be unchanged
+        expect(resourceMonitor.workerCount).toBe(initialWorkerCount);
+        expect(workerPool.spawnCalls.length).toBe(0);
+      });
+
+      it('INVARIANT: No partial state on spawn failure', async () => {
+        const task = new TaskFactory().withPrompt('test task').build();
+
+        workerPool.spawn = vi.fn().mockResolvedValue(
+          err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {}))
+        );
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task));
+
+        const initialWorkerCount = resourceMonitor.workerCount;
+
+        await eventBus.emit('TaskQueued', { taskId: task.id, task });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // State should be unchanged (worker count not incremented)
+        expect(resourceMonitor.workerCount).toBe(initialWorkerCount);
+      });
+    });
+
+    /**
+     * SPAWN SERIALIZATION TESTS
+     *
+     * These tests verify that concurrent spawn attempts are serialized
+     * to prevent the TOCTOU race condition that caused fork bombs.
+     *
+     * INCIDENT: 2025-12-06
+     * Multiple TaskQueued events could pass the delay check before any
+     * updated lastSpawnTime, allowing burst spawning.
+     */
+    describe('Spawn Serialization - TOCTOU Race Prevention', () => {
+      it('INVARIANT: Concurrent spawn attempts are serialized (no overlapping spawns)', async () => {
+        // This test verifies that spawns happen one at a time, never overlapping
+        const task1 = new TaskFactory().withPrompt('task 1').build();
+
+        // Track spawn timing to verify no overlap
+        const spawnEvents: { start: number; end: number }[] = [];
+        let activeSpawns = 0;
+        let maxConcurrentSpawns = 0;
+
+        workerPool.spawn = vi.fn().mockImplementation(async () => {
+          activeSpawns++;
+          maxConcurrentSpawns = Math.max(maxConcurrentSpawns, activeSpawns);
+          const start = Date.now();
+
+          // Simulate spawn taking some time
+          await new Promise(resolve => setTimeout(resolve, 15));
+
+          const end = Date.now();
+          spawnEvents.push({ start, end });
+          activeSpawns--;
+          return ok(new WorkerFactory().build());
+        });
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task1));
+
+        // Emit multiple TaskQueued events simultaneously (simulating recovery scenario)
+        await Promise.all([
+          eventBus.emit('TaskQueued', { taskId: task1.id, task: task1 }),
+          eventBus.emit('TaskQueued', { taskId: task1.id, task: task1 }),
+          eventBus.emit('TaskQueued', { taskId: task1.id, task: task1 })
+        ]);
+
+        // Wait for spawns to complete (first spawn + delays for others)
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // KEY INVARIANT: With serialization, at most ONE spawn runs at a time
+        // This prevents the TOCTOU race where multiple spawns could pass delay check
+        expect(maxConcurrentSpawns).toBe(1);
+
+        // Verify spawns don't overlap in time (each starts after previous ends)
+        for (let i = 1; i < spawnEvents.length; i++) {
+          expect(spawnEvents[i].start).toBeGreaterThanOrEqual(spawnEvents[i - 1].end);
+        }
+      });
+
+      it('INVARIANT: Spawn lock prevents TOCTOU race - delay check happens inside lock', async () => {
+        // This test verifies that even with near-simultaneous calls,
+        // the second caller sees the updated lastSpawnTime after the first completes
+        const task1 = new TaskFactory().withPrompt('task 1').build();
+        const task2 = new TaskFactory().withPrompt('task 2').build();
+
+        const spawnTimestamps: number[] = [];
+
+        workerPool.spawn = vi.fn().mockImplementation(async () => {
+          spawnTimestamps.push(Date.now());
+          // Simulate spawn taking 15ms
+          await new Promise(resolve => setTimeout(resolve, 15));
+          return ok(new WorkerFactory().build());
+        });
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task1));
+
+        // Fire two events simultaneously
+        await Promise.all([
+          eventBus.emit('TaskQueued', { taskId: task1.id, task: task1 }),
+          eventBus.emit('TaskQueued', { taskId: task2.id, task: task2 })
+        ]);
+
+        // Wait for first spawn + delay period (10ms configured in test config)
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // With serialization:
+        // - First processNextTask() acquires lock, spawns at T=0
+        // - Second processNextTask() waits for lock
+        // - After first completes, second sees lastSpawnTime is recent
+        // - Second schedules retry after minSpawnDelayMs (10ms)
+        // - Second spawn happens at T >= 10ms (first spawn time + delay)
+        if (spawnTimestamps.length >= 2) {
+          const timeBetweenSpawns = spawnTimestamps[1] - spawnTimestamps[0];
+          // Should respect minimum delay (10ms in test config)
+          expect(timeBetweenSpawns).toBeGreaterThanOrEqual(10);
+        }
+      });
+
+      it('INVARIANT: Serialization handles spawn failures without blocking queue', async () => {
+        const task1 = new TaskFactory().withPrompt('task 1').build();
+        const task2 = new TaskFactory().withPrompt('task 2').build();
+
+        let callCount = 0;
+        workerPool.spawn = vi.fn().mockImplementation(async () => {
+          callCount++;
+          if (callCount === 1) {
+            // First spawn fails
+            return err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {}));
+          }
+          // Subsequent spawns succeed (but won't happen due to delay)
+          return ok(new WorkerFactory().build());
+        });
+
+        resourceMonitor.setCanSpawn(true);
+        eventBus.setRequestResponse('NextTaskQuery', ok(task1));
+
+        // Fire first event - spawn will fail
+        await eventBus.emit('TaskQueued', { taskId: task1.id, task: task1 });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Verify first spawn was attempted and failed
+        expect(callCount).toBe(1);
+        expect(eventBus.hasEmitted('TaskFailed')).toBe(true);
+
+        // Now fire second event - should also attempt spawn after delay check
+        // (but will be blocked by delay since first spawn updated lastSpawnTime... wait, no)
+        // Actually, failed spawn DOES update lastSpawnTime in recordSpawnSuccessAndEmitEvents?
+        // No! Failed spawns DON'T call recordSpawnSuccessAndEmitEvents, so lastSpawnTime is NOT updated
+        // This means second spawn should proceed...
+
+        eventBus.setRequestResponse('NextTaskQuery', ok(task2));
+        eventBus.clearEmittedEvents(); // Clear previous events
+
+        await eventBus.emit('TaskQueued', { taskId: task2.id, task: task2 });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Second spawn should also be attempted (because failed spawn doesn't update lastSpawnTime)
+        expect(callCount).toBe(2);
+      });
+    });
+  });
 });

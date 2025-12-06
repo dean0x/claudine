@@ -37,6 +37,7 @@ export class TestEventBus implements EventBus {
   private requestHandlers = new Map<string, (event: any) => Promise<Result<any, Error>>>();
   private emittedEvents: Array<{ type: string; payload: any; timestamp: number }> = [];
   private subscriptionCount = 0;
+  private failingEventTypes = new Set<string>();
 
   async emit<T>(eventType: string, payload: T): Promise<Result<void, Error>> {
     this.emittedEvents.push({
@@ -44,6 +45,11 @@ export class TestEventBus implements EventBus {
       payload,
       timestamp: Date.now()
     });
+
+    // Test helper: simulate emit failure for specific event types
+    if (this.failingEventTypes.has(eventType)) {
+      return err(new Error(`Simulated emit failure for ${eventType}`));
+    }
 
     const handlers = this.handlers.get(eventType) || new Set();
     const allHandlers = this.handlers.get('*') || new Set();
@@ -63,6 +69,15 @@ export class TestEventBus implements EventBus {
     }
 
     return ok(undefined);
+  }
+
+  // Test helper: make specific event types fail on emit
+  setEmitFailure(eventType: string, shouldFail: boolean): void {
+    if (shouldFail) {
+      this.failingEventTypes.add(eventType);
+    } else {
+      this.failingEventTypes.delete(eventType);
+    }
   }
 
   subscribe<T>(eventType: string, handler: (event: T) => Promise<void>): Result<string, Error> {
@@ -122,6 +137,7 @@ export class TestEventBus implements EventBus {
     this.unsubscribeAll();
     this.requestHandlers.clear();
     this.emittedEvents = [];
+    this.failingEventTypes.clear();
   }
 
   // Test-specific methods
