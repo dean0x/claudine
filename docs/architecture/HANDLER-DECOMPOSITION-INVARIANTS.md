@@ -18,7 +18,7 @@
 
 ## processNextTask() Invariants
 
-Location: `src/services/handlers/worker-handler.ts:377-434`
+Location: `src/services/handlers/worker-handler.ts:377-438`
 
 ### Spawn Serialization (CRITICAL - Added 2025-12-06)
 
@@ -90,7 +90,7 @@ private async processNextTask(): Promise<void> {
 
 ## handleTaskDelegated() Invariants
 
-Location: `src/services/handlers/dependency-handler.ts:138-282`
+Location: `src/services/handlers/dependency-handler.ts:293-348`
 
 ### Ordering Invariants (CRITICAL)
 

@@ -428,7 +428,11 @@ export class WorkerHandler extends BaseEventHandler {
         await this.recordSpawnSuccessAndEmitEvents(workerResult.value, task);
 
       } catch (error) {
-        this.logger.error('Error in task processing', error as Error);
+        // Normalize unknown error to Error object for type safety
+        const normalizedError = error instanceof Error
+          ? error
+          : new Error(String(error));
+        this.logger.error('Error in task processing', normalizedError);
       }
     });
   }

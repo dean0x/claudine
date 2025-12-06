@@ -182,17 +182,19 @@ export class DependencyHandler extends BaseEventHandler {
   /**
    * Handle validation failure - log appropriately and emit failure event
    * INVARIANT: Must emit TaskDependencyFailed event
+   *
+   * Type narrowed: Only called when validation fails (error is always present)
    */
   private async handleValidationFailure(
     taskId: TaskId,
     requestedDependencies: readonly TaskId[],
-    failure: { depId: TaskId; error: Error | null; type: 'ok' | 'cycle' | 'depth' | 'system' }
+    failure: { depId: TaskId; error: Error; type: 'cycle' | 'depth' | 'system' }
   ): Promise<void> {
     const context = { taskId, dependsOnTaskId: failure.depId };
 
     // Log based on failure type
     if (failure.type === 'system') {
-      this.logger.error('Validation failed', failure.error!, context);
+      this.logger.error('Validation failed', failure.error, context);
     } else if (failure.type === 'cycle') {
       this.logger.warn('Cycle detected, rejecting dependency', context);
     } else {
@@ -204,13 +206,16 @@ export class DependencyHandler extends BaseEventHandler {
       taskId,
       failedDependencyId: failure.depId,
       requestedDependencies,
-      error: failure.error!
+      error: failure.error
     });
   }
 
   /**
    * Handle database write failure - log and emit failure event
    * INVARIANT: Must emit TaskDependencyFailed event
+   *
+   * Note: dependencies array is guaranteed non-empty by caller (handleTaskDelegated
+   * early-exits when dependsOn is empty), but defensive check added for safety.
    */
   private async handleDatabaseFailure(
     taskId: TaskId,
@@ -222,9 +227,12 @@ export class DependencyHandler extends BaseEventHandler {
       dependencies
     });
 
+    // Defensive: use first dependency if available, otherwise use taskId as fallback
+    const failedDepId = dependencies.length > 0 ? dependencies[0] : taskId;
+
     await this.eventBus.emit('TaskDependencyFailed', {
       taskId,
-      failedDependencyId: dependencies[0], // First dependency for compatibility
+      failedDependencyId: failedDepId,
       error
     });
   }
@@ -307,7 +315,12 @@ export class DependencyHandler extends BaseEventHandler {
       // Step 3: Check for validation failures (INVARIANT: fail-fast on first error)
       const failure = validationResults.find(r => r.error !== null);
       if (failure && failure.error) {
-        await this.handleValidationFailure(task.id, task.dependsOn, failure);
+        // Type narrow: failure.error is verified non-null, type is not 'ok'
+        await this.handleValidationFailure(task.id, task.dependsOn, {
+          depId: failure.depId,
+          error: failure.error,
+          type: failure.type as 'cycle' | 'depth' | 'system'
+        });
         return err(failure.error);
       }
 
