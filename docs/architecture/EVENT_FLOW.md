@@ -284,25 +284,51 @@ DEBUG: Event handlers completed {
 
 ## Critical Safeguards
 
-### 1. Spawn Burst Protection (WorkerHandler)
+### 1. Spawn Serialization (WorkerHandler)
 
-**Problem**: Resource checks happen BEFORE spawn, creating race condition.
+The spawn protection system has **three layers** to prevent fork-bomb scenarios:
 
-**Solution**: 50ms minimum delay between spawns.
+#### Layer 1: Spawn Lock (Mutex Serialization)
+
+**Problem**: TOCTOU race condition - multiple `processNextTask()` calls could pass the delay check simultaneously before any updated `lastSpawnTime`.
+
+**Solution**: Promise-chain mutex (`withSpawnLock()`) ensures only one spawn operation runs at a time.
 
 ```
-Without delay:
-  TaskQueued #1 → canSpawn? YES → spawn
-  TaskQueued #2 → canSpawn? YES → spawn (too fast!)
-  TaskQueued #3 → canSpawn? YES → spawn (fork bomb!)
+Without lock (TOCTOU race):
+  processNextTask #1 → delay OK? YES → spawning...
+  processNextTask #2 → delay OK? YES → spawning... (race!)
+  processNextTask #3 → delay OK? YES → spawning... (fork bomb!)
 
-With 50ms delay:
-  TaskQueued #1 → canSpawn? YES → spawn → wait 50ms
-  TaskQueued #2 → canSpawn? YES (sees worker #1) → spawn → wait 50ms
-  TaskQueued #3 → canSpawn? NO (resources used) → backoff
+With lock (serialized):
+  processNextTask #1 → acquire lock → delay OK? YES → spawn → release
+  processNextTask #2 → wait for lock → delay OK? NO → skip
+  processNextTask #3 → wait for lock → delay OK? NO → skip
 ```
 
-**Code**: `src/services/handlers/worker-handler.ts:21-48`
+**Code**: `src/services/handlers/worker-handler.ts:62` (spawnLock), `:225-237` (withSpawnLock)
+
+#### Layer 2: 10-Second Spawn Delay
+
+**Defense in depth**: Even with the lock, a minimum 10-second delay between spawns prevents rapid resource exhaustion.
+
+```
+Recovery with 5 queued tasks:
+  t=0s:  Task #1 → spawn ✓
+  t=1s:  Task #2 → delay not met → skip
+  t=10s: Task #3 → spawn ✓
+  t=20s: Task #4 → spawn ✓
+```
+
+**Code**: `src/services/handlers/worker-handler.ts:373-415` (processNextTask)
+
+#### Layer 3: Resource Monitoring
+
+**Pre-spawn validation**: Checks CPU and memory availability before each spawn attempt.
+
+**Code**: `src/services/handlers/worker-handler.ts:242-285` (canSpawnWorker)
+
+**Incident Reference**: 2025-12-06 TOCTOU race in spawn delay check
 
 ### 2. Stale Task Detection (RecoveryManager)
 
@@ -422,7 +448,7 @@ You'll see:
 ## Future Improvements
 
 See removal criteria in:
-- `WorkerHandler` spawn delay (lines 40-44)
-- `RecoveryManager` stale detection (lines 101-106)
+- `WorkerHandler` spawn serialization - documented in `docs/architecture/HANDLER-DECOMPOSITION-INVARIANTS.md`
+- `RecoveryManager` stale detection - see JSDoc in `src/services/recovery-manager.ts`
 
 Only remove these safeguards if you implement the suggested alternatives.
