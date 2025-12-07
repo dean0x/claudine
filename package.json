@@ -74,7 +74,7 @@
   },
   "type": "module",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.19.1",
+    "@modelcontextprotocol/sdk": "^1.24.3",
     "better-sqlite3": "^12.4.1",
     "simple-git": "^3.28.0",
     "zod": "^3.25.76"
