@@ -87,18 +87,18 @@ enum TaskStatus {
 The dependency system integrates at these lifecycle points:
 
 1. **TaskDelegated** → Task created with `dependsOn` list
-   - **Handler**: `DependencyHandler` (Lines 36-58)
+   - **Handler**: `DependencyHandler` (Lines 108-130)
    - **Action**: Validates dependencies for cycles, adds to dependency graph
    
 2. **TaskPersisted** → Task saved to database
-   - **Handler**: `QueueHandler` (Lines 62-76)
+   - **Handler**: `QueueHandler` (Lines 63-110)
    - **Action**: Checks if task is blocked; only enqueues if not blocked
    
 3. **TaskQueued** → Task ready to execute (only if not blocked)
    - **Handler**: `WorkerHandler` spawns worker
    
 4. **TaskCompleted/Failed/Cancelled** → Task terminal state
-   - **Handler**: `DependencyHandler` (Lines 157-192)
+   - **Handler**: `DependencyHandler` (Lines 414-518)
    - **Action**: Resolves dependencies, emits `TaskUnblocked` for dependents
 
 5. **TaskDeleted** → Task removed from system
@@ -106,7 +106,7 @@ The dependency system integrates at these lifecycle points:
    - **Action**: Removes task from dependency graph to maintain graph-database consistency
 
 6. **TaskUnblocked** → Dependent tasks now ready (all dependencies met)
-   - **Handler**: `QueueHandler` (Lines 305-355)
+   - **Handler**: `QueueHandler` (Lines 288-345)
    - **Action**: Enqueues unblocked tasks for execution
 
 ### 2.3 Complete Flow Diagram
@@ -312,25 +312,25 @@ export class PriorityTaskQueue implements TaskQueue {
 ### 5.2 Dependency-Aware Queueing
 **File**: `/workspace/claudine/src/services/handlers/queue-handler.ts`
 
-#### TaskPersisted Handler (Lines 62-76)
+#### TaskPersisted Handler (Lines 63-110)
 ```typescript
 private async handleTaskPersisted(event: TaskPersistedEvent): Promise<void> {
   // Check if task is blocked by dependencies
   const isBlockedResult = await this.dependencyRepo.isBlocked(event.task.id);
-  
+
   if (isBlockedResult.value) {
     // Task is blocked - do NOT enqueue yet
     logger.info('Task blocked by dependencies - waiting for TaskUnblocked event');
     return;
   }
-  
+
   // Task is not blocked - safe to enqueue
   this.queue.enqueue(event.task);
   this.eventBus.emit('TaskQueued', { taskId, task });
 }
 ```
 
-#### TaskUnblocked Handler (Lines 305-355)
+#### TaskUnblocked Handler (Lines 288-345)
 ```typescript
 private async handleTaskUnblocked(event: TaskUnblockedEvent): Promise<void> {
   // Task has all dependencies resolved - now queue it
@@ -404,75 +404,73 @@ async addDependency(taskId: TaskId, dependsOnTaskId: TaskId): Promise<Result<Tas
 
 **DoS Prevention**: Handler enforces `MAX_DEPENDENCY_CHAIN_DEPTH = 100` to prevent deep dependency chains that could cause performance degradation or stack overflow during graph traversal.
 
-#### Dependency Addition (Lines 64-152)
+#### Dependency Addition (Lines 293-348)
 ```typescript
 private async handleTaskDelegated(event: TaskDelegatedEvent): Promise<void> {
   const task = event.task;
-  
+
   if (!task.dependsOn || task.dependsOn.length === 0) {
     return;  // No dependencies
   }
-  
-  // Get all dependencies to build graph
-  const allDeps = await this.dependencyRepo.findAll();
-  const graph = new DependencyGraph(allDeps.value);
-  
-  // Validate each dependency for cycles
-  for (const dependsOnTaskId of task.dependsOn) {
-    const cycleCheck = graph.wouldCreateCycle(task.id, dependsOnTaskId);
-    if (cycleCheck.value) {
-      // Cycle detected - emit failure event
-      this.eventBus.emit('TaskDependencyFailed', {
-        taskId: task.id,
-        failedDependencyId: dependsOnTaskId,
-        error: CycleDetectedError
-      });
-      return err(error);
-    }
-    
-    // No cycle - safe to add
-    await this.dependencyRepo.addDependency(task.id, dependsOnTaskId);
-    this.eventBus.emit('TaskDependencyAdded', { taskId: task.id, dependsOnTaskId });
+
+  // Validate all dependencies in parallel (PERFORMANCE: Issue #14)
+  const validationResults = await Promise.all(
+    task.dependsOn.map(depId => this.validateSingleDependency(task.id, depId))
+  );
+
+  // Check for validation failures (fail-fast on first error)
+  const failure = validationResults.find(r => r.error !== null);
+  if (failure && failure.error) {
+    await this.handleValidationFailure(task.id, task.dependsOn, failure);
+    return err(failure.error);
   }
+
+  // Persist to database (only after all validations pass)
+  const addResult = await this.dependencyRepo.addDependencies(task.id, task.dependsOn);
+  if (!addResult.ok) return addResult;
+
+  // Update graph and emit success events
+  this.updateGraphAfterPersistence(addResult.value);
+  await this.emitDependencyAddedEvents(addResult.value);
 }
 ```
 
-#### Dependency Resolution (Lines 157-192)
+#### Dependency Resolution (Lines 414-518)
 ```typescript
 private async handleTaskCompleted(event: TaskCompletedEvent): Promise<void> {
   await this.resolveDependencies(event.taskId, 'completed');
 }
 
 private async resolveDependencies(
-  completedTaskId: string,
+  completedTaskId: TaskId,
   resolution: 'completed' | 'failed' | 'cancelled'
 ): Promise<Result<void>> {
-  // Get all tasks waiting for this completed task
-  const dependents = await this.dependencyRepo.getDependents(completedTaskId);
-  
-  // Resolve each dependency
+  // Get dependents BEFORE batch resolution for event emission
+  const dependentsResult = await this.dependencyRepo.getDependents(completedTaskId);
+  const dependents = dependentsResult.value;
+
+  // PERFORMANCE: Batch resolve ALL dependencies in single UPDATE query (7-10× faster)
+  await this.dependencyRepo.resolveDependenciesBatch(completedTaskId, resolution);
+
+  // Emit resolution events and check for unblocked tasks
   for (const dep of dependents) {
-    await this.dependencyRepo.resolveDependency(
-      dep.taskId,
-      dep.dependsOnTaskId,
-      resolution
-    );
-    
-    this.eventBus.emit('TaskDependencyResolved', {
+    if (dep.resolution !== 'pending') continue;
+
+    await this.eventBus.emit('TaskDependencyResolved', {
       taskId: dep.taskId,
       dependsOnTaskId: dep.dependsOnTaskId,
       resolution
     });
-    
+
     // Check if this task is now unblocked
-    const isBlocked = await this.dependencyRepo.isBlocked(dep.taskId);
-    
-    if (!isBlocked.value) {
-      // Task is unblocked - get task and emit event
-      const task = await this.taskRepo.findById(dep.taskId);
-      this.eventBus.emit('TaskUnblocked', {
+    const isBlockedResult = await this.dependencyRepo.isBlocked(dep.taskId);
+
+    if (!isBlockedResult.value) {
+      // Task is unblocked - fetch and emit event
+      const taskResult = await this.taskRepo.findById(dep.taskId);
+      await this.eventBus.emit('TaskUnblocked', {
         taskId: dep.taskId,
-        task: task.value
+        task: taskResult.value
       });
     }
   }
@@ -497,7 +495,7 @@ export class DependencyGraph {
 ```
 
 ### 7.2 Cycle Detection Algorithm
-**File**: `/workspace/claudine/src/core/dependency-graph.ts` (Lines 240-280)
+**File**: `/workspace/claudine/src/core/dependency-graph.ts` (Lines 339-433)
 
 ```typescript
 wouldCreateCycle(taskId: TaskId, dependsOnTaskId: TaskId): Result<boolean> {
