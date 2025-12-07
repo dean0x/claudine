@@ -346,14 +346,10 @@ export class QueueHandler extends BaseEventHandler {
   }
 
   /**
-   * Get queue statistics
+   * Get queue size efficiently without copying task array
+   * PERFORMANCE: Only returns count, not full task list
    */
-  getQueueStats(): { size: number; tasks: readonly any[] } {
-    const allResult = this.queue.getAll();
-
-    return {
-      size: this.queue.size(),
-      tasks: allResult.ok ? allResult.value : []
-    };
+  getQueueSize(): number {
+    return this.queue.size();
   }
 }
