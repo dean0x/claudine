@@ -12,6 +12,19 @@ import { Result, ok, err, tryCatch, tryCatchAsync } from '../core/result.js';
 import { ClaudineError, ErrorCode, operationErrorHandler } from '../core/errors.js';
 import { Database } from './database.js';
 
+/**
+ * Database row type for task_dependencies table
+ * TYPE-SAFETY: Explicit typing instead of Record<string, any>
+ */
+interface DependencyRow {
+  readonly id: number;
+  readonly task_id: string;
+  readonly depends_on_task_id: string;
+  readonly created_at: number;
+  readonly resolved_at: number | null;
+  readonly resolution: string;
+}
+
 export class SQLiteDependencyRepository implements DependencyRepository {
   // SECURITY: Hard limits to prevent DoS attacks and stack overflow
   private static readonly MAX_DEPENDENCIES_PER_TASK = 100;
@@ -186,7 +199,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
       }
 
       // SECURITY: Check current dependency count to prevent exceeding MAX_DEPENDENCIES_PER_TASK total
-      const existingDepsCount = (this.getDependenciesStmt.all(taskId) as Record<string, any>[]).length;
+      const existingDepsCount = (this.getDependenciesStmt.all(taskId) as DependencyRow[]).length;
       if (existingDepsCount + dependsOn.length > SQLiteDependencyRepository.MAX_DEPENDENCIES_PER_TASK) {
         throw new ClaudineError(
           ErrorCode.INVALID_OPERATION,
@@ -226,7 +239,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
 
       for (const depId of dependsOn) {
         const result = this.addDependencyStmt.run(taskId, depId, createdAt);
-        const row = this.getDependencyByIdStmt.get(result.lastInsertRowid) as Record<string, any>;
+        const row = this.getDependencyByIdStmt.get(result.lastInsertRowid) as DependencyRow;
         createdDependencies.push(this.rowToDependency(row));
       }
 
@@ -281,7 +294,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
   async getDependencies(taskId: TaskId): Promise<Result<readonly TaskDependency[]>> {
     return tryCatchAsync(
       async () => {
-        const rows = this.getDependenciesStmt.all(taskId) as Record<string, any>[];
+        const rows = this.getDependenciesStmt.all(taskId) as DependencyRow[];
         return rows.map(row => this.rowToDependency(row));
       },
       operationErrorHandler('get dependencies', { taskId })
@@ -308,7 +321,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
   async getDependents(taskId: TaskId): Promise<Result<readonly TaskDependency[]>> {
     return tryCatchAsync(
       async () => {
-        const rows = this.getDependentsStmt.all(taskId) as Record<string, any>[];
+        const rows = this.getDependentsStmt.all(taskId) as DependencyRow[];
         return rows.map(row => this.rowToDependency(row));
       },
       operationErrorHandler('get dependents', { taskId })
@@ -415,7 +428,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
   async getUnresolvedDependencies(taskId: TaskId): Promise<Result<readonly TaskDependency[]>> {
     return tryCatchAsync(
       async () => {
-        const rows = this.getUnresolvedDependenciesStmt.all(taskId) as Record<string, any>[];
+        const rows = this.getUnresolvedDependenciesStmt.all(taskId) as DependencyRow[];
         return rows.map(row => this.rowToDependency(row));
       },
       operationErrorHandler('get unresolved dependencies', { taskId })
@@ -473,7 +486,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
   async findAll(): Promise<Result<readonly TaskDependency[]>> {
     return tryCatchAsync(
       async () => {
-        const rows = this.findAllStmt.all() as Record<string, any>[];
+        const rows = this.findAllStmt.all() as DependencyRow[];
         return rows.map(row => this.rowToDependency(row));
       },
       operationErrorHandler('find all dependencies')
@@ -514,7 +527,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
     );
   }
 
-  private rowToDependency(row: any): TaskDependency {
+  private rowToDependency(row: DependencyRow): TaskDependency {
     return {
       id: row.id,
       taskId: row.task_id as TaskId,
