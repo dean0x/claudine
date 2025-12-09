@@ -22,11 +22,22 @@ import { DependencyGraph } from '../../core/dependency-graph.js';
 import { ClaudineError, ErrorCode } from '../../core/errors.js';
 
 // SECURITY: Maximum allowed depth for dependency chains (DoS prevention)
-const MAX_DEPENDENCY_CHAIN_DEPTH = 100;
+// Configurable via DependencyHandler.create() options
+export const DEFAULT_MAX_DEPENDENCY_CHAIN_DEPTH = 100;
+
+/**
+ * Options for DependencyHandler configuration
+ * @since 0.3.2
+ */
+export interface DependencyHandlerOptions {
+  /** Maximum allowed depth for dependency chains (DoS prevention). Default: 100 */
+  readonly maxChainDepth?: number;
+}
 
 export class DependencyHandler extends BaseEventHandler {
   private eventBus: EventBus;
   private graph: DependencyGraph;
+  private readonly maxChainDepth: number;
 
   /**
    * Private constructor - use DependencyHandler.create() instead
@@ -37,11 +48,13 @@ export class DependencyHandler extends BaseEventHandler {
     private readonly taskRepo: TaskRepository,
     logger: Logger,
     eventBus: EventBus,
-    graph: DependencyGraph
+    graph: DependencyGraph,
+    maxChainDepth: number
   ) {
     super(logger, 'DependencyHandler');
     this.eventBus = eventBus;
     this.graph = graph;
+    this.maxChainDepth = maxChainDepth;
   }
 
   /**
@@ -53,14 +66,17 @@ export class DependencyHandler extends BaseEventHandler {
    * @param taskRepo - Repository for task lookups (needed for TaskUnblocked events)
    * @param logger - Logger instance
    * @param eventBus - Event bus for subscriptions
+   * @param options - Optional configuration. Defaults: maxChainDepth=100
    * @returns Result containing initialized handler or error
    */
   static async create(
     dependencyRepo: DependencyRepository,
     taskRepo: TaskRepository,
     logger: Logger,
-    eventBus: EventBus
+    eventBus: EventBus,
+    options?: DependencyHandlerOptions
   ): Promise<Result<DependencyHandler>> {
+    const maxChainDepth = options?.maxChainDepth ?? DEFAULT_MAX_DEPENDENCY_CHAIN_DEPTH;
     const handlerLogger = logger.child ? logger.child({ module: 'DependencyHandler' }) : logger;
 
     // PERFORMANCE: Initialize graph eagerly (one-time O(N) cost)
@@ -84,7 +100,8 @@ export class DependencyHandler extends BaseEventHandler {
       taskRepo,
       handlerLogger,
       eventBus,
-      graph
+      graph,
+      maxChainDepth
     );
 
     // Subscribe to events
@@ -95,7 +112,7 @@ export class DependencyHandler extends BaseEventHandler {
 
     handlerLogger.info('DependencyHandler initialized with incremental graph updates', {
       pattern: 'event-driven incremental updates',
-      maxDepth: MAX_DEPENDENCY_CHAIN_DEPTH
+      maxDepth: maxChainDepth
     });
 
     return ok(handler);
@@ -164,12 +181,12 @@ export class DependencyHandler extends BaseEventHandler {
     // Depth check
     const depDepth = this.graph.getMaxDepth(depId);
     const resultingDepth = 1 + depDepth;
-    if (resultingDepth > MAX_DEPENDENCY_CHAIN_DEPTH) {
+    if (resultingDepth > this.maxChainDepth) {
       return {
         depId,
         error: new ClaudineError(
           ErrorCode.INVALID_OPERATION,
-          `Cannot add dependency: would create chain depth of ${resultingDepth} (max ${MAX_DEPENDENCY_CHAIN_DEPTH})`,
+          `Cannot add dependency: would create chain depth of ${resultingDepth} (max ${this.maxChainDepth})`,
           { taskId, dependsOnTaskId: depId, depth: resultingDepth }
         ),
         type: 'depth'

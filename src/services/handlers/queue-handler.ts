@@ -225,63 +225,6 @@ export class QueueHandler extends BaseEventHandler {
   }
 
   /**
-   * DEPRECATED: Use NextTaskQuery event instead
-   * @deprecated This method will be removed - use event-driven pattern
-   */
-  async getNextTask(): Promise<Result<any>> {
-    this.logger.warn('getNextTask() called directly - should use NextTaskQuery event');
-    const result = this.queue.dequeue();
-
-    if (!result.ok) {
-      return result;
-    }
-
-    if (!result.value) {
-      return ok(null);
-    }
-
-    this.logger.debug('Task dequeued', {
-      taskId: result.value.id,
-      priority: result.value.priority,
-      queueSize: this.queue.size()
-    });
-
-    return result;
-  }
-
-  /**
-   * DEPRECATED: Use RequeueTask event instead
-   * @deprecated This method will be removed - use event-driven pattern
-   */
-  async requeueTask(task: Task): Promise<Result<void>> {
-    this.logger.warn('requeueTask() called directly - should use RequeueTask event');
-    const result = this.queue.enqueue(task);
-
-    if (!result.ok) {
-      this.logger.error('Failed to requeue task', result.error, {
-        taskId: task.id
-      });
-      return result;
-    }
-
-    this.logger.debug('Task requeued', {
-      taskId: task.id,
-      queueSize: this.queue.size()
-    });
-
-    // CRITICAL: Emit TaskQueued event to trigger worker spawning for requeued task
-    if (this.eventBus) {
-      await this.emitEvent(this.eventBus, 'TaskQueued', {
-        taskId: task.id,
-        task: task
-      }, { context: { taskId: task.id, operation: 'legacy-requeue' } });
-      // Don't fail the requeue operation - the task is in the queue
-    }
-
-    return ok(undefined);
-  }
-
-  /**
    * Handle task unblocked - enqueue task when all dependencies are resolved
    * ARCHITECTURE: Dependency-aware queueing - tasks automatically enqueued when ready
    */
@@ -343,17 +286,5 @@ export class QueueHandler extends BaseEventHandler {
 
       return ok(undefined);
     });
-  }
-
-  /**
-   * Get queue statistics
-   */
-  getQueueStats(): { size: number; tasks: readonly any[] } {
-    const allResult = this.queue.getAll();
-
-    return {
-      size: this.queue.size(),
-      tasks: allResult.ok ? allResult.value : []
-    };
   }
 }

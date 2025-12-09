@@ -10,6 +10,38 @@ import { Result, ok, err, tryCatchAsync } from '../core/result.js';
 import { ClaudineError, ErrorCode, operationErrorHandler } from '../core/errors.js';
 import { Database } from './database.js';
 
+/**
+ * Database row type for tasks table
+ * TYPE-SAFETY: Explicit typing instead of Record<string, any>
+ */
+interface TaskRow {
+  readonly id: string;
+  readonly prompt: string;
+  readonly status: string;
+  readonly priority: string;
+  readonly working_directory: string | null;
+  readonly use_worktree: number;
+  readonly worktree_cleanup: string | null;
+  readonly merge_strategy: string | null;
+  readonly branch_name: string | null;
+  readonly base_branch: string | null;
+  readonly auto_commit: number | null;
+  readonly push_to_remote: number | null;
+  readonly pr_title: string | null;
+  readonly pr_body: string | null;
+  readonly timeout: number | null;
+  readonly max_output_buffer: number | null;
+  readonly parent_task_id: string | null;
+  readonly retry_count: number | null;
+  readonly retry_of: string | null;
+  readonly created_at: number;
+  readonly started_at: number | null;
+  readonly completed_at: number | null;
+  readonly worker_id: string | null;
+  readonly exit_code: number | null;
+  readonly dependencies: string | null;
+}
+
 export class SQLiteTaskRepository implements TaskRepository {
   private readonly db: SQLite.Database;
   private readonly saveStmt: SQLite.Statement;
@@ -127,7 +159,7 @@ export class SQLiteTaskRepository implements TaskRepository {
   async findById(taskId: TaskId): Promise<Result<Task | null>> {
     return tryCatchAsync(
       async () => {
-        const row = this.findByIdStmt.get(taskId) as Record<string, any> | undefined;
+        const row = this.findByIdStmt.get(taskId) as TaskRow | undefined;
         
         if (!row) {
           return null;
@@ -142,7 +174,7 @@ export class SQLiteTaskRepository implements TaskRepository {
   async findAll(): Promise<Result<readonly Task[]>> {
     return tryCatchAsync(
       async () => {
-        const rows = this.findAllStmt.all() as Record<string, any>[];
+        const rows = this.findAllStmt.all() as TaskRow[];
         return rows.map(row => this.rowToTask(row));
       },
       operationErrorHandler('find all tasks')
@@ -152,7 +184,7 @@ export class SQLiteTaskRepository implements TaskRepository {
   async findByStatus(status: string): Promise<Result<readonly Task[]>> {
     return tryCatchAsync(
       async () => {
-        const rows = this.findByStatusStmt.all(status) as Record<string, any>[];
+        const rows = this.findByStatusStmt.all(status) as TaskRow[];
         return rows.map(row => this.rowToTask(row));
       },
       operationErrorHandler('find tasks by status', { status })
@@ -197,7 +229,7 @@ export class SQLiteTaskRepository implements TaskRepository {
     }
   }
 
-  private rowToTask(row: any): Task {
+  private rowToTask(row: TaskRow): Task {
     return {
       id: row.id as TaskId,
       prompt: row.prompt,
@@ -205,8 +237,8 @@ export class SQLiteTaskRepository implements TaskRepository {
       priority: row.priority as Priority,
       workingDirectory: row.working_directory || undefined,
       useWorktree: row.use_worktree === 1,
-      worktreeCleanup: row.worktree_cleanup || 'auto',
-      mergeStrategy: row.merge_strategy || 'pr',
+      worktreeCleanup: (row.worktree_cleanup || 'auto') as 'auto' | 'keep' | 'delete',
+      mergeStrategy: (row.merge_strategy || 'pr') as 'auto' | 'pr' | 'manual' | 'patch',
       branchName: row.branch_name || undefined,
       baseBranch: row.base_branch || undefined,
       autoCommit: row.auto_commit === null || row.auto_commit === 1,

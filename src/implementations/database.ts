@@ -270,10 +270,51 @@ export class Database {
             CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on_resolution ON task_dependencies(depends_on_task_id, resolution);
           `);
         }
+      },
+      {
+        version: 2,
+        description: 'Add CHECK constraint on resolution column for defense-in-depth',
+        up: (db) => {
+          // SQLite doesn't support adding CHECK constraints to existing columns
+          // So we recreate the table with the constraint
+          // Pattern: Safe table migration with data preservation
+          db.exec(`
+            -- Create new table with CHECK constraint
+            CREATE TABLE task_dependencies_new (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              task_id TEXT NOT NULL,
+              depends_on_task_id TEXT NOT NULL,
+              created_at INTEGER NOT NULL,
+              resolved_at INTEGER,
+              resolution TEXT NOT NULL DEFAULT 'pending'
+                CHECK (resolution IN ('pending', 'completed', 'failed', 'cancelled')),
+              FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+              FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+              UNIQUE(task_id, depends_on_task_id)
+            );
+
+            -- Copy existing data (all existing values should be valid)
+            INSERT INTO task_dependencies_new
+              SELECT * FROM task_dependencies;
+
+            -- Drop old table
+            DROP TABLE task_dependencies;
+
+            -- Rename new table
+            ALTER TABLE task_dependencies_new RENAME TO task_dependencies;
+
+            -- Recreate indexes (indexes don't survive table rename)
+            CREATE INDEX IF NOT EXISTS idx_task_dependencies_task_id ON task_dependencies(task_id);
+            CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on ON task_dependencies(depends_on_task_id);
+            CREATE INDEX IF NOT EXISTS idx_task_dependencies_resolution ON task_dependencies(resolution);
+            CREATE INDEX IF NOT EXISTS idx_task_dependencies_blocked ON task_dependencies(task_id, resolution);
+            CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on_resolution ON task_dependencies(depends_on_task_id, resolution);
+          `);
+        }
       }
       // Future migrations go here:
       // {
-      //   version: 2,
+      //   version: 3,
       //   description: 'Add new column to tasks table',
       //   up: (db) => {
       //     db.exec('ALTER TABLE tasks ADD COLUMN new_field TEXT');

@@ -116,7 +116,7 @@ Location: `src/services/handlers/dependency-handler.ts:293-348`
 ### Validation Invariants
 
 - Cycle detection uses `this.graph.wouldCreateCycle()` - O(V+E) in-memory
-- Depth check uses `this.graph.getMaxDepth()` - cached O(1) after first call
+- Depth check uses `this.graph.getMaxDepth()` - O(V+E) with internal memoization for diamond patterns
 - `MAX_DEPENDENCY_CHAIN_DEPTH = 100` - prevents DoS via deep chains
 
 ### Error Type Handling

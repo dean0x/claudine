@@ -10,6 +10,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [0.3.2] - 2025-12-08
+
+### 🛠️ Technical Improvements
+- **Configurable chain depth limit**: `DependencyHandler.create()` now accepts `options.maxChainDepth`
+- **Database defense-in-depth**: Added CHECK constraint on `resolution` column via migration v2
+- **Type safety**: Explicit `DependencyRow` and `TaskRow` interfaces replace `Record<string, any>`
+
+### 🗑️ Removed
+- **Dead code cleanup**: Removed unused `getQueueStats()`, `getNextTask()`, `requeueTask()` methods from QueueHandler
+
+### 📚 Documentation
+- Fixed incorrect `getMaxDepth()` complexity claim (was "O(1) cached", now "O(V+E) with memoization")
+
+---
+
 ## [0.3.1] - 2025-12-01
 
 ### 🔒 Security Fixes
