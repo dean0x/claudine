@@ -10,6 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [0.3.3] - 2025-12-09
+
+### 🐛 Bug Fixes
+- **Fixed broken npm package**: v0.3.2 was published without `dist/` directory due to stale TypeScript build cache
+- **Fixed clean script**: Changed `.tsbuildinfo` to `tsconfig.tsbuildinfo` to match actual TypeScript output filename
+
+---
+
 ## [0.3.2] - 2025-12-08
 
 ### 🛠️ Technical Improvements
