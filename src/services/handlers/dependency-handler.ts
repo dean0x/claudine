@@ -25,7 +25,10 @@ import { ClaudineError, ErrorCode } from '../../core/errors.js';
 // Configurable via DependencyHandler.create() options
 export const DEFAULT_MAX_DEPENDENCY_CHAIN_DEPTH = 100;
 
-/** Options for DependencyHandler configuration */
+/**
+ * Options for DependencyHandler configuration
+ * @since 0.3.2
+ */
 export interface DependencyHandlerOptions {
   /** Maximum allowed depth for dependency chains (DoS prevention). Default: 100 */
   readonly maxChainDepth?: number;
@@ -63,7 +66,7 @@ export class DependencyHandler extends BaseEventHandler {
    * @param taskRepo - Repository for task lookups (needed for TaskUnblocked events)
    * @param logger - Logger instance
    * @param eventBus - Event bus for subscriptions
-   * @param options - Optional configuration (maxChainDepth, etc.)
+   * @param options - Optional configuration. Defaults: maxChainDepth=100
    * @returns Result containing initialized handler or error
    */
   static async create(

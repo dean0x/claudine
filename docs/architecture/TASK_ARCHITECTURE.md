@@ -274,7 +274,7 @@ tasks table:
 └─────────────────────────────────────────────────┘
 ```
 
-**Resolution States**:
+**Resolution States** (enforced by CHECK constraint since v0.3.2):
 - `'pending'`: Dependency not yet resolved (blocking task still running)
 - `'completed'`: Blocking task completed successfully
 - `'failed'`: Blocking task failed
