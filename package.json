@@ -49,7 +49,7 @@
     "clean": "rm -rf dist logs test-logs test-db tsconfig.tsbuildinfo",
     "typecheck": "tsc --noEmit",
     "validate": "npm run typecheck && npm run build && npm run test:all",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build && test -f dist/cli.js || (echo 'ERROR: dist/cli.js missing - build failed silently' && exit 1)"
   },
   "keywords": [
     "mcp",
