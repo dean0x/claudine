@@ -170,8 +170,11 @@ export async function bootstrap(): Promise<Result<Container>> {
   // All logs go to stderr to keep stdout clean for MCP protocol
   logger.info('Bootstrapping Claudine', { config });
 
-  // Register database
-  container.registerSingleton('database', () => new Database());
+  // Register database with structured logging
+  container.registerSingleton('database', () => {
+    const dbLogger = logger.child({ module: 'database' });
+    return new Database(undefined, dbLogger);
+  });
   
   // Register repositories
   container.registerSingleton('taskRepository', () => {

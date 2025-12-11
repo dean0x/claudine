@@ -6,11 +6,25 @@
  */
 
 import SQLite from 'better-sqlite3';
+import { z } from 'zod';
 import { DependencyRepository, TaskDependency } from '../core/interfaces.js';
 import { TaskId } from '../core/domain.js';
 import { Result, ok, err, tryCatch, tryCatchAsync } from '../core/result.js';
 import { ClaudineError, ErrorCode, operationErrorHandler } from '../core/errors.js';
 import { Database } from './database.js';
+
+/**
+ * Zod schema for validating dependency rows from database
+ * Pattern: Parse, don't validate - ensures type safety at system boundary
+ */
+const DependencyRowSchema = z.object({
+  id: z.number(),
+  task_id: z.string().min(1),
+  depends_on_task_id: z.string().min(1),
+  created_at: z.number(),
+  resolved_at: z.number().nullable(),
+  resolution: z.enum(['pending', 'completed', 'failed', 'cancelled']),
+});
 
 /**
  * Database row type for task_dependencies table
@@ -527,14 +541,31 @@ export class SQLiteDependencyRepository implements DependencyRepository {
     );
   }
 
+  /**
+   * Convert database row to TaskDependency domain object
+   * Pattern: Validate at boundary - ensures data integrity from database
+   * @throws Error if row data is invalid (indicates database corruption)
+   */
   private rowToDependency(row: DependencyRow): TaskDependency {
+    // Validate row data at system boundary
+    // This catches database corruption or schema mismatches early
+    const validated = DependencyRowSchema.safeParse(row);
+    if (!validated.success) {
+      // This should never happen with proper migrations + CHECK constraints
+      // But provides defense-in-depth against database corruption
+      throw new Error(
+        `Invalid dependency row data for id=${row.id}: ${validated.error.message}`
+      );
+    }
+
+    const data = validated.data;
     return {
-      id: row.id,
-      taskId: row.task_id as TaskId,
-      dependsOnTaskId: row.depends_on_task_id as TaskId,
-      createdAt: row.created_at,
-      resolvedAt: row.resolved_at || null,
-      resolution: row.resolution as 'pending' | 'completed' | 'failed' | 'cancelled'
+      id: data.id,
+      taskId: data.task_id as TaskId,
+      dependsOnTaskId: data.depends_on_task_id as TaskId,
+      createdAt: data.created_at,
+      resolvedAt: data.resolved_at,
+      resolution: data.resolution
     };
   }
 }

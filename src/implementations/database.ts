@@ -7,14 +7,29 @@ import SQLite from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { Logger } from '../core/interfaces.js';
+
+/**
+ * Silent no-op logger for when no logger is provided
+ * Pattern: Null Object - avoids null checks throughout code
+ */
+const noOpLogger: Logger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  child: () => noOpLogger,
+};
 
 export class Database {
   private db: SQLite.Database;
   private readonly dbPath: string;
+  private readonly logger: Logger;
 
-  constructor(dbPath?: string) {
+  constructor(dbPath?: string, logger?: Logger) {
     this.dbPath = dbPath || this.getDefaultDbPath();
-    
+    this.logger = logger ?? noOpLogger;
+
     // Ensure data directory exists
     // Note: We intentionally keep sync operation in constructor
     // Async constructors are not supported in JS/TS
@@ -37,11 +52,13 @@ export class Database {
       this.db.pragma('journal_mode = WAL');
     } catch (error) {
       // WAL mode failed (common in CI environments), use DELETE mode
-      console.error('WAL mode failed, falling back to DELETE mode:', error);
+      this.logger.warn('WAL mode failed, falling back to DELETE mode', {
+        error: error instanceof Error ? error.message : String(error)
+      });
       this.db.pragma('journal_mode = DELETE');
     }
     this.db.pragma('synchronous = NORMAL');
-    
+
     // Create tables if they don't exist
     this.createTables();
   }
@@ -159,7 +176,10 @@ export class Database {
     // Apply migrations in order
     for (const migration of migrations) {
       if (migration.version > currentVersion) {
-        console.log(`Applying migration v${migration.version}: ${migration.description}`);
+        this.logger.info('Applying database migration', {
+          version: migration.version,
+          description: migration.description
+        });
 
         // Run migration in transaction for safety
         const applyMigration = this.db.transaction(() => {
@@ -174,7 +194,9 @@ export class Database {
         });
 
         applyMigration();
-        console.log(`Migration v${migration.version} applied successfully`);
+        this.logger.info('Database migration applied successfully', {
+          version: migration.version
+        });
       }
     }
   }
@@ -311,10 +333,63 @@ export class Database {
             CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on_resolution ON task_dependencies(depends_on_task_id, resolution);
           `);
         }
+      },
+      {
+        version: 3,
+        description: 'Add CHECK constraints on status and priority columns for defense-in-depth',
+        up: (db) => {
+          // SQLite doesn't support adding CHECK constraints to existing columns
+          // So we recreate the table with the constraints
+          // Pattern: Safe table migration with data preservation
+          db.exec(`
+            -- Create new table with CHECK constraints
+            CREATE TABLE tasks_new (
+              id TEXT PRIMARY KEY,
+              prompt TEXT NOT NULL,
+              status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled')),
+              priority TEXT NOT NULL CHECK (priority IN ('P0', 'P1', 'P2')),
+              working_directory TEXT,
+              use_worktree INTEGER DEFAULT 0,
+              worktree_cleanup TEXT DEFAULT 'auto',
+              merge_strategy TEXT DEFAULT 'pr',
+              branch_name TEXT,
+              base_branch TEXT,
+              auto_commit INTEGER DEFAULT 1,
+              push_to_remote INTEGER DEFAULT 1,
+              pr_title TEXT,
+              pr_body TEXT,
+              timeout INTEGER,
+              max_output_buffer INTEGER,
+              parent_task_id TEXT,
+              retry_count INTEGER,
+              retry_of TEXT,
+              created_at INTEGER NOT NULL,
+              started_at INTEGER,
+              completed_at INTEGER,
+              worker_id TEXT,
+              exit_code INTEGER,
+              dependencies TEXT
+            );
+
+            -- Copy existing data (all existing values should be valid)
+            INSERT INTO tasks_new SELECT * FROM tasks;
+
+            -- Drop old table
+            DROP TABLE tasks;
+
+            -- Rename new table
+            ALTER TABLE tasks_new RENAME TO tasks;
+
+            -- Recreate indexes (indexes don't survive table rename)
+            CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+            CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
+            CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
+          `);
+        }
       }
       // Future migrations go here:
       // {
-      //   version: 3,
+      //   version: 4,
       //   description: 'Add new column to tasks table',
       //   up: (db) => {
       //     db.exec('ALTER TABLE tasks ADD COLUMN new_field TEXT');
