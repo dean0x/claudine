@@ -11,6 +11,84 @@ import { InMemoryEventBus } from './core/events/event-bus.js';
 import { validateConfiguration } from './core/config-validator.js';
 import { Result, ok, err } from './core/result.js';
 import { ClaudineError, ErrorCode } from './core/errors.js';
+import { ChildProcess } from 'child_process';
+import { EventEmitter } from 'events';
+
+/**
+ * MockChildProcess - A fake ChildProcess that simulates immediate completion
+ * Used by NoOpProcessSpawner to allow dependency tests to work without hanging
+ */
+class MockChildProcess extends EventEmitter {
+  readonly pid: number;
+  readonly killed: boolean = false;
+  readonly exitCode: number | null = null;
+
+  // Required ChildProcess properties (stub implementations)
+  readonly stdin = null;
+  readonly stdout = null;
+  readonly stderr = null;
+  readonly stdio = [null, null, null, null, null] as const;
+  readonly connected = false;
+  readonly signalCode = null;
+  readonly spawnfile = '';
+  readonly spawnargs: string[] = [];
+
+  constructor(pid: number) {
+    super();
+    this.pid = pid;
+
+    // Emit exit event after a short delay to simulate process completion
+    // This allows the worker pool to clean up properly without infinite loops
+    setImmediate(() => {
+      this.emit('exit', 0, null);
+      this.emit('close', 0, null);
+    });
+  }
+
+  kill(_signal?: NodeJS.Signals | number): boolean {
+    return true;
+  }
+
+  ref(): void { /* no-op */ }
+  unref(): void { /* no-op */ }
+  disconnect(): void { /* no-op */ }
+  send(_message: unknown): boolean { return true; }
+
+  // Type assertion for ChildProcess compatibility
+  [Symbol.dispose](): void { /* no-op */ }
+}
+
+/**
+ * NoOpProcessSpawner - Used in test mode to prevent spawning real Claude Code instances
+ * Pattern: Null Object - provides safe no-op behavior for testing
+ *
+ * When CLAUDINE_TEST_MODE=true, bootstrap uses this instead of ClaudeProcessSpawner
+ * to prevent integration tests from spawning real Claude Code instances which:
+ * - Consume significant CPU/memory
+ * - Can crash Claude Code instances running the tests
+ * - Make tests non-deterministic
+ *
+ * Returns a MockChildProcess that immediately exits with code 0, allowing the
+ * worker pool to handle completion properly without infinite requeue loops.
+ */
+class NoOpProcessSpawner implements ProcessSpawner {
+  private mockPidCounter = 90000; // High PID to avoid collision with real processes
+
+  spawn(_prompt: string, _workingDirectory: string, _taskId?: string): Result<{ process: ChildProcess; pid: number }> {
+    const pid = this.mockPidCounter++;
+    const mockProcess = new MockChildProcess(pid) as unknown as ChildProcess;
+
+    return ok({ process: mockProcess, pid });
+  }
+
+  kill(_pid: number): Result<void> {
+    return ok(undefined);
+  }
+
+  dispose(): void {
+    // No resources to clean up
+  }
+}
 
 // Implementations
 import { PriorityTaskQueue } from './implementations/task-queue.js';
@@ -202,6 +280,13 @@ export async function bootstrap(): Promise<Result<Container>> {
   container.registerSingleton('taskQueue', () => new PriorityTaskQueue());
 
   container.registerSingleton('processSpawner', () => {
+    // Use NoOpProcessSpawner in test mode to prevent spawning real Claude Code instances
+    // This prevents integration tests from consuming CPU/memory and crashing
+    if (process.env.CLAUDINE_TEST_MODE === 'true') {
+      logger.info('Test mode enabled - using NoOpProcessSpawner');
+      return new NoOpProcessSpawner();
+    }
+
     const configResult = container.get<Configuration>('config');
     if (!configResult.ok) throw new Error('Config required for ProcessSpawner');
     return new ClaudeProcessSpawner(configResult.value, 'claude');
@@ -221,10 +306,17 @@ export async function bootstrap(): Promise<Result<Container>> {
       getFromContainer<EventBus>(container, 'eventBus'),
       getFromContainer<Logger>(container, 'logger').child({ module: 'ResourceMonitor' })
     );
-    
-    // Start monitoring after a brief delay to allow system startup
-    setTimeout(() => monitor.startMonitoring(), 2000);
-    
+
+    // In test mode, DON'T start resource monitoring to prevent CPU/memory exhaustion
+    // The ResourceMonitor polls system resources and emits events continuously,
+    // which can overwhelm the system when running integration tests
+    if (process.env.CLAUDINE_TEST_MODE !== 'true') {
+      // Start monitoring after a brief delay to allow system startup
+      setTimeout(() => monitor.startMonitoring(), 2000);
+    } else {
+      logger.info('Test mode enabled - skipping resource monitoring');
+    }
+
     return monitor;
   });
 

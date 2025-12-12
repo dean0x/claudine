@@ -5,7 +5,7 @@ export const createTestTask = (overrides?: Partial<Task>): Task => ({
   id: overrides?.id || `test-task-${randomUUID()}`,
   prompt: 'Test prompt',
   priority: 'P1',
-  status: 'pending',
+  status: 'queued', // Must be valid TaskStatus: queued|running|completed|failed|cancelled
   createdAt: Date.now(),
   updatedAt: Date.now(),
   workingDirectory: '/workspace',

@@ -28,7 +28,7 @@
     "test:implementations": "NODE_OPTIONS='--max-old-space-size=2048' vitest run tests/unit/implementations --exclude='**/dependency-repository.test.ts' --exclude='**/task-repository.test.ts' --exclude='**/database.test.ts' --no-file-parallelism",
     "test:cli": "NODE_OPTIONS='--max-old-space-size=2048' vitest run tests/unit/cli.test.ts tests/unit/retry-functionality.test.ts --no-file-parallelism",
     "test:error-scenarios": "NODE_OPTIONS='--max-old-space-size=2048' vitest run tests/unit/error-scenarios --no-file-parallelism",
-    "test:integration": "NODE_OPTIONS='--max-old-space-size=2048' vitest run tests/integration --no-file-parallelism",
+    "test:integration": "CLAUDINE_TEST_MODE=true NODE_OPTIONS='--max-old-space-size=2048' vitest run tests/integration --no-file-parallelism",
     "test:coverage": "NODE_OPTIONS='--max-old-space-size=2048' npm run test:unit -- --coverage && NODE_OPTIONS='--max-old-space-size=2048' npm run test:integration -- --coverage",
     "test:watch": "NODE_OPTIONS='--max-old-space-size=2048' vitest --watch",
     "test:e2e": "tsx tests/e2e/test-runner.ts",

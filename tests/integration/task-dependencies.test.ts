@@ -4,14 +4,22 @@ import { Container } from '../../src/core/container.js';
 import { TaskManager, DependencyRepository } from '../../src/core/interfaces.js';
 import { Task, TaskId, Priority } from '../../src/core/domain.js';
 import { Database } from '../../src/implementations/database.js';
+import { mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 describe('Integration: Task Dependencies - End-to-End Flow', () => {
   let container: Container;
   let taskManager: TaskManager;
   let dependencyRepo: DependencyRepository;
   let database: Database;
+  let tempDir: string;
 
   beforeEach(async () => {
+    // Create isolated temp directory for each test
+    tempDir = await mkdtemp(join(tmpdir(), 'claudine-deps-test-'));
+    process.env.CLAUDINE_DATABASE_PATH = join(tempDir, 'test.db');
+
     const result = await bootstrap();
     if (!result.ok) {
       throw new Error(`Bootstrap failed: ${result.error.message}`);
@@ -37,9 +45,15 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
     database = dbResult.value;
   });
 
-  afterEach(() => {
-    if (database) {
-      database.close();
+  afterEach(async () => {
+    // Use container.dispose() for proper cleanup of all resources
+    if (container) {
+      await container.dispose();
+    }
+    // Clean up env var and temp directory
+    delete process.env.CLAUDINE_DATABASE_PATH;
+    if (tempDir) {
+      await rm(tempDir, { recursive: true, force: true });
     }
   });
 
@@ -114,11 +128,62 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
     });
   });
 
-  describe('Cycle Detection', () => {
-    it('should reject circular dependencies', async () => {
-      // Create Task A
+  describe('Dependency Validation', () => {
+    /**
+     * ARCHITECTURE NOTE: Cycle detection is implemented in DependencyHandler,
+     * not the repository. The repository is a pure data layer.
+     *
+     * Through the public API (taskManager.delegate()), cycles cannot be created:
+     * - Self-dependency: Impossible because task ID doesn't exist when delegate() is called
+     * - Circular dependency: Would require adding dependencies to existing tasks (no API for this)
+     *
+     * Cycle detection is tested thoroughly in unit tests for DependencyGraph.
+     * See: tests/unit/core/dependency-graph.test.ts
+     *
+     * These integration tests verify dependency validation that IS reachable through the public API:
+     * - Missing dependency task (TASK_NOT_FOUND)
+     * - Duplicate dependencies (handled gracefully)
+     */
+
+    it('should emit TaskDependencyFailed event for non-existent dependency', async () => {
+      // ARCHITECTURE: Task creation succeeds, dependency validation is async
+      // When dependency target doesn't exist, TaskDependencyFailed event is emitted
+      // See DependencyHandler.handleTaskDelegated() for validation flow
+
+      // Subscribe to TaskDependencyFailed event before delegating
+      const eventBusResult = container.get<any>('eventBus');
+      expect(eventBusResult.ok).toBe(true);
+      if (!eventBusResult.ok) return;
+      const eventBus = eventBusResult.value;
+
+      let failedEvent: any = null;
+      eventBus.on('TaskDependencyFailed', (event: any) => {
+        failedEvent = event;
+      });
+
+      // Try to create a task that depends on a task that doesn't exist
+      const taskResult = await taskManager.delegate({
+        prompt: 'Task with invalid dependency',
+        priority: Priority.P2,
+        dependsOn: ['non-existent-task-id' as TaskId]
+      });
+
+      // Task creation succeeds (task is created before dependency validation)
+      expect(taskResult.ok).toBe(true);
+
+      // Wait for dependency processing
+      await new Promise(resolve => setTimeout(resolve, 150));
+
+      // Verify TaskDependencyFailed event was emitted
+      expect(failedEvent).not.toBeNull();
+      expect(failedEvent.failedDependencyId).toBe('non-existent-task-id');
+      expect(failedEvent.error.message).toMatch(/not found/i);
+    });
+
+    it('should accept valid dependencies on existing tasks', async () => {
+      // Create Task A first (no dependencies)
       const taskAResult = await taskManager.delegate({
-        prompt: 'Task A',
+        prompt: 'Task A - base task',
         priority: Priority.P2
       });
 
@@ -127,10 +192,10 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
       const taskA = taskAResult.value;
 
-      // Wait for persistence
+      // Wait for Task A to be persisted
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Try to create Task B that depends on A, then make A depend on B (cycle)
+      // Create Task B that depends on Task A - should succeed
       const taskBResult = await taskManager.delegate({
         prompt: 'Task B - depends on A',
         priority: Priority.P2,
@@ -140,41 +205,16 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       expect(taskBResult.ok).toBe(true);
       if (!taskBResult.ok) return;
 
-      const taskB = taskBResult.value;
-
-      // Wait for dependency processing
+      // Wait for dependency to be processed
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Now try to add A -> B dependency (would create cycle)
-      const cycleResult = await dependencyRepo.addDependency(taskA.id, taskB.id);
+      // Verify dependency was created
+      const depsResult = await dependencyRepo.getDependencies(taskBResult.value.id);
+      expect(depsResult.ok).toBe(true);
+      if (!depsResult.ok) return;
 
-      // This should fail due to cycle detection
-      expect(cycleResult.ok).toBe(false);
-      if (cycleResult.ok) return;
-
-      expect(cycleResult.error.message).toContain('cycle');
-    });
-
-    it('should reject self-dependencies', async () => {
-      // Create Task A
-      const taskAResult = await taskManager.delegate({
-        prompt: 'Task A',
-        priority: Priority.P2
-      });
-
-      expect(taskAResult.ok).toBe(true);
-      if (!taskAResult.ok) return;
-
-      const taskA = taskAResult.value;
-
-      // Wait for persistence
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Try to make task depend on itself
-      const selfDepResult = await dependencyRepo.addDependency(taskA.id, taskA.id);
-
-      expect(selfDepResult.ok).toBe(false);
-      // Self-dependency should be rejected
+      expect(depsResult.value).toHaveLength(1);
+      expect(depsResult.value[0].dependsOnTaskId).toBe(taskA.id);
     });
   });
 

@@ -64,8 +64,27 @@ export class Database {
   }
 
   private getDefaultDbPath(): string {
-    // Allow override via environment variable
-    // SECURITY: Validate environment variable to prevent path traversal
+    // Allow override via environment variables
+    // SECURITY: Validate environment variables to prevent path traversal
+
+    // CLAUDINE_DATABASE_PATH: Full path to database file (used by tests)
+    if (process.env.CLAUDINE_DATABASE_PATH) {
+      const dbPath = process.env.CLAUDINE_DATABASE_PATH;
+
+      // Validate path is absolute and doesn't contain traversal
+      if (!path.isAbsolute(dbPath)) {
+        throw new Error('CLAUDINE_DATABASE_PATH must be an absolute path');
+      }
+
+      const normalized = path.normalize(dbPath);
+      if (normalized.includes('..')) {
+        throw new Error('CLAUDINE_DATABASE_PATH must not contain path traversal sequences (..)');
+      }
+
+      return normalized;
+    }
+
+    // CLAUDINE_DATA_DIR: Directory containing claudine.db
     if (process.env.CLAUDINE_DATA_DIR) {
       const dataDir = process.env.CLAUDINE_DATA_DIR;
 

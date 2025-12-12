@@ -180,6 +180,16 @@ export class Container {
       }
     }
 
+    // CRITICAL: Stop ResourceMonitor FIRST to prevent event storm during shutdown
+    // The ResourceMonitor continuously polls and emits events - must stop before other cleanup
+    const resourceMonitorResult = this.get('resourceMonitor');
+    if (resourceMonitorResult.ok) {
+      const resourceMonitor = resourceMonitorResult.value as any;
+      if (resourceMonitor.stopMonitoring) {
+        resourceMonitor.stopMonitoring();
+      }
+    }
+
     // Kill all workers if worker pool exists
     const workerPoolResult = this.get('workerPool');
     if (workerPoolResult.ok) {
