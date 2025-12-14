@@ -9,6 +9,18 @@ import { ClaudineError, ErrorCode } from './errors.js';
 type Factory<T> = () => T | Promise<T>;
 type Service = { factory: Factory<any>; singleton: boolean; instance?: any };
 
+/**
+ * Interface for services that can be disposed during container shutdown.
+ * All methods are optional - services implement only what they need.
+ */
+interface DisposableService {
+  emit?(event: string, data: unknown): Promise<void>;
+  stopMonitoring?(): void;
+  killAll?(): Promise<void>;
+  close?(): void;
+  dispose?(): void;
+}
+
 export class Container {
   private readonly services = new Map<string, Service>();
   private readonly resolving = new Set<string>();
@@ -168,26 +180,53 @@ export class Container {
   }
 
   /**
-   * Dispose container and trigger graceful shutdown
+   * Dispose container and trigger graceful shutdown.
+   *
+   * @remarks
+   * Shutdown order is critical to prevent resource leaks and event storms:
+   * 1. Emit `ShutdownInitiated` event
+   * 2. **Stop ResourceMonitor FIRST** - prevents continuous polling/events during shutdown
+   * 3. Kill all workers (emit `WorkersTerminating`, then `killAll()`)
+   * 4. Close database (emit `DatabaseClosing`, then `close()`)
+   * 5. Emit `ShutdownComplete` event
+   * 6. Dispose EventBus (clears cleanup timers)
+   * 7. Clear all service registrations
+   *
+   * @example
+   * ```typescript
+   * const container = await bootstrap();
+   * // ... use container ...
+   * await container.dispose(); // Graceful shutdown
+   * ```
    */
   async dispose(): Promise<void> {
     // Get EventBus if available to emit shutdown events
     const eventBusResult = this.get('eventBus');
     if (eventBusResult.ok) {
-      const eventBus = eventBusResult.value as any;
+      const eventBus = eventBusResult.value as DisposableService;
       if (eventBus.emit) {
         await eventBus.emit('ShutdownInitiated', {});
+      }
+    }
+
+    // CRITICAL: Stop ResourceMonitor FIRST to prevent event storm during shutdown
+    // The ResourceMonitor continuously polls and emits events - must stop before other cleanup
+    const resourceMonitorResult = this.get('resourceMonitor');
+    if (resourceMonitorResult.ok) {
+      const resourceMonitor = resourceMonitorResult.value as DisposableService;
+      if (resourceMonitor.stopMonitoring) {
+        resourceMonitor.stopMonitoring();
       }
     }
 
     // Kill all workers if worker pool exists
     const workerPoolResult = this.get('workerPool');
     if (workerPoolResult.ok) {
-      const workerPool = workerPoolResult.value as any;
+      const workerPool = workerPoolResult.value as DisposableService;
       if (workerPool.killAll) {
         if (eventBusResult.ok) {
-          const eventBus = eventBusResult.value as any;
-          await eventBus.emit('WorkersTerminating', {});
+          const eventBus = eventBusResult.value as DisposableService;
+          await eventBus.emit?.('WorkersTerminating', {});
         }
         await workerPool.killAll();
       }
@@ -196,11 +235,11 @@ export class Container {
     // Close database if exists
     const dbResult = this.get('database');
     if (dbResult.ok) {
-      const db = dbResult.value as any;
+      const db = dbResult.value as DisposableService;
       if (db.close) {
         if (eventBusResult.ok) {
-          const eventBus = eventBusResult.value as any;
-          await eventBus.emit('DatabaseClosing', {});
+          const eventBus = eventBusResult.value as DisposableService;
+          await eventBus.emit?.('DatabaseClosing', {});
         }
         db.close();
       }
@@ -208,7 +247,7 @@ export class Container {
 
     // Final cleanup event
     if (eventBusResult.ok) {
-      const eventBus = eventBusResult.value as any;
+      const eventBus = eventBusResult.value as DisposableService;
       if (eventBus.emit) {
         await eventBus.emit('ShutdownComplete', {});
       }

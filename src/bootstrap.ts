@@ -12,6 +12,17 @@ import { validateConfiguration } from './core/config-validator.js';
 import { Result, ok, err } from './core/result.js';
 import { ClaudineError, ErrorCode } from './core/errors.js';
 
+/**
+ * Options for bootstrapping the application
+ * Use dependency injection to provide test doubles instead of environment variables
+ */
+export interface BootstrapOptions {
+  /** Custom ProcessSpawner implementation (e.g., NoOpProcessSpawner for tests) */
+  processSpawner?: ProcessSpawner;
+  /** Skip starting resource monitoring (useful for tests to prevent CPU/memory overhead) */
+  skipResourceMonitoring?: boolean;
+}
+
 // Implementations
 import { PriorityTaskQueue } from './implementations/task-queue.js';
 import { ClaudeProcessSpawner } from './implementations/process-spawner.js';
@@ -96,7 +107,7 @@ const getFromContainerSafe = <T>(container: Container, key: string): Result<T> =
  * Bootstrap the application with all dependencies
  * ARCHITECTURE: Returns Result instead of throwing - follows Result pattern
  */
-export async function bootstrap(): Promise<Result<Container>> {
+export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<Container>> {
   const container = new Container();
   const config = loadConfiguration();
 
@@ -170,8 +181,11 @@ export async function bootstrap(): Promise<Result<Container>> {
   // All logs go to stderr to keep stdout clean for MCP protocol
   logger.info('Bootstrapping Claudine', { config });
 
-  // Register database
-  container.registerSingleton('database', () => new Database());
+  // Register database with structured logging
+  container.registerSingleton('database', () => {
+    const dbLogger = logger.child({ module: 'database' });
+    return new Database(undefined, dbLogger);
+  });
   
   // Register repositories
   container.registerSingleton('taskRepository', () => {
@@ -199,6 +213,12 @@ export async function bootstrap(): Promise<Result<Container>> {
   container.registerSingleton('taskQueue', () => new PriorityTaskQueue());
 
   container.registerSingleton('processSpawner', () => {
+    // Use injected ProcessSpawner if provided (for testing)
+    if (options.processSpawner) {
+      logger.info('Using injected ProcessSpawner');
+      return options.processSpawner;
+    }
+
     const configResult = container.get<Configuration>('config');
     if (!configResult.ok) throw new Error('Config required for ProcessSpawner');
     return new ClaudeProcessSpawner(configResult.value, 'claude');
@@ -218,10 +238,15 @@ export async function bootstrap(): Promise<Result<Container>> {
       getFromContainer<EventBus>(container, 'eventBus'),
       getFromContainer<Logger>(container, 'logger').child({ module: 'ResourceMonitor' })
     );
-    
-    // Start monitoring after a brief delay to allow system startup
-    setTimeout(() => monitor.startMonitoring(), 2000);
-    
+
+    // Skip resource monitoring if requested (e.g., in tests to prevent CPU/memory overhead)
+    if (!options.skipResourceMonitoring) {
+      // Start monitoring after a brief delay to allow system startup
+      setTimeout(() => monitor.startMonitoring(), 2000);
+    } else {
+      logger.info('Skipping resource monitoring (skipResourceMonitoring=true)');
+    }
+
     return monitor;
   });
 

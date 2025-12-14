@@ -149,36 +149,41 @@ describe('Database Failure Scenarios', () => {
   });
 
   describe('Data Corruption Scenarios', () => {
-    it('should handle corrupted task data retrieval', async () => {
+    it('should prevent corrupted data via CHECK constraints', async () => {
       const dbPath = join(tempDir, 'corrupt.db');
       database = new Database(dbPath);
 
-      // Directly execute SQL to insert corrupted data
+      // Directly execute SQL to attempt inserting corrupted data
       const db = (database as any).db;
 
-      // FIX: No 'metadata' column exists. Create corruption with invalid priority value
-      db.prepare(`
-        INSERT INTO tasks (id, prompt, status, priority, created_at)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(
-        'corrupt-task',
-        'test prompt',
-        'queued',
-        'INVALID_PRIORITY', // This will cause validation error
-        Date.now()
-      );
+      // Migration v3 added CHECK constraints on status and priority columns
+      // This test verifies the defense-in-depth prevents invalid data at DB level
+      expect(() => {
+        db.prepare(`
+          INSERT INTO tasks (id, prompt, status, priority, created_at)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(
+          'corrupt-task',
+          'test prompt',
+          'queued',
+          'INVALID_PRIORITY', // CHECK constraint prevents this
+          Date.now()
+        );
+      }).toThrow(/CHECK constraint failed/);
 
-      repository = new SQLiteTaskRepository(database);
-
-      // Try to retrieve corrupted task - should succeed but data might be invalid
-      const result = await repository.findById('corrupt-task' as TaskId);
-
-      // FIX: Repository returns whatever is in DB, validation happens at domain level
-      // This test validates that DB can return data even if it's logically invalid
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value.id).toBe('corrupt-task');
-      }
+      // Also verify invalid status is rejected
+      expect(() => {
+        db.prepare(`
+          INSERT INTO tasks (id, prompt, status, priority, created_at)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(
+          'corrupt-task-2',
+          'test prompt',
+          'INVALID_STATUS', // CHECK constraint prevents this
+          'P1',
+          Date.now()
+        );
+      }).toThrow(/CHECK constraint failed/);
     });
 
     it('should handle missing required columns', async () => {

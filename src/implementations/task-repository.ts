@@ -4,11 +4,44 @@
  */
 
 import SQLite from 'better-sqlite3';
+import { z } from 'zod';
 import { TaskRepository } from '../core/interfaces.js';
 import { Task, TaskId, TaskStatus, Priority, WorkerId } from '../core/domain.js';
 import { Result, ok, err, tryCatchAsync } from '../core/result.js';
 import { ClaudineError, ErrorCode, operationErrorHandler } from '../core/errors.js';
 import { Database } from './database.js';
+
+/**
+ * Zod schema for validating database rows
+ * Pattern: Parse, don't validate - ensures type safety at system boundary
+ */
+const TaskRowSchema = z.object({
+  id: z.string().min(1),
+  prompt: z.string(),
+  status: z.enum(['queued', 'running', 'completed', 'failed', 'cancelled']),
+  priority: z.enum(['P0', 'P1', 'P2']),
+  working_directory: z.string().nullable(),
+  use_worktree: z.number(),
+  worktree_cleanup: z.string().nullable(),
+  merge_strategy: z.string().nullable(),
+  branch_name: z.string().nullable(),
+  base_branch: z.string().nullable(),
+  auto_commit: z.number().nullable(),
+  push_to_remote: z.number().nullable(),
+  pr_title: z.string().nullable(),
+  pr_body: z.string().nullable(),
+  timeout: z.number().nullable(),
+  max_output_buffer: z.number().nullable(),
+  parent_task_id: z.string().nullable(),
+  retry_count: z.number().nullable(),
+  retry_of: z.string().nullable(),
+  created_at: z.number(),
+  started_at: z.number().nullable(),
+  completed_at: z.number().nullable(),
+  worker_id: z.string().nullable(),
+  exit_code: z.number().nullable(),
+  dependencies: z.string().nullable(),
+});
 
 /**
  * Database row type for tasks table
@@ -229,32 +262,40 @@ export class SQLiteTaskRepository implements TaskRepository {
     }
   }
 
+  /**
+   * Convert database row to Task domain object
+   * Pattern: Validate at boundary - ensures data integrity from database
+   * @throws Error if row data is invalid (indicates database corruption)
+   */
   private rowToTask(row: TaskRow): Task {
+    // Validate row data at system boundary (parse throws ZodError on invalid data)
+    // This catches database corruption or schema mismatches early
+    const data = TaskRowSchema.parse(row);
     return {
-      id: row.id as TaskId,
-      prompt: row.prompt,
-      status: row.status as TaskStatus,
-      priority: row.priority as Priority,
-      workingDirectory: row.working_directory || undefined,
-      useWorktree: row.use_worktree === 1,
-      worktreeCleanup: (row.worktree_cleanup || 'auto') as 'auto' | 'keep' | 'delete',
-      mergeStrategy: (row.merge_strategy || 'pr') as 'auto' | 'pr' | 'manual' | 'patch',
-      branchName: row.branch_name || undefined,
-      baseBranch: row.base_branch || undefined,
-      autoCommit: row.auto_commit === null || row.auto_commit === 1,
-      pushToRemote: row.push_to_remote === null || row.push_to_remote === 1,
-      prTitle: row.pr_title || undefined,
-      prBody: row.pr_body || undefined,
-      timeout: row.timeout || undefined,
-      maxOutputBuffer: row.max_output_buffer || undefined,
-      parentTaskId: row.parent_task_id ? row.parent_task_id as TaskId : undefined,
-      retryCount: row.retry_count || undefined,
-      retryOf: row.retry_of ? row.retry_of as TaskId : undefined,
-      createdAt: row.created_at,
-      startedAt: row.started_at || undefined,
-      completedAt: row.completed_at || undefined,
-      workerId: row.worker_id ? row.worker_id as WorkerId : undefined,
-      exitCode: row.exit_code ?? undefined
+      id: data.id as TaskId,
+      prompt: data.prompt,
+      status: data.status as TaskStatus,
+      priority: data.priority as Priority,
+      workingDirectory: data.working_directory || undefined,
+      useWorktree: data.use_worktree === 1,
+      worktreeCleanup: (data.worktree_cleanup || 'auto') as 'auto' | 'keep' | 'delete',
+      mergeStrategy: (data.merge_strategy || 'pr') as 'auto' | 'pr' | 'manual' | 'patch',
+      branchName: data.branch_name || undefined,
+      baseBranch: data.base_branch || undefined,
+      autoCommit: data.auto_commit === null || data.auto_commit === 1,
+      pushToRemote: data.push_to_remote === null || data.push_to_remote === 1,
+      prTitle: data.pr_title || undefined,
+      prBody: data.pr_body || undefined,
+      timeout: data.timeout || undefined,
+      maxOutputBuffer: data.max_output_buffer || undefined,
+      parentTaskId: data.parent_task_id ? data.parent_task_id as TaskId : undefined,
+      retryCount: data.retry_count || undefined,
+      retryOf: data.retry_of ? data.retry_of as TaskId : undefined,
+      createdAt: data.created_at,
+      startedAt: data.started_at || undefined,
+      completedAt: data.completed_at || undefined,
+      workerId: data.worker_id ? data.worker_id as WorkerId : undefined,
+      exitCode: data.exit_code ?? undefined
     };
   }
 }
