@@ -21,6 +21,28 @@ const noOpLogger: Logger = {
   child: () => noOpLogger,
 };
 
+/**
+ * SQLite database wrapper for Claudine task persistence.
+ *
+ * @remarks
+ * Database location can be configured via environment variables:
+ * - `CLAUDINE_DATABASE_PATH`: Full absolute path to database file (e.g., `/tmp/test.db`)
+ * - `CLAUDINE_DATA_DIR`: Directory to store `claudine.db` (e.g., `~/.claudine`)
+ * - Default: `~/.claudine/claudine.db`
+ *
+ * Security: Both environment variables are validated to prevent path traversal attacks.
+ * Paths must be absolute and cannot contain `..` sequences.
+ *
+ * @example
+ * ```typescript
+ * // Use default path (~/.claudine/claudine.db)
+ * const db = new Database();
+ *
+ * // Use custom path (for testing)
+ * process.env.CLAUDINE_DATABASE_PATH = '/tmp/test.db';
+ * const testDb = new Database();
+ * ```
+ */
 export class Database {
   private db: SQLite.Database;
   private readonly dbPath: string;

@@ -3,7 +3,9 @@ import { bootstrap } from '../../src/bootstrap.js';
 import { Container } from '../../src/core/container.js';
 import { TaskManager, DependencyRepository } from '../../src/core/interfaces.js';
 import { Task, TaskId, Priority } from '../../src/core/domain.js';
+import { EventBus, TaskDependencyFailedEvent } from '../../src/core/events/events.js';
 import { Database } from '../../src/implementations/database.js';
+import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -20,7 +22,10 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
     tempDir = await mkdtemp(join(tmpdir(), 'claudine-deps-test-'));
     process.env.CLAUDINE_DATABASE_PATH = join(tempDir, 'test.db');
 
-    const result = await bootstrap();
+    const result = await bootstrap({
+      processSpawner: new NoOpProcessSpawner(),
+      skipResourceMonitoring: true
+    });
     if (!result.ok) {
       throw new Error(`Bootstrap failed: ${result.error.message}`);
     }
@@ -151,13 +156,13 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       // See DependencyHandler.handleTaskDelegated() for validation flow
 
       // Subscribe to TaskDependencyFailed event before delegating
-      const eventBusResult = container.get<any>('eventBus');
+      const eventBusResult = container.get<EventBus>('eventBus');
       expect(eventBusResult.ok).toBe(true);
       if (!eventBusResult.ok) return;
       const eventBus = eventBusResult.value;
 
-      let failedEvent: any = null;
-      eventBus.on('TaskDependencyFailed', (event: any) => {
+      let failedEvent: TaskDependencyFailedEvent | null = null;
+      eventBus.on('TaskDependencyFailed', (event: TaskDependencyFailedEvent) => {
         failedEvent = event;
       });
 

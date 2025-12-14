@@ -547,18 +547,9 @@ export class SQLiteDependencyRepository implements DependencyRepository {
    * @throws Error if row data is invalid (indicates database corruption)
    */
   private rowToDependency(row: DependencyRow): TaskDependency {
-    // Validate row data at system boundary
+    // Validate row data at system boundary (parse throws ZodError on invalid data)
     // This catches database corruption or schema mismatches early
-    const validated = DependencyRowSchema.safeParse(row);
-    if (!validated.success) {
-      // This should never happen with proper migrations + CHECK constraints
-      // But provides defense-in-depth against database corruption
-      throw new Error(
-        `Invalid dependency row data for id=${row.id}: ${validated.error.message}`
-      );
-    }
-
-    const data = validated.data;
+    const data = DependencyRowSchema.parse(row);
     return {
       id: data.id,
       taskId: data.task_id as TaskId,

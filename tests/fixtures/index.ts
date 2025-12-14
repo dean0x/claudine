@@ -1,5 +1,8 @@
 import type { Task, Worker, WorkerOptions, TaskSpecification } from '../../src/core/domain';
 
+// Re-export test fixtures
+export { NoOpProcessSpawner } from './no-op-spawner.js';
+
 export const createMockTask = (overrides?: Partial<Task>): Task => ({
   id: 'task-test-123',
   prompt: 'test prompt',

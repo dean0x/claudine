@@ -17,6 +17,7 @@ import { EventDrivenWorkerPool } from '../../src/implementations/event-driven-wo
 import { TaskManagerService } from '../../src/services/task-manager.js';
 import { SystemResourceMonitor } from '../../src/implementations/resource-monitor.js';
 import { PriorityTaskQueue } from '../../src/implementations/task-queue.js';
+import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
 
 describe('Integration: Service initialization', () => {
   it('should initialize service container correctly', async () => {
@@ -27,7 +28,10 @@ describe('Integration: Service initialization', () => {
       process.env.CLAUDINE_DATABASE_PATH = join(tempDir, 'test.db');
 
       // Bootstrap returns Result<Container>
-      const result = await bootstrap();
+      const result = await bootstrap({
+        processSpawner: new NoOpProcessSpawner(),
+        skipResourceMonitoring: true
+      });
 
       // Verify bootstrap succeeded
       expect(result.ok).toBe(true);
@@ -151,7 +155,10 @@ describe('Integration: Service initialization', () => {
       process.env.CLAUDINE_DATABASE_PATH = join(tempDir, 'test.db');
 
       // Bootstrap the system
-      const result = await bootstrap();
+      const result = await bootstrap({
+        processSpawner: new NoOpProcessSpawner(),
+        skipResourceMonitoring: true
+      });
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error('Bootstrap failed');
 
@@ -215,7 +222,10 @@ describe('Integration: Service initialization', () => {
     try {
       process.env.CLAUDINE_DATABASE_PATH = join(tempDir, 'test.db');
 
-      const result = await bootstrap();
+      const result = await bootstrap({
+        processSpawner: new NoOpProcessSpawner(),
+        skipResourceMonitoring: true
+      });
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error('Bootstrap failed');
 
@@ -285,7 +295,10 @@ describe('Integration: Service initialization', () => {
     try {
       process.env.CLAUDINE_DATABASE_PATH = join(tempDir, 'test.db');
 
-      const result = await bootstrap();
+      const result = await bootstrap({
+        processSpawner: new NoOpProcessSpawner(),
+        skipResourceMonitoring: true
+      });
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error('Bootstrap failed');
 

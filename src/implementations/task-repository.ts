@@ -268,17 +268,9 @@ export class SQLiteTaskRepository implements TaskRepository {
    * @throws Error if row data is invalid (indicates database corruption)
    */
   private rowToTask(row: TaskRow): Task {
-    // Validate row data at system boundary
+    // Validate row data at system boundary (parse throws ZodError on invalid data)
     // This catches database corruption or schema mismatches early
-    const validated = TaskRowSchema.safeParse(row);
-    if (!validated.success) {
-      // This should never happen with proper migrations, but provides defense-in-depth
-      throw new Error(
-        `Invalid task row data for id=${row.id}: ${validated.error.message}`
-      );
-    }
-
-    const data = validated.data;
+    const data = TaskRowSchema.parse(row);
     return {
       id: data.id as TaskId,
       prompt: data.prompt,
