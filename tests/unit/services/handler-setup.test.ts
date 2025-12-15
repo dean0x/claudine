@@ -158,6 +158,7 @@ describe('handler-setup', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.registry).toBeDefined();
+        expect(result.value.dependencyHandler).toBeDefined();
       }
     });
 

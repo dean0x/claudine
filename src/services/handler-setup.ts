@@ -48,10 +48,12 @@ export interface HandlerDependencies {
 }
 
 /**
- * Result of handler setup including registry for lifecycle management
+ * Result of handler setup including registry and handlers for lifecycle management
  */
 export interface HandlerSetupResult {
   readonly registry: EventHandlerRegistry;
+  /** DependencyHandler uses factory pattern, returned separately for unified lifecycle */
+  readonly dependencyHandler: DependencyHandler;
 }
 
 /**
@@ -233,10 +235,12 @@ export async function setupEventHandlers(
     ));
   }
 
+  const dependencyHandler = dependencyHandlerResult.value;
+
   setupLogger.info('Event handlers initialized successfully', {
     standardHandlers: standardHandlers.length,
     totalHandlers: standardHandlers.length + 1 // +1 for DependencyHandler
   });
 
-  return ok({ registry });
+  return ok({ registry, dependencyHandler });
 }

@@ -304,8 +304,9 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
     const setupResult = await setupEventHandlers(depsResult.value);
     if (!setupResult.ok) return setupResult;
 
-    // Store registry for potential shutdown access
+    // Store registry and dependency handler for shutdown access
     container.registerValue('handlerRegistry', setupResult.value.registry);
+    container.registerValue('dependencyHandler', setupResult.value.dependencyHandler);
 
     return taskManager;
   });
