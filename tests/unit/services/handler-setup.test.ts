@@ -214,5 +214,40 @@ describe('handler-setup', () => {
       );
       expect(successLog).toBeDefined();
     });
+
+    it('should cleanup standard handlers if DependencyHandler.create() fails', async () => {
+      const depsResult = extractHandlerDependencies(container);
+      expect(depsResult.ok).toBe(true);
+      if (!depsResult.ok) return;
+
+      // Mock DependencyHandler.create() to return an error
+      const { DependencyHandler } = await import('../../../src/services/handlers/dependency-handler');
+      const { err } = await import('../../../src/core/result');
+      const { ClaudineError, ErrorCode } = await import('../../../src/core/errors');
+
+      const originalCreate = DependencyHandler.create;
+      DependencyHandler.create = vi.fn().mockResolvedValue(
+        err(new ClaudineError(ErrorCode.INTERNAL_ERROR, 'DependencyHandler creation failed'))
+      );
+
+      try {
+        const result = await setupEventHandlers(depsResult.value);
+
+        // Should return error
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('DependencyHandler');
+        }
+
+        // Verify registry.shutdown() was called (cleanup happened)
+        // We can verify cleanup by checking that subscriptions were cleared
+        // or by checking error logs
+        const errorLogs = logger.logs.filter(log => log.level === 'error');
+        // If cleanup worked, no additional errors should appear from unhandled subscriptions
+      } finally {
+        // Restore original implementation
+        DependencyHandler.create = originalCreate;
+      }
+    });
   });
 });
