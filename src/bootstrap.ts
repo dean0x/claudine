@@ -42,14 +42,8 @@ import { RecoveryManager } from './services/recovery-manager.js';
 import { GitWorktreeManager } from './services/worktree-manager.js';
 import { GitHubIntegration } from './services/github-integration.js';
 
-// Event Handlers
-import { PersistenceHandler } from './services/handlers/persistence-handler.js';
-import { QueueHandler } from './services/handlers/queue-handler.js';
-import { QueryHandler } from './services/handlers/query-handler.js';
-import { WorkerHandler } from './services/handlers/worker-handler.js';
-import { OutputHandler } from './services/handlers/output-handler.js';
-import { WorktreeHandler } from './services/handlers/worktree-handler.js';
-import { DependencyHandler } from './services/handlers/dependency-handler.js';
+// Handler Setup (extracts handler creation from bootstrap)
+import { extractHandlerDependencies, setupEventHandlers } from './services/handler-setup.js';
 
 // Adapter
 import { MCPAdapter } from './adapters/mcp-adapter.js';
@@ -301,161 +295,18 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
       config // Pass complete config - no partial objects needed
     );
 
-    // Wire up event handlers - this is critical for event-driven architecture
-    const loggerResult2 = getFromContainerSafe<Logger>(container, 'logger');
-    if (!loggerResult2.ok) return loggerResult2;
-    const logger = loggerResult2.value;
+    // Wire up event handlers using centralized handler setup
+    // ARCHITECTURE: Handler creation extracted to handler-setup.ts for maintainability
+    // This enables easy addition of new handlers in v0.4.0 (Task Resumption, Scheduling)
+    const depsResult = extractHandlerDependencies(container);
+    if (!depsResult.ok) return depsResult;
 
-    const eventBusResult = getFromContainerSafe<EventBus>(container, 'eventBus');
-    if (!eventBusResult.ok) return eventBusResult;
-    const eventBus = eventBusResult.value;
+    const setupResult = await setupEventHandlers(depsResult.value);
+    if (!setupResult.ok) return setupResult;
 
-    // Get repository for handlers
-    const repositoryResult = getFromContainerSafe<TaskRepository>(container, 'taskRepository');
-    if (!repositoryResult.ok) return repositoryResult;
-    const repository = repositoryResult.value;
+    // Store registry for potential shutdown access
+    container.registerValue('handlerRegistry', setupResult.value.registry);
 
-    // 1. Persistence Handler - manages database operations
-    const persistenceHandler = new PersistenceHandler(
-      repository,
-      logger.child({ module: 'PersistenceHandler' })
-    );
-    const persistenceSetup = await persistenceHandler.setup(eventBus);
-    if (!persistenceSetup.ok) {
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to setup PersistenceHandler: ${persistenceSetup.error.message}`,
-        { error: persistenceSetup.error }
-      ));
-    }
-
-    // 2. Query Handler - handles read operations for pure event-driven architecture
-    // ARCHITECTURE: Critical for pure event-driven pattern - processes all queries
-    const outputCaptureResult = getFromContainerSafe<OutputCapture>(container, 'outputCapture');
-    if (!outputCaptureResult.ok) return outputCaptureResult;
-
-    const queryHandler = new QueryHandler(
-      repository,
-      outputCaptureResult.value,
-      eventBus,
-      logger.child({ module: 'QueryHandler' })
-    );
-    const querySetup = await queryHandler.setup(eventBus);
-    if (!querySetup.ok) {
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to setup QueryHandler: ${querySetup.error.message}`,
-        { error: querySetup.error }
-      ));
-    }
-
-    // 3. Queue Handler - manages task queue operations with dependency awareness
-    // ARCHITECTURE: Dependency-aware queueing - blocks tasks until dependencies resolve
-    const taskQueueResult = getFromContainerSafe<TaskQueue>(container, 'taskQueue');
-    if (!taskQueueResult.ok) return taskQueueResult;
-
-    const dependencyRepoResult2 = getFromContainerSafe<DependencyRepository>(container, 'dependencyRepository');
-    if (!dependencyRepoResult2.ok) return dependencyRepoResult2;
-
-    const queueHandler = new QueueHandler(
-      taskQueueResult.value,
-      dependencyRepoResult2.value,
-      repository,
-      logger.child({ module: 'QueueHandler' })
-    );
-    const queueSetup = await queueHandler.setup(eventBus);
-    if (!queueSetup.ok) {
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to setup QueueHandler: ${queueSetup.error.message}`,
-        { error: queueSetup.error }
-      ));
-    }
-
-    // 4. Worker Handler - manages worker lifecycle
-    // ARCHITECTURE: Pure event-driven - uses events for queue and repository access
-    const workerPoolResult = getFromContainerSafe<WorkerPool>(container, 'workerPool');
-    if (!workerPoolResult.ok) return workerPoolResult;
-
-    const resourceMonitorResult = getFromContainerSafe<ResourceMonitor>(container, 'resourceMonitor');
-    if (!resourceMonitorResult.ok) return resourceMonitorResult;
-
-    const workerHandler = new WorkerHandler(
-      config,
-      workerPoolResult.value,
-      resourceMonitorResult.value,
-      eventBus,
-      logger.child({ module: 'WorkerHandler' })
-    );
-    const workerSetup = await workerHandler.setup(eventBus);
-    if (!workerSetup.ok) {
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to setup WorkerHandler: ${workerSetup.error.message}`,
-        { error: workerSetup.error }
-      ));
-    }
-
-    // 5. Output Handler - manages output and logs
-    const outputCapture2Result = getFromContainerSafe<OutputCapture>(container, 'outputCapture');
-    if (!outputCapture2Result.ok) return outputCapture2Result;
-
-    const outputHandler = new OutputHandler(
-      outputCapture2Result.value,
-      logger.child({ module: 'OutputHandler' })
-    );
-    const outputSetup = await outputHandler.setup(eventBus);
-    if (!outputSetup.ok) {
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to setup OutputHandler: ${outputSetup.error.message}`,
-        { error: outputSetup.error }
-      ));
-    }
-
-    // 6. Worktree Handler - manages git worktree operations
-    // ARCHITECTURE: Completes event-driven refactor for worktree management
-    const worktreeManagerResult = getFromContainerSafe<WorktreeManager>(container, 'worktreeManager');
-    if (!worktreeManagerResult.ok) return worktreeManagerResult;
-
-    const worktreeHandler = new WorktreeHandler(
-      worktreeManagerResult.value,
-      eventBus,
-      logger.child({ module: 'WorktreeHandler' })
-    );
-    const worktreeSetup = await worktreeHandler.setup(eventBus);
-    if (!worktreeSetup.ok) {
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to setup WorktreeHandler: ${worktreeSetup.error.message}`,
-        { error: worktreeSetup.error }
-      ));
-    }
-
-    // 7. Dependency Handler - manages task dependencies with DAG validation
-    // ARCHITECTURE: Event-driven dependency tracking with cycle detection
-    // Uses factory pattern to guarantee fully initialized handler
-    const dependencyRepoResult = getFromContainerSafe<any>(container, 'dependencyRepository');
-    if (!dependencyRepoResult.ok) return dependencyRepoResult;
-
-    const dependencyHandlerResult = await DependencyHandler.create(
-      dependencyRepoResult.value,
-      repository,
-      logger,
-      eventBus
-    );
-    if (!dependencyHandlerResult.ok) {
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to create DependencyHandler: ${dependencyHandlerResult.error.message}`,
-        { error: dependencyHandlerResult.error }
-      ));
-    }
-
-    // Note: Retry functionality is now handled directly in TaskManager.retry()
-    // The retry creates a new task with retry tracking and emits TaskDelegated event
-
-    logger.info('Event-driven architecture initialized successfully');
     return taskManager;
   });
 

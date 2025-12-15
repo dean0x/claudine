@@ -1,0 +1,242 @@
+/**
+ * Handler setup module for bootstrap
+ * ARCHITECTURE: Centralizes event handler creation and registration
+ * Rationale: Reduces bootstrap.ts complexity, enables easy handler additions for v0.4.0
+ */
+
+import { Result, ok, err } from '../core/result.js';
+import { Container } from '../core/container.js';
+import { EventHandlerRegistry } from '../core/events/handlers.js';
+import { EventBus } from '../core/events/event-bus.js';
+import { ClaudineError, ErrorCode } from '../core/errors.js';
+import {
+  Logger,
+  TaskRepository,
+  OutputCapture,
+  TaskQueue,
+  DependencyRepository,
+  WorkerPool,
+  ResourceMonitor,
+  WorktreeManager
+} from '../core/interfaces.js';
+import { Configuration } from '../core/configuration.js';
+
+// Event Handlers
+import { PersistenceHandler } from './handlers/persistence-handler.js';
+import { QueueHandler } from './handlers/queue-handler.js';
+import { QueryHandler } from './handlers/query-handler.js';
+import { WorkerHandler } from './handlers/worker-handler.js';
+import { OutputHandler } from './handlers/output-handler.js';
+import { WorktreeHandler } from './handlers/worktree-handler.js';
+import { DependencyHandler } from './handlers/dependency-handler.js';
+
+/**
+ * Dependencies required for handler setup
+ * Extracted from Container to make testing easier and types explicit
+ */
+export interface HandlerDependencies {
+  readonly config: Configuration;
+  readonly logger: Logger;
+  readonly eventBus: EventBus;
+  readonly taskRepository: TaskRepository;
+  readonly outputCapture: OutputCapture;
+  readonly taskQueue: TaskQueue;
+  readonly dependencyRepository: DependencyRepository;
+  readonly workerPool: WorkerPool;
+  readonly resourceMonitor: ResourceMonitor;
+  readonly worktreeManager: WorktreeManager;
+}
+
+/**
+ * Result of handler setup including registry for lifecycle management
+ */
+export interface HandlerSetupResult {
+  readonly registry: EventHandlerRegistry;
+}
+
+/**
+ * Extract a single dependency from container with typed error
+ */
+function getDependency<T>(
+  container: Container,
+  key: string
+): Result<T> {
+  const result = container.get(key);
+  if (!result.ok) {
+    return err(new ClaudineError(
+      ErrorCode.DEPENDENCY_INJECTION_FAILED,
+      `Handler setup requires '${key}' service`,
+      { service: key, error: result.error.message }
+    ));
+  }
+  return ok(result.value as T);
+}
+
+/**
+ * Extract all dependencies needed for handler setup from Container
+ * Returns Result with clear error for any missing service
+ *
+ * @param container - The DI container with registered services
+ * @returns Result containing all handler dependencies or error
+ */
+export function extractHandlerDependencies(
+  container: Container
+): Result<HandlerDependencies> {
+  // Extract all 10 dependencies - fail fast on any missing
+  const configResult = getDependency<Configuration>(container, 'config');
+  if (!configResult.ok) return configResult;
+
+  const loggerResult = getDependency<Logger>(container, 'logger');
+  if (!loggerResult.ok) return loggerResult;
+
+  const eventBusResult = getDependency<EventBus>(container, 'eventBus');
+  if (!eventBusResult.ok) return eventBusResult;
+
+  const taskRepositoryResult = getDependency<TaskRepository>(container, 'taskRepository');
+  if (!taskRepositoryResult.ok) return taskRepositoryResult;
+
+  const outputCaptureResult = getDependency<OutputCapture>(container, 'outputCapture');
+  if (!outputCaptureResult.ok) return outputCaptureResult;
+
+  const taskQueueResult = getDependency<TaskQueue>(container, 'taskQueue');
+  if (!taskQueueResult.ok) return taskQueueResult;
+
+  const dependencyRepositoryResult = getDependency<DependencyRepository>(container, 'dependencyRepository');
+  if (!dependencyRepositoryResult.ok) return dependencyRepositoryResult;
+
+  const workerPoolResult = getDependency<WorkerPool>(container, 'workerPool');
+  if (!workerPoolResult.ok) return workerPoolResult;
+
+  const resourceMonitorResult = getDependency<ResourceMonitor>(container, 'resourceMonitor');
+  if (!resourceMonitorResult.ok) return resourceMonitorResult;
+
+  const worktreeManagerResult = getDependency<WorktreeManager>(container, 'worktreeManager');
+  if (!worktreeManagerResult.ok) return worktreeManagerResult;
+
+  return ok({
+    config: configResult.value,
+    logger: loggerResult.value,
+    eventBus: eventBusResult.value,
+    taskRepository: taskRepositoryResult.value,
+    outputCapture: outputCaptureResult.value,
+    taskQueue: taskQueueResult.value,
+    dependencyRepository: dependencyRepositoryResult.value,
+    workerPool: workerPoolResult.value,
+    resourceMonitor: resourceMonitorResult.value,
+    worktreeManager: worktreeManagerResult.value
+  });
+}
+
+/**
+ * Create and setup all event handlers
+ * Uses EventHandlerRegistry for standard handlers, factory for DependencyHandler
+ *
+ * ARCHITECTURE: 6 standard handlers use setup(eventBus) pattern via registry
+ * DependencyHandler uses factory pattern (create()) for async graph initialization
+ *
+ * @param deps - All dependencies needed for handler creation
+ * @returns Result containing registry for lifecycle management
+ */
+export async function setupEventHandlers(
+  deps: HandlerDependencies
+): Promise<Result<HandlerSetupResult>> {
+  const { logger, eventBus } = deps;
+  const setupLogger = logger.child({ module: 'HandlerSetup' });
+
+  // Create registry using existing EventHandlerRegistry
+  const registry = new EventHandlerRegistry(eventBus, setupLogger);
+
+  // Helper for creating child loggers
+  const childLogger = (module: string) => logger.child({ module });
+
+  // Create 6 standard handlers that use setup(eventBus) pattern
+  // ARCHITECTURE: All handlers are independent - no inter-handler dependencies
+  const standardHandlers = [
+    // 1. Persistence Handler - manages database operations
+    new PersistenceHandler(
+      deps.taskRepository,
+      childLogger('PersistenceHandler')
+    ),
+    // 2. Query Handler - handles read operations for pure event-driven architecture
+    new QueryHandler(
+      deps.taskRepository,
+      deps.outputCapture,
+      eventBus,
+      childLogger('QueryHandler')
+    ),
+    // 3. Queue Handler - manages task queue operations with dependency awareness
+    new QueueHandler(
+      deps.taskQueue,
+      deps.dependencyRepository,
+      deps.taskRepository,
+      childLogger('QueueHandler')
+    ),
+    // 4. Worker Handler - manages worker lifecycle
+    new WorkerHandler(
+      deps.config,
+      deps.workerPool,
+      deps.resourceMonitor,
+      eventBus,
+      childLogger('WorkerHandler')
+    ),
+    // 5. Output Handler - manages output and logs
+    new OutputHandler(
+      deps.outputCapture,
+      childLogger('OutputHandler')
+    ),
+    // 6. Worktree Handler - manages git worktree operations
+    new WorktreeHandler(
+      deps.worktreeManager,
+      eventBus,
+      childLogger('WorktreeHandler')
+    )
+  ];
+
+  // Register all standard handlers
+  const registerResult = registry.registerAll(standardHandlers);
+  if (!registerResult.ok) {
+    return err(new ClaudineError(
+      ErrorCode.SYSTEM_ERROR,
+      `Failed to register event handlers: ${registerResult.error.message}`,
+      { error: registerResult.error }
+    ));
+  }
+
+  // Initialize all standard handlers (calls setup(eventBus) on each)
+  const initResult = await registry.initialize();
+  if (!initResult.ok) {
+    // Cleanup any handlers that were already initialized
+    await registry.shutdown();
+    return err(new ClaudineError(
+      ErrorCode.SYSTEM_ERROR,
+      `Failed to initialize event handlers: ${initResult.error.message}`,
+      { error: initResult.error }
+    ));
+  }
+
+  // 7. Dependency Handler - uses factory pattern for async graph initialization
+  // ARCHITECTURE: Factory pattern ensures handler is fully initialized before use
+  // Cannot use registry because create() does its own event subscription
+  const dependencyHandlerResult = await DependencyHandler.create(
+    deps.dependencyRepository,
+    deps.taskRepository,
+    logger,
+    eventBus
+  );
+  if (!dependencyHandlerResult.ok) {
+    // Cleanup standard handlers on failure
+    await registry.shutdown();
+    return err(new ClaudineError(
+      ErrorCode.SYSTEM_ERROR,
+      `Failed to create DependencyHandler: ${dependencyHandlerResult.error.message}`,
+      { error: dependencyHandlerResult.error }
+    ));
+  }
+
+  setupLogger.info('Event handlers initialized successfully', {
+    standardHandlers: standardHandlers.length,
+    totalHandlers: standardHandlers.length + 1 // +1 for DependencyHandler
+  });
+
+  return ok({ registry });
+}
