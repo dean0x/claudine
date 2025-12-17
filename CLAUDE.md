@@ -164,6 +164,7 @@ Quick reference for common operations:
 | Task repository | `src/implementations/task-repository.ts` |
 | Dependency repository | `src/implementations/dependency-repository.ts` |
 | Event handlers | `src/services/handlers/` |
+| Handler setup | `src/services/handler-setup.ts` |
 | MCP adapter | `src/adapters/mcp-adapter.ts` |
 | CLI | `src/cli.ts` |
 

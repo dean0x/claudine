@@ -421,6 +421,82 @@ const handler = handlerResult.value;
 - Follows Result pattern consistently
 - Prevents TOCTOU issues by loading state before handler is active
 
+## Centralized Handler Setup (v0.3.4+)
+
+Handler creation and initialization is centralized in `src/services/handler-setup.ts` to improve maintainability and enable easy handler additions for v0.4.0.
+
+### Two-Step Initialization Pattern
+
+```typescript
+// In bootstrap.ts - inside taskManager registration
+
+// Step 1: Extract dependencies from container
+const depsResult = extractHandlerDependencies(container);
+if (!depsResult.ok) return depsResult;
+
+// Step 2: Setup all handlers
+const setupResult = await setupEventHandlers(depsResult.value);
+if (!setupResult.ok) return setupResult;
+
+// Step 3: Register for lifecycle management
+const { registry, dependencyHandler } = setupResult.value;
+container.registerValue('handlerRegistry', registry);
+container.registerValue('dependencyHandler', dependencyHandler);
+```
+
+### Handler Types
+
+| Pattern | Handlers | When to Use |
+|---------|----------|-------------|
+| **Standard** (via registry) | PersistenceHandler, QueryHandler, QueueHandler, WorkerHandler, OutputHandler, WorktreeHandler | Synchronous initialization, uses `setup(eventBus)` |
+| **Factory** (returned separately) | DependencyHandler | Requires async initialization (loading dependency graph from DB) |
+
+### Adding New Handlers (v0.4.0+)
+
+To add a new handler, modify only `src/services/handler-setup.ts`:
+
+```typescript
+// In setupEventHandlers() - add to standardHandlers array:
+const standardHandlers = [
+  // ... existing handlers ...
+
+  // NEW: Task Resumption Handler for v0.4.0
+  new TaskResumptionHandler(
+    deps.taskRepository,
+    eventBus,
+    childLogger('TaskResumption')
+  ),
+
+  // NEW: Task Scheduling Handler for v0.4.0
+  new TaskSchedulingHandler(
+    deps.config,
+    eventBus,
+    childLogger('TaskScheduling')
+  ),
+];
+```
+
+No changes needed to `bootstrap.ts` - the registry handles initialization automatically.
+
+### Benefits
+
+1. **Single Location**: All handler creation in one file
+2. **Testable**: `setupEventHandlers()` can be tested with mock dependencies
+3. **Clear Dependencies**: `HandlerDependencies` interface documents requirements
+4. **Unified Lifecycle**: Registry enables coordinated shutdown
+5. **Separation of Concerns**: bootstrap.ts handles DI, handler-setup.ts handles event wiring
+
+### Architecture Decision
+
+**Why separate from bootstrap.ts?**
+
+Before v0.3.4, bootstrap.ts was ~525 lines with handler creation mixed into DI registration. This made it difficult to:
+- Add new handlers without touching complex bootstrap logic
+- Test handler setup independently
+- Understand the handler initialization order
+
+The extraction reduces bootstrap.ts by ~28% and makes the handler setup pattern explicit and reusable.
+
 ## Debugging Event Flows
 
 Enable debug logging to see full event flow:
