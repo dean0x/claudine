@@ -76,10 +76,23 @@ function getDependency<T>(
 
 /**
  * Extract all dependencies needed for handler setup from Container
- * Returns Result with clear error for any missing service
+ *
+ * Performs fail-fast validation - returns immediately on first missing dependency.
+ * Each missing dependency produces a specific error message identifying which service is missing.
  *
  * @param container - The DI container with registered services
- * @returns Result containing all handler dependencies or error
+ * @returns Result containing all handler dependencies or error identifying missing service
+ * @throws Never - Returns errors in Result type instead of throwing
+ *
+ * @example
+ * ```typescript
+ * const depsResult = extractHandlerDependencies(container);
+ * if (!depsResult.ok) {
+ *   logger.error('Missing dependency', depsResult.error);
+ *   return depsResult;
+ * }
+ * const deps = depsResult.value;
+ * ```
  */
 export function extractHandlerDependencies(
   container: Container
@@ -131,13 +144,28 @@ export function extractHandlerDependencies(
 
 /**
  * Create and setup all event handlers
- * Uses EventHandlerRegistry for standard handlers, factory for DependencyHandler
  *
- * ARCHITECTURE: 6 standard handlers use setup(eventBus) pattern via registry
- * DependencyHandler uses factory pattern (create()) for async graph initialization
+ * Initializes 7 handlers: 6 standard handlers via EventHandlerRegistry and
+ * DependencyHandler via factory pattern. On any failure, performs cleanup
+ * of already-initialized handlers before returning error.
+ *
+ * ARCHITECTURE: Standard handlers use setup(eventBus) pattern via registry.
+ * DependencyHandler uses factory pattern (create()) for async graph initialization.
  *
  * @param deps - All dependencies needed for handler creation
- * @returns Result containing registry for lifecycle management
+ * @returns Result containing registry and dependencyHandler for lifecycle management
+ * @throws Never - Returns errors in Result type instead of throwing
+ *
+ * @example
+ * ```typescript
+ * const setupResult = await setupEventHandlers(deps);
+ * if (!setupResult.ok) {
+ *   return setupResult; // Cleanup already performed
+ * }
+ * const { registry, dependencyHandler } = setupResult.value;
+ * container.registerValue('handlerRegistry', registry);
+ * container.registerValue('dependencyHandler', dependencyHandler);
+ * ```
  */
 export async function setupEventHandlers(
   deps: HandlerDependencies
