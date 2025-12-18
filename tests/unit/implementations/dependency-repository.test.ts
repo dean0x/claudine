@@ -262,7 +262,7 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       expect(cDepsResult.value).toHaveLength(0);
 
       // Verify no dependencies in database
-      const allDeps = await repo.findAll();
+      const allDeps = await repo.findAllUnbounded();
       expect(allDeps.ok).toBe(true);
       if (!allDeps.ok) return;
       expect(allDeps.value).toHaveLength(0);
@@ -1046,6 +1046,138 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       expect(result.value[0].taskId).toBe(taskC);
       expect(result.value[0].dependsOnTaskId).toBe(taskB);
     });
+
+    it('should apply default limit of 100', async () => {
+      // Create more than 100 dependencies (use 105 to test the boundary)
+      const tasks: TaskId[] = [];
+      for (let i = 0; i < 106; i++) {
+        const taskId = `task-${i}` as TaskId;
+        tasks.push(taskId);
+        createTask(taskId);
+      }
+
+      // Create 105 dependencies: task-1 -> task-0, task-2 -> task-1, ..., task-105 -> task-104
+      for (let i = 1; i < 106; i++) {
+        await repo.addDependency(tasks[i], tasks[i - 1]);
+      }
+
+      // Without explicit limit, should get 100 (default)
+      const result = await repo.findAll();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toHaveLength(100);
+    });
+
+    it('should respect custom limit', async () => {
+      const taskA = 'task-a' as TaskId;
+      const taskB = 'task-b' as TaskId;
+      const taskC = 'task-c' as TaskId;
+      const taskD = 'task-d' as TaskId;
+
+      createTask(taskA);
+      createTask(taskB);
+      createTask(taskC);
+      createTask(taskD);
+
+      await repo.addDependency(taskB, taskA);
+      await repo.addDependency(taskC, taskA);
+      await repo.addDependency(taskD, taskA);
+
+      const result = await repo.findAll(2);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toHaveLength(2);
+    });
+
+    it('should respect offset', async () => {
+      const taskA = 'task-a' as TaskId;
+      const taskB = 'task-b' as TaskId;
+      const taskC = 'task-c' as TaskId;
+
+      createTask(taskA);
+      createTask(taskB);
+      createTask(taskC);
+
+      // Create dependencies with delays to ensure ordering
+      await repo.addDependency(taskB, taskA);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      await repo.addDependency(taskC, taskA);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      await repo.addDependency(taskC, taskB);
+
+      // Skip first 2, get 1
+      const result = await repo.findAll(1, 2);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toHaveLength(1);
+      // The oldest dependency (taskB -> taskA) should be at offset 2
+      expect(result.value[0].taskId).toBe(taskB);
+      expect(result.value[0].dependsOnTaskId).toBe(taskA);
+    });
+
+    it('should return empty array when offset exceeds count', async () => {
+      const taskA = 'task-a' as TaskId;
+      const taskB = 'task-b' as TaskId;
+
+      createTask(taskA);
+      createTask(taskB);
+      await repo.addDependency(taskB, taskA);
+
+      const result = await repo.findAll(100, 1000);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toHaveLength(0);
+    });
+  });
+
+  describe('findAllUnbounded()', () => {
+    it('should return all dependencies without limit', async () => {
+      // Create more than 100 dependencies
+      const tasks: TaskId[] = [];
+      for (let i = 0; i < 106; i++) {
+        const taskId = `task-${i}` as TaskId;
+        tasks.push(taskId);
+        createTask(taskId);
+      }
+
+      // Create 105 dependencies
+      for (let i = 1; i < 106; i++) {
+        await repo.addDependency(tasks[i], tasks[i - 1]);
+      }
+
+      const result = await repo.findAllUnbounded();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toHaveLength(105);
+    });
+  });
+
+  describe('count()', () => {
+    it('should return total dependency count', async () => {
+      const taskA = 'task-a' as TaskId;
+      const taskB = 'task-b' as TaskId;
+      const taskC = 'task-c' as TaskId;
+
+      createTask(taskA);
+      createTask(taskB);
+      createTask(taskC);
+
+      await repo.addDependency(taskB, taskA);
+      await repo.addDependency(taskC, taskA);
+      await repo.addDependency(taskC, taskB);
+
+      const result = await repo.count();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBe(3);
+    });
+
+    it('should return 0 for empty repository', async () => {
+      const result = await repo.count();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBe(0);
+    });
   });
 
   describe('deleteDependencies()', () => {
@@ -1130,7 +1262,7 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       expect(bDependentsResult.value).toHaveLength(0);
 
       // Verify other dependencies untouched (none in this case)
-      const allResult = await repo.findAll();
+      const allResult = await repo.findAllUnbounded();
       expect(allResult.ok).toBe(true);
       if (!allResult.ok) return;
       expect(allResult.value).toHaveLength(0);
@@ -1242,7 +1374,7 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       expect(results.every(r => r.ok)).toBe(true);
 
       // Verify all dependencies exist
-      const allResult = await repo.findAll();
+      const allResult = await repo.findAllUnbounded();
       expect(allResult.ok).toBe(true);
       if (!allResult.ok) return;
       expect(allResult.value).toHaveLength(tasks.length - 1);

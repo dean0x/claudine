@@ -81,8 +81,9 @@ export class DependencyHandler extends BaseEventHandler {
 
     // PERFORMANCE: Initialize graph eagerly (one-time O(N) cost)
     // Subsequent operations use incremental O(1) updates instead of rebuilding
+    // ARCHITECTURE: Use findAllUnbounded() explicitly - we intentionally need ALL dependencies for graph init
     handlerLogger.debug('Initializing dependency graph from database');
-    const allDepsResult = await dependencyRepo.findAll();
+    const allDepsResult = await dependencyRepo.findAllUnbounded();
     if (!allDepsResult.ok) {
       handlerLogger.error('Failed to initialize dependency graph', allDepsResult.error);
       return err(allDepsResult.error);

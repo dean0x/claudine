@@ -52,7 +52,7 @@ describe('Integration: Task persistence', () => {
     }
 
     // Verify initial state
-    const allTasks1 = await repository1.findAll();
+    const allTasks1 = await repository1.findAllUnbounded();
     expect(allTasks1.ok).toBe(true);
     if (allTasks1.ok) {
       expect(allTasks1.value.length).toBe(4);
@@ -149,7 +149,7 @@ describe('Integration: Task persistence', () => {
     }
 
     // Verify database is still consistent
-    const allTasks = await repository.findAll();
+    const allTasks = await repository.findAllUnbounded();
     expect(allTasks.ok).toBe(true);
     if (allTasks.ok) {
       expect(allTasks.value.length).toBe(1); // Only valid task should exist
@@ -230,7 +230,7 @@ describe('Integration: Task persistence', () => {
     await Promise.all(updatePromises);
 
     // Verify database state
-    const dbTasks = await repository.findAll();
+    const dbTasks = await repository.findAllUnbounded();
     expect(dbTasks.ok).toBe(true);
     if (dbTasks.ok) {
       const runningTasks = dbTasks.value.filter(t => t.status === 'running');
@@ -282,16 +282,16 @@ describe('Integration: Task persistence', () => {
 
     // Test concurrent list operations
     const [list1, list2, list3] = await Promise.all([
-      repository.findAll(),
-      repository.findAll({ status: 'running' }),
-      repository.findAll({ priority: 'P1' }),
+      repository.findAllUnbounded(),
+      repository.findByStatus('running'),
+      repository.findAllUnbounded(), // Was incorrectly using priority filter, findAll doesn't support that
     ]);
 
     expect(list1.ok).toBe(true);
     expect(list2.ok).toBe(true);
     if (list1.ok && list2.ok) {
       expect(list1.value.length).toBe(20); // Should list all tasks
-      expect(list2.value.length).toBe(20); // Should list all running tasks
+      expect(list2.value.length).toBe(20); // All tasks are running status
     }
 
     database.close();

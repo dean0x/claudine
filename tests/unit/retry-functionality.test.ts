@@ -324,7 +324,7 @@ describe('Retry Functionality', () => {
       expect(delegatedEventCount).toBe(1);
 
       // Get the task and mark as failed
-      const allTasks = await repository.findAll();
+      const allTasks = await repository.findAllUnbounded();
       expect(allTasks.ok).toBe(true);
       if (!allTasks.ok) return;
 

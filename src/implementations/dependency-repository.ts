@@ -44,6 +44,9 @@ export class SQLiteDependencyRepository implements DependencyRepository {
   private static readonly MAX_DEPENDENCIES_PER_TASK = 100;
   // NOTE: MAX_DEPENDENCY_CHAIN_DEPTH moved to DependencyHandler (see line 24)
 
+  /** Default pagination limit for findAll() */
+  private static readonly DEFAULT_LIMIT = 100;
+
   private readonly db: SQLite.Database;
   private readonly addDependencyStmt: SQLite.Statement;
   private readonly getDependenciesStmt: SQLite.Statement;
@@ -52,11 +55,12 @@ export class SQLiteDependencyRepository implements DependencyRepository {
   private readonly resolveDependenciesBatchStmt: SQLite.Statement;
   private readonly getUnresolvedDependenciesStmt: SQLite.Statement;
   private readonly isBlockedStmt: SQLite.Statement;
-  private readonly findAllStmt: SQLite.Statement;
+  private readonly findAllUnboundedStmt: SQLite.Statement;
   private readonly deleteDependenciesStmt: SQLite.Statement;
   private readonly checkDependencyExistsStmt: SQLite.Statement;
   private readonly getDependencyByIdStmt: SQLite.Statement;
   private readonly checkTaskExistsStmt: SQLite.Statement;
+  private readonly countStmt: SQLite.Statement;
 
   constructor(database: Database) {
     this.db = database.getDatabase();
@@ -98,8 +102,12 @@ export class SQLiteDependencyRepository implements DependencyRepository {
       WHERE task_id = ? AND resolution = 'pending'
     `);
 
-    this.findAllStmt = this.db.prepare(`
+    this.findAllUnboundedStmt = this.db.prepare(`
       SELECT * FROM task_dependencies ORDER BY created_at DESC
+    `);
+
+    this.countStmt = this.db.prepare(`
+      SELECT COUNT(*) as count FROM task_dependencies
     `);
 
     this.deleteDependenciesStmt = this.db.prepare(`
@@ -492,18 +500,78 @@ export class SQLiteDependencyRepository implements DependencyRepository {
    * ```typescript
    * const result = await dependencyRepo.findAll();
    * if (result.ok) {
+   *   console.log(`First page has ${result.value.length} dependencies`);
+   * }
+   * ```
+   */
+  async findAll(limit?: number, offset?: number): Promise<Result<readonly TaskDependency[]>> {
+    return tryCatchAsync(
+      async () => {
+        const effectiveLimit = limit ?? SQLiteDependencyRepository.DEFAULT_LIMIT;
+        const effectiveOffset = offset ?? 0;
+
+        const stmt = this.db.prepare(`
+          SELECT * FROM task_dependencies ORDER BY created_at DESC LIMIT ? OFFSET ?
+        `);
+        const rows = stmt.all(effectiveLimit, effectiveOffset) as DependencyRow[];
+        return rows.map(row => this.rowToDependency(row));
+      },
+      operationErrorHandler('find all dependencies')
+    );
+  }
+
+  /**
+   * Get all dependencies without pagination limit
+   *
+   * ARCHITECTURE: Use only for graph initialization (DependencyHandler.create())
+   * For user queries, use findAll() with pagination instead.
+   *
+   * This is a full table scan - use sparingly in production.
+   *
+   * @returns All dependencies ordered by created_at DESC
+   *
+   * @example
+   * ```typescript
+   * const result = await dependencyRepo.findAllUnbounded();
+   * if (result.ok) {
    *   const graph = new DependencyGraph(result.value);
    *   console.log(`System has ${result.value.length} total dependencies`);
    * }
    * ```
    */
-  async findAll(): Promise<Result<readonly TaskDependency[]>> {
+  async findAllUnbounded(): Promise<Result<readonly TaskDependency[]>> {
     return tryCatchAsync(
       async () => {
-        const rows = this.findAllStmt.all() as DependencyRow[];
+        const rows = this.findAllUnboundedStmt.all() as DependencyRow[];
         return rows.map(row => this.rowToDependency(row));
       },
-      operationErrorHandler('find all dependencies')
+      operationErrorHandler('find all dependencies (unbounded)')
+    );
+  }
+
+  /**
+   * Count total dependencies in repository
+   *
+   * Useful for pagination UI to display total pages.
+   *
+   * @returns Total dependency count
+   *
+   * @example
+   * ```typescript
+   * const countResult = await dependencyRepo.count();
+   * const allResult = await dependencyRepo.findAll(100, 0);
+   * if (countResult.ok && allResult.ok) {
+   *   console.log(`Showing ${allResult.value.length} of ${countResult.value} dependencies`);
+   * }
+   * ```
+   */
+  async count(): Promise<Result<number>> {
+    return tryCatchAsync(
+      async () => {
+        const result = this.countStmt.get() as { count: number };
+        return result.count;
+      },
+      operationErrorHandler('count dependencies')
     );
   }
 
