@@ -86,7 +86,11 @@ export interface TaskRepository {
   findById(taskId: TaskId): Promise<Result<Task | null>>;
   /**
    * Find tasks with optional pagination
-   * @param limit Maximum results (default: 100)
+   *
+   * All implementations MUST use DEFAULT_LIMIT = 100 when limit is not specified.
+   * This ensures consistent behavior across implementations.
+   *
+   * @param limit Maximum results to return (default: 100, max recommended: 1000)
    * @param offset Skip first N results (default: 0)
    * @returns Paginated task list ordered by created_at DESC
    */
@@ -103,6 +107,13 @@ export interface TaskRepository {
    * @returns Total task count (useful for pagination UI)
    */
   count(): Promise<Result<number>>;
+  /**
+   * Find tasks by status (returns all matching tasks - NOT paginated)
+   * NOTE: Unlike findAll(), this method has no pagination limit.
+   * For large datasets, consider using findAll() with application-level filtering.
+   * @param status Task status to filter by
+   * @returns All tasks matching the status
+   */
   findByStatus(status: string): Promise<Result<readonly Task[]>>;
   delete(taskId: TaskId): Promise<Result<void>>;
   cleanupOldTasks(olderThanMs: number): Promise<Result<number>>;
@@ -175,7 +186,11 @@ export interface DependencyRepository {
 
   /**
    * Get dependencies with optional pagination
-   * @param limit Maximum results (default: 100)
+   *
+   * All implementations MUST use DEFAULT_LIMIT = 100 when limit is not specified.
+   * This ensures consistent behavior across implementations.
+   *
+   * @param limit Maximum results to return (default: 100, max recommended: 1000)
    * @param offset Skip first N results (default: 0)
    * @returns Paginated dependencies ordered by created_at DESC
    */

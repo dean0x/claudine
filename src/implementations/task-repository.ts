@@ -84,6 +84,7 @@ export class SQLiteTaskRepository implements TaskRepository {
   private readonly deleteStmt: SQLite.Statement;
   private readonly cleanupOldTasksStmt: SQLite.Statement;
   private readonly countStmt: SQLite.Statement;
+  private readonly findAllPaginatedStmt: SQLite.Statement;
 
   /** Default pagination limit for findAll() */
   private static readonly DEFAULT_LIMIT = 100;
@@ -124,6 +125,10 @@ export class SQLiteTaskRepository implements TaskRepository {
 
     this.countStmt = this.db.prepare(`
       SELECT COUNT(*) as count FROM tasks
+    `);
+
+    this.findAllPaginatedStmt = this.db.prepare(`
+      SELECT * FROM tasks ORDER BY created_at DESC LIMIT ? OFFSET ?
     `);
 
     this.deleteStmt = this.db.prepare(`
@@ -218,10 +223,7 @@ export class SQLiteTaskRepository implements TaskRepository {
         const effectiveLimit = limit ?? SQLiteTaskRepository.DEFAULT_LIMIT;
         const effectiveOffset = offset ?? 0;
 
-        const stmt = this.db.prepare(`
-          SELECT * FROM tasks ORDER BY created_at DESC LIMIT ? OFFSET ?
-        `);
-        const rows = stmt.all(effectiveLimit, effectiveOffset) as TaskRow[];
+        const rows = this.findAllPaginatedStmt.all(effectiveLimit, effectiveOffset) as TaskRow[];
         return rows.map(row => this.rowToTask(row));
       },
       operationErrorHandler('find all tasks')

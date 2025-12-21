@@ -669,7 +669,8 @@ If you're getting cycle detection errors but believe your graph is acyclic:
 
 1. **Visualize the dependency graph:**
 ```typescript
-const allDeps = await dependencyRepo.findAll();
+// Use findAllUnbounded() to see ALL dependencies (findAll() returns max 100)
+const allDeps = await dependencyRepo.findAllUnbounded();
 console.log('All dependencies:', allDeps.value);
 ```
 

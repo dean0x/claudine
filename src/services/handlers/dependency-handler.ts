@@ -82,6 +82,10 @@ export class DependencyHandler extends BaseEventHandler {
     // PERFORMANCE: Initialize graph eagerly (one-time O(N) cost)
     // Subsequent operations use incremental O(1) updates instead of rebuilding
     // ARCHITECTURE: Use findAllUnbounded() explicitly - we intentionally need ALL dependencies for graph init
+    // Full table scan is acceptable here because:
+    // 1. This runs once at startup, not per-request
+    // 2. Graph must be complete for cycle detection to work correctly
+    // 3. Typical dependency count is <1000, scan takes <10ms
     handlerLogger.debug('Initializing dependency graph from database');
     const allDepsResult = await dependencyRepo.findAllUnbounded();
     if (!allDepsResult.ok) {

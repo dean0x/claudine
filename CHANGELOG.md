@@ -6,7 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-*No unreleased changes at this time.*
+### 🚀 Performance Improvements
+- **Pagination for findAll() methods**: Added `limit` and `offset` parameters to `TaskRepository.findAll()` and `DependencyRepository.findAll()` with default limit of 100 records per page
+- **New findAllUnbounded() methods**: Explicit unbounded retrieval for operations that genuinely need all records (e.g., graph initialization)
+- **New count() methods**: Support pagination UI with total record counts without fetching all data
+
+### ⚠️ Breaking Changes
+- **findAll() now returns max 100 results by default**: Existing code calling `findAll()` without parameters will receive paginated results. Use `findAllUnbounded()` if you need all records.
+
+### 🏗️ Architecture
+- **Explicit unbounded queries**: `DependencyHandler.create()` now uses `findAllUnbounded()` with architecture comment explaining why graph initialization requires all dependencies
 
 ---
 

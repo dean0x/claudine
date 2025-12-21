@@ -61,6 +61,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
   private readonly getDependencyByIdStmt: SQLite.Statement;
   private readonly checkTaskExistsStmt: SQLite.Statement;
   private readonly countStmt: SQLite.Statement;
+  private readonly findAllPaginatedStmt: SQLite.Statement;
 
   constructor(database: Database) {
     this.db = database.getDatabase();
@@ -108,6 +109,10 @@ export class SQLiteDependencyRepository implements DependencyRepository {
 
     this.countStmt = this.db.prepare(`
       SELECT COUNT(*) as count FROM task_dependencies
+    `);
+
+    this.findAllPaginatedStmt = this.db.prepare(`
+      SELECT * FROM task_dependencies ORDER BY created_at DESC LIMIT ? OFFSET ?
     `);
 
     this.deleteDependenciesStmt = this.db.prepare(`
@@ -486,22 +491,27 @@ export class SQLiteDependencyRepository implements DependencyRepository {
   }
 
   /**
-   * Get all dependencies in the system
+   * Get dependencies with pagination
    *
-   * Returns all TaskDependency records ordered by created_at DESC.
-   * Used for building complete dependency graph and admin queries.
+   * Returns TaskDependency records ordered by created_at DESC with pagination.
+   * Default limit is 100 records per page.
    *
-   * Note: This is a full table scan - use sparingly in production.
-   * Consider caching the result for graph construction.
+   * For complete dependency graph construction, use findAllUnbounded() instead.
    *
-   * @returns Result containing array of all TaskDependency objects or error
+   * @param limit Maximum results to return (default: 100)
+   * @param offset Number of records to skip (default: 0)
+   * @returns Result containing paginated array of TaskDependency objects or error
    *
    * @example
    * ```typescript
-   * const result = await dependencyRepo.findAll();
-   * if (result.ok) {
-   *   console.log(`First page has ${result.value.length} dependencies`);
-   * }
+   * // Get first page (100 records)
+   * const page1 = await dependencyRepo.findAll();
+   *
+   * // Get second page
+   * const page2 = await dependencyRepo.findAll(100, 100);
+   *
+   * // Get all dependencies (no pagination)
+   * const all = await dependencyRepo.findAllUnbounded();
    * ```
    */
   async findAll(limit?: number, offset?: number): Promise<Result<readonly TaskDependency[]>> {
@@ -510,10 +520,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         const effectiveLimit = limit ?? SQLiteDependencyRepository.DEFAULT_LIMIT;
         const effectiveOffset = offset ?? 0;
 
-        const stmt = this.db.prepare(`
-          SELECT * FROM task_dependencies ORDER BY created_at DESC LIMIT ? OFFSET ?
-        `);
-        const rows = stmt.all(effectiveLimit, effectiveOffset) as DependencyRow[];
+        const rows = this.findAllPaginatedStmt.all(effectiveLimit, effectiveOffset) as DependencyRow[];
         return rows.map(row => this.rowToDependency(row));
       },
       operationErrorHandler('find all dependencies')

@@ -290,7 +290,8 @@ export class TestTaskRepository implements TaskRepository {
     if (this.findError) {
       return err(this.findError);
     }
-    const all = Array.from(this.tasks.values());
+    // Sort by created_at DESC to match production behavior
+    const all = Array.from(this.tasks.values()).sort((a, b) => b.createdAt - a.createdAt);
     const effectiveLimit = limit ?? TestTaskRepository.DEFAULT_LIMIT;
     const effectiveOffset = offset ?? 0;
     return ok(all.slice(effectiveOffset, effectiveOffset + effectiveLimit));
@@ -300,7 +301,8 @@ export class TestTaskRepository implements TaskRepository {
     if (this.findError) {
       return err(this.findError);
     }
-    return ok(Array.from(this.tasks.values()));
+    // Sort by created_at DESC to match production behavior
+    return ok(Array.from(this.tasks.values()).sort((a, b) => b.createdAt - a.createdAt));
   }
 
   async count(): Promise<Result<number, Error>> {
@@ -314,7 +316,10 @@ export class TestTaskRepository implements TaskRepository {
     if (this.findError) {
       return err(this.findError);
     }
-    const tasks = Array.from(this.tasks.values()).filter(t => t.status === status);
+    // Sort by created_at DESC to match production behavior
+    const tasks = Array.from(this.tasks.values())
+      .filter(t => t.status === status)
+      .sort((a, b) => b.createdAt - a.createdAt);
     return ok(tasks);
   }
 
