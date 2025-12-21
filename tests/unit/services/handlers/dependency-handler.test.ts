@@ -10,6 +10,7 @@ import { mkdtemp, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { createTestConfiguration } from '../../../fixtures/factories';
+import { flushEventLoop } from '../../../utils/event-helpers.js';
 
 describe('DependencyHandler - Behavioral Tests', () => {
   let handler: DependencyHandler;
@@ -127,8 +128,8 @@ describe('DependencyHandler - Behavioral Tests', () => {
       // Create B -> A dependency
       await eventBus.emit('TaskDelegated', { task: taskB });
 
-      // Give handler time to process
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Flush microtasks (emit() already awaits handlers)
+      await flushEventLoop();
 
       // Verify B -> A dependency was created
       const depsB = await dependencyRepo.getDependencies(taskB.id);
@@ -146,8 +147,8 @@ describe('DependencyHandler - Behavioral Tests', () => {
       // Act - Try to emit TaskDelegated for A with dependency on B
       await eventBus.emit('TaskDelegated', { task: taskAWithCycle });
 
-      // Give handler time to process
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Flush microtasks (emit() already awaits handlers)
+      await flushEventLoop();
 
       // Assert - Cycle should be detected and prevented
       // Verify an error was logged about cycle detection
@@ -181,8 +182,8 @@ describe('DependencyHandler - Behavioral Tests', () => {
       await eventBus.emit('TaskDelegated', { task: taskB });
       await eventBus.emit('TaskDelegated', { task: taskC });
 
-      // Give handler time to process
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Flush microtasks (emit() already awaits handlers)
+      await flushEventLoop();
 
       // Verify dependencies were created
       const depsB = await dependencyRepo.getDependencies(taskB.id);
@@ -197,8 +198,8 @@ describe('DependencyHandler - Behavioral Tests', () => {
       // Act
       await eventBus.emit('TaskDelegated', { task: taskAWithCycle });
 
-      // Give handler time to process
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Flush microtasks (emit() already awaits handlers)
+      await flushEventLoop();
 
       // Assert - Transitive cycle should be detected and prevented
       // Verify an error was logged about cycle detection
@@ -265,14 +266,14 @@ describe('DependencyHandler - Behavioral Tests', () => {
       // Create dependencies
       await eventBus.emit('TaskDelegated', { task: taskB });
       await eventBus.emit('TaskDelegated', { task: taskC });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await flushEventLoop();
 
       // Spy on the batch resolution method to verify it's called
       const batchSpy = vi.spyOn(dependencyRepo, 'resolveDependenciesBatch');
 
       // Act - Complete task A
       await eventBus.emit('TaskCompleted', { taskId: taskA.id });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await flushEventLoop();
 
       // Assert - Verify batch method was called exactly once
       expect(batchSpy).toHaveBeenCalledTimes(1);
@@ -329,7 +330,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
       await eventBus.emit('TaskCompleted', { taskId: parent2.id });
 
       // Give event time to propagate
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await flushEventLoop();
 
       // Assert - TaskUnblocked should be emitted
       expect(unblockedEventReceived).toBe(true);
@@ -353,7 +354,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
 
       // Act - Complete only one parent
       await eventBus.emit('TaskCompleted', { taskId: parent1.id });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await flushEventLoop();
 
       // Assert - Should still be blocked
       expect(unblockedEventReceived).toBe(false);
@@ -452,7 +453,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
 
       // Act - Complete A, then B and C
       await eventBus.emit('TaskCompleted', { taskId: taskA.id });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await flushEventLoop();
 
       // B and C should now be unblocked
       const isBBlocked = await dependencyRepo.isBlocked(taskB.id);
@@ -463,7 +464,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
       // Complete B and C
       await eventBus.emit('TaskCompleted', { taskId: taskB.id });
       await eventBus.emit('TaskCompleted', { taskId: taskC.id });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await flushEventLoop();
 
       // Assert - D should now be unblocked
       const isDBlocked = await dependencyRepo.isBlocked(taskD.id);
@@ -757,7 +758,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
         await taskRepo.save(taskB);
 
         await eventBus.emit('TaskDelegated', { task: taskB });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await flushEventLoop();
 
         // Now try to add cycle + valid dependency together
         // The cycle should prevent BOTH from being added
@@ -767,7 +768,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
         // This would create: A -> [B, C] where A->B creates cycle
         const taskAWithMixed = { ...taskA, dependsOn: [taskB.id, taskC.id] };
         await eventBus.emit('TaskDelegated', { task: taskAWithMixed });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await flushEventLoop();
 
         // Neither dependency should be added (atomic failure)
         const depsA = await dependencyRepo.getDependencies(taskA.id);
@@ -819,7 +820,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
         });
 
         await eventBus.emit('TaskDelegated', { task: child });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await flushEventLoop();
 
         // Should have emitted 2 TaskDependencyAdded events
         expect(addedEvents).toHaveLength(2);
@@ -841,7 +842,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
         await taskRepo.save(child);
 
         await eventBus.emit('TaskDelegated', { task: child });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await flushEventLoop();
 
         // NEITHER dependency should be added
         const deps = await dependencyRepo.getDependencies(child.id);
@@ -865,7 +866,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
         });
 
         await eventBus.emit('TaskDelegated', { task: child });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await flushEventLoop();
 
         // Should have emitted failure event
         expect(failedEvent).not.toBeNull();
@@ -882,7 +883,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
         await taskRepo.save(taskB);
 
         await eventBus.emit('TaskDelegated', { task: taskB });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await flushEventLoop();
 
         // Track failure events
         let failedEvent: any = null;
@@ -893,7 +894,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
         // Try to create cycle
         const taskAWithCycle = { ...taskA, dependsOn: [taskB.id] };
         await eventBus.emit('TaskDelegated', { task: taskAWithCycle });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await flushEventLoop();
 
         // Cycle should trigger TaskDependencyFailed with cycle error
         expect(failedEvent).not.toBeNull();
@@ -910,7 +911,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
         database.close();
 
         await eventBus.emit('TaskDelegated', { task: child });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await flushEventLoop();
 
         // Should log as error (unexpected system failure)
         const errorLogs = logger.getLogsByLevel('error');

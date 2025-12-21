@@ -229,8 +229,8 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
       await eventBus.emit('TaskQueued', { taskId: task.id, task });
 
-      // Give async processing time to complete
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Wait for TaskStarting event (indicates processing started)
+      await eventBus.waitFor('TaskStarting');
 
       expect(eventBus.hasEmitted('TaskQueued')).toBe(true);
     });
@@ -244,7 +244,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
 
       await eventBus.emit('TaskQueued', { taskId: task.id, task });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await eventBus.waitFor('TaskStarting');
 
       expect(eventBus.hasEmitted('TaskStarting')).toBe(true);
     });
@@ -259,7 +259,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
 
       await eventBus.emit('TaskQueued', { taskId: task.id, task });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await eventBus.waitFor('WorkerSpawned');
 
       expect(workerPool.spawnCalls.length).toBeGreaterThan(0);
     });
@@ -274,7 +274,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
 
       await eventBus.emit('TaskQueued', { taskId: task.id, task });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await eventBus.waitFor('WorkerSpawned');
 
       expect(resourceMonitor.workerCount).toBeGreaterThan(0);
     });
@@ -289,7 +289,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
 
       await eventBus.emit('TaskQueued', { taskId: task.id, task });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await eventBus.waitFor('TaskStarted');
 
       expect(eventBus.hasEmitted('WorkerSpawned')).toBe(true);
       expect(eventBus.hasEmitted('TaskStarted')).toBe(true);
@@ -306,14 +306,15 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
       // Spawn first task
       await eventBus.emit('TaskQueued', { taskId: task1.id, task: task1 });
-      await new Promise(resolve => setTimeout(resolve, 5));
+      await eventBus.waitFor('WorkerSpawned');
 
       const firstSpawnTime = Date.now();
 
       // Try to spawn second task immediately
       eventBus.setRequestResponse('NextTaskQuery', ok(task2));
       await eventBus.emit('TaskQueued', { taskId: task2.id, task: task2 });
-      await new Promise(resolve => setTimeout(resolve, 20));
+      // Wait for potential second spawn (rate limited)
+      await eventBus.flushHandlers();
 
       // Verify delay was enforced (should be at least minSpawnDelayMs)
       expect(workerPool.spawnCalls.length).toBeGreaterThanOrEqual(1);
@@ -326,7 +327,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
 
       await eventBus.emit('TaskQueued', { taskId: task.id, task });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await eventBus.flushHandlers();
 
       // Should not spawn when resources constrained
       expect(workerPool.spawnCalls.length).toBe(0);
@@ -339,7 +340,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
 
       await eventBus.emit('TaskQueued', { taskId: task.id, task });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await eventBus.flushHandlers();
 
       expect(workerPool.spawnCalls.length).toBe(0);
     });
@@ -376,7 +377,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         reason: 'User requested'
       });
 
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await eventBus.flushHandlers();
 
       // Should have checked for worker (via getWorkerForTask)
       expect(task.status).toBe('running');
@@ -423,7 +424,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         reason: 'User requested'
       });
 
-      await new Promise(resolve => setTimeout(resolve, 20));
+      await eventBus.flushHandlers();
 
       // Should not attempt to kill worker
       expect(workerPool.killCalls.length).toBe(0);
@@ -593,7 +594,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
 
       await eventBus.emit('TaskQueued', { taskId: task.id, task });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await eventBus.waitFor('RequeueTask');
 
       expect(eventBus.hasEmitted('RequeueTask')).toBe(true);
     });
@@ -609,7 +610,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
 
       await eventBus.emit('TaskQueued', { taskId: task.id, task });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await eventBus.waitFor('TaskFailed');
 
       expect(eventBus.hasEmitted('TaskFailed')).toBe(true);
     });
@@ -625,7 +626,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       resourceMonitor.setCanSpawn(true);
 
       await eventBus.emit('TaskQueued', { taskId: task.id, task });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await eventBus.flushHandlers();
 
       // Should not crash, handler should continue functioning
       expect(workerHandler).toBeDefined();
@@ -646,7 +647,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         reason: 'Test'
       });
 
-      await new Promise(resolve => setTimeout(resolve, 20));
+      await eventBus.flushHandlers();
 
       // Verify that TaskStatusQuery was requested (event-driven approach)
       const requests = eventBus.getRequestedEvents('TaskStatusQuery');
@@ -660,7 +661,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
 
       await eventBus.emit('TaskQueued', { taskId: task.id, task });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await eventBus.waitFor('TaskStarting');
 
       const requests = eventBus.getRequestedEvents('NextTaskQuery');
       expect(requests.length).toBeGreaterThan(0);
@@ -673,7 +674,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
 
       await eventBus.emit('TaskQueued', { taskId: task.id, task });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await eventBus.waitFor('TaskStarting');
 
       // Should emit TaskStarting, WorkerSpawned, TaskStarted events
       expect(eventBus.hasEmitted('TaskStarting')).toBe(true);
@@ -702,7 +703,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         eventBus.setEmitFailure('TaskStarting', true);
 
         await eventBus.emit('TaskQueued', { taskId: task.id, task });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await eventBus.waitFor('RequeueTask');
 
         // Should have attempted TaskStarting
         expect(eventBus.hasEmitted('TaskStarting')).toBe(true);
@@ -729,7 +730,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         eventBus.setRequestResponse('NextTaskQuery', ok(task));
 
         await eventBus.emit('TaskQueued', { taskId: task.id, task });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await eventBus.waitFor('TaskFailed');
 
         // BOTH events must be emitted
         expect(eventBus.hasEmitted('RequeueTask')).toBe(true);
@@ -744,7 +745,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         eventBus.setRequestResponse('NextTaskQuery', ok(task));
 
         await eventBus.emit('TaskQueued', { taskId: task.id, task });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await eventBus.flushHandlers();
 
         // Should NOT have queried for next task since resources unavailable
         const requests = eventBus.getRequestedEvents('NextTaskQuery');
@@ -759,7 +760,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         eventBus.setRequestResponse('NextTaskQuery', ok(task));
 
         await eventBus.emit('TaskQueued', { taskId: task.id, task });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await eventBus.waitFor('TaskStarted');
 
         // Both events should be emitted
         expect(eventBus.hasEmitted('WorkerSpawned')).toBe(true);
@@ -786,7 +787,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         const initialCount = resourceMonitor.workerCount;
 
         await eventBus.emit('TaskQueued', { taskId: task.id, task });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await eventBus.waitFor('WorkerSpawned');
 
         // Worker count should increase by 1
         expect(resourceMonitor.workerCount).toBe(initialCount + 1);
@@ -805,7 +806,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         const initialCount = resourceMonitor.workerCount;
 
         await eventBus.emit('TaskQueued', { taskId: task.id, task });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await eventBus.waitFor('TaskFailed');
 
         // Worker count should NOT change on failure
         expect(resourceMonitor.workerCount).toBe(initialCount);
@@ -816,7 +817,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         eventBus.setRequestResponse('NextTaskQuery', ok(null)); // Empty queue
 
         await eventBus.emit('TaskQueued', { taskId: 'test' as any, task: {} as any });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await eventBus.flushHandlers();
 
         // Should not emit any task lifecycle events
         expect(eventBus.hasEmitted('TaskStarting')).toBe(false);
@@ -839,7 +840,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         const initialWorkerCount = resourceMonitor.workerCount;
 
         await eventBus.emit('TaskQueued', { taskId: task.id, task });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await eventBus.waitFor('RequeueTask');
 
         // State should be unchanged
         expect(resourceMonitor.workerCount).toBe(initialWorkerCount);
@@ -859,7 +860,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         const initialWorkerCount = resourceMonitor.workerCount;
 
         await eventBus.emit('TaskQueued', { taskId: task.id, task });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await eventBus.waitFor('TaskFailed');
 
         // State should be unchanged (worker count not incremented)
         expect(resourceMonitor.workerCount).toBe(initialWorkerCount);
@@ -891,7 +892,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
           maxConcurrentSpawns = Math.max(maxConcurrentSpawns, activeSpawns);
           const start = Date.now();
 
-          // Simulate spawn taking some time
+          // NOTE: This setTimeout simulates real spawn time and is intentional for timing tests
           await new Promise(resolve => setTimeout(resolve, 15));
 
           const end = Date.now();
@@ -910,8 +911,10 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
           eventBus.emit('TaskQueued', { taskId: task1.id, task: task1 })
         ]);
 
-        // Wait for spawns to complete (first spawn + delays for others)
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Wait for first spawn to complete (we expect at least one WorkerSpawned)
+        await eventBus.waitFor('WorkerSpawned');
+        // Allow any serialized follow-up spawns to complete
+        await eventBus.flushHandlers();
 
         // KEY INVARIANT: With serialization, at most ONE spawn runs at a time
         // This prevents the TOCTOU race where multiple spawns could pass delay check
@@ -933,7 +936,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
         workerPool.spawn = vi.fn().mockImplementation(async () => {
           spawnTimestamps.push(Date.now());
-          // Simulate spawn taking 15ms
+          // NOTE: This setTimeout simulates real spawn time and is intentional for timing tests
           await new Promise(resolve => setTimeout(resolve, 15));
           return ok(new WorkerFactory().build());
         });
@@ -947,8 +950,9 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
           eventBus.emit('TaskQueued', { taskId: task2.id, task: task2 })
         ]);
 
-        // Wait for first spawn + delay period (10ms configured in test config)
-        await new Promise(resolve => setTimeout(resolve, 50));
+        // Wait for first spawn to complete
+        await eventBus.waitFor('WorkerSpawned');
+        await eventBus.flushHandlers();
 
         // With serialization:
         // - First processNextTask() acquires lock, spawns at T=0
@@ -983,7 +987,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
         // Fire first event - spawn will fail
         await eventBus.emit('TaskQueued', { taskId: task1.id, task: task1 });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await eventBus.waitFor('TaskFailed');
 
         // Verify first spawn was attempted and failed
         expect(callCount).toBe(1);
@@ -999,7 +1003,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         eventBus.clearEmittedEvents(); // Clear previous events
 
         await eventBus.emit('TaskQueued', { taskId: task2.id, task: task2 });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await eventBus.waitFor('WorkerSpawned');
 
         // Second spawn should also be attempted (because failed spawn doesn't update lastSpawnTime)
         expect(callCount).toBe(2);
