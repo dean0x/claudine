@@ -293,7 +293,7 @@ describe('Database Failure Scenarios', () => {
       // Perform concurrent operations
       const operations = [
         // Reads
-        repository.findAll(),
+        repository.findAllUnbounded(),
         repository.findById(tasks[0].id),
         repository.findByStatus('pending'),
 
@@ -302,7 +302,7 @@ describe('Database Failure Scenarios', () => {
         repository.update(tasks[0].id, { status: 'running' as const }),
 
         // More reads
-        repository.findAll(),
+        repository.findAllUnbounded(),
         repository.findById(tasks[1].id),
 
         // More writes
@@ -316,7 +316,7 @@ describe('Database Failure Scenarios', () => {
       expect(results.every(r => r.status === 'fulfilled')).toBe(true);
 
       // Verify data consistency
-      const finalTasks = await repository.findAll();
+      const finalTasks = await repository.findAllUnbounded();
       expect(finalTasks.ok).toBe(true);
       if (finalTasks.ok) {
         // Should have 10 original - 1 deleted + 2 new = 11 tasks
@@ -339,7 +339,7 @@ describe('Database Failure Scenarios', () => {
       expect(saveResult.ok).toBe(true);
 
       // Verify table still exists and has data
-      const findResult = await repository.findAll();
+      const findResult = await repository.findAllUnbounded();
       expect(findResult.ok).toBe(true);
       if (findResult.ok) {
         expect(findResult.value.length).toBe(1);
@@ -369,7 +369,7 @@ describe('Database Failure Scenarios', () => {
       db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').run();
 
       // Should still be able to read data
-      const result = await repository.findAll();
+      const result = await repository.findAllUnbounded();
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.length).toBe(100);

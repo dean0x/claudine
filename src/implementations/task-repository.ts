@@ -79,10 +79,15 @@ export class SQLiteTaskRepository implements TaskRepository {
   private readonly db: SQLite.Database;
   private readonly saveStmt: SQLite.Statement;
   private readonly findByIdStmt: SQLite.Statement;
-  private readonly findAllStmt: SQLite.Statement;
+  private readonly findAllUnboundedStmt: SQLite.Statement;
   private readonly findByStatusStmt: SQLite.Statement;
   private readonly deleteStmt: SQLite.Statement;
   private readonly cleanupOldTasksStmt: SQLite.Statement;
+  private readonly countStmt: SQLite.Statement;
+  private readonly findAllPaginatedStmt: SQLite.Statement;
+
+  /** Default pagination limit for findAll() */
+  private static readonly DEFAULT_LIMIT = 100;
 
   constructor(database: Database) {
     this.db = database.getDatabase();
@@ -110,12 +115,20 @@ export class SQLiteTaskRepository implements TaskRepository {
       SELECT * FROM tasks WHERE id = ?
     `);
 
-    this.findAllStmt = this.db.prepare(`
+    this.findAllUnboundedStmt = this.db.prepare(`
       SELECT * FROM tasks ORDER BY created_at DESC
     `);
 
     this.findByStatusStmt = this.db.prepare(`
       SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC
+    `);
+
+    this.countStmt = this.db.prepare(`
+      SELECT COUNT(*) as count FROM tasks
+    `);
+
+    this.findAllPaginatedStmt = this.db.prepare(`
+      SELECT * FROM tasks ORDER BY created_at DESC LIMIT ? OFFSET ?
     `);
 
     this.deleteStmt = this.db.prepare(`
@@ -204,13 +217,36 @@ export class SQLiteTaskRepository implements TaskRepository {
     );
   }
 
-  async findAll(): Promise<Result<readonly Task[]>> {
+  async findAll(limit?: number, offset?: number): Promise<Result<readonly Task[]>> {
     return tryCatchAsync(
       async () => {
-        const rows = this.findAllStmt.all() as TaskRow[];
+        const effectiveLimit = limit ?? SQLiteTaskRepository.DEFAULT_LIMIT;
+        const effectiveOffset = offset ?? 0;
+
+        const rows = this.findAllPaginatedStmt.all(effectiveLimit, effectiveOffset) as TaskRow[];
         return rows.map(row => this.rowToTask(row));
       },
       operationErrorHandler('find all tasks')
+    );
+  }
+
+  async findAllUnbounded(): Promise<Result<readonly Task[]>> {
+    return tryCatchAsync(
+      async () => {
+        const rows = this.findAllUnboundedStmt.all() as TaskRow[];
+        return rows.map(row => this.rowToTask(row));
+      },
+      operationErrorHandler('find all tasks (unbounded)')
+    );
+  }
+
+  async count(): Promise<Result<number>> {
+    return tryCatchAsync(
+      async () => {
+        const result = this.countStmt.get() as { count: number };
+        return result.count;
+      },
+      operationErrorHandler('count tasks')
     );
   }
 
@@ -319,8 +355,16 @@ class TransactionTaskRepository implements TaskRepository {
     return this.mainRepo.findById(taskId);
   }
 
-  async findAll(): Promise<Result<readonly Task[]>> {
-    return this.mainRepo.findAll();
+  async findAll(limit?: number, offset?: number): Promise<Result<readonly Task[]>> {
+    return this.mainRepo.findAll(limit, offset);
+  }
+
+  async findAllUnbounded(): Promise<Result<readonly Task[]>> {
+    return this.mainRepo.findAllUnbounded();
+  }
+
+  async count(): Promise<Result<number>> {
+    return this.mainRepo.count();
   }
 
   async findByStatus(status: string): Promise<Result<readonly Task[]>> {

@@ -83,7 +83,9 @@ export class QueryHandler extends BaseEventHandler {
       }
     } else {
       // Query all tasks
-      const tasksResult = await this.repository.findAll();
+      // ARCHITECTURE: Use findAllUnbounded() to maintain pre-pagination behavior
+      // TODO: Add pagination support to TaskStatusQuery event (see tech debt issue #31)
+      const tasksResult = await this.repository.findAllUnbounded();
 
       if (!tasksResult.ok) {
         queryResult = tasksResult;

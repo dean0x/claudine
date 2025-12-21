@@ -283,18 +283,43 @@ export class TestTaskRepository implements TaskRepository {
     return ok(task || null);
   }
 
-  async findAll(): Promise<Result<Task[], Error>> {
+  /** Default pagination limit for findAll() */
+  private static readonly DEFAULT_LIMIT = 100;
+
+  async findAll(limit?: number, offset?: number): Promise<Result<Task[], Error>> {
     if (this.findError) {
       return err(this.findError);
     }
-    return ok(Array.from(this.tasks.values()));
+    // Sort by created_at DESC to match production behavior
+    const all = Array.from(this.tasks.values()).sort((a, b) => b.createdAt - a.createdAt);
+    const effectiveLimit = limit ?? TestTaskRepository.DEFAULT_LIMIT;
+    const effectiveOffset = offset ?? 0;
+    return ok(all.slice(effectiveOffset, effectiveOffset + effectiveLimit));
+  }
+
+  async findAllUnbounded(): Promise<Result<Task[], Error>> {
+    if (this.findError) {
+      return err(this.findError);
+    }
+    // Sort by created_at DESC to match production behavior
+    return ok(Array.from(this.tasks.values()).sort((a, b) => b.createdAt - a.createdAt));
+  }
+
+  async count(): Promise<Result<number, Error>> {
+    if (this.findError) {
+      return err(this.findError);
+    }
+    return ok(this.tasks.size);
   }
 
   async findByStatus(status: Task['status']): Promise<Result<Task[], Error>> {
     if (this.findError) {
       return err(this.findError);
     }
-    const tasks = Array.from(this.tasks.values()).filter(t => t.status === status);
+    // Sort by created_at DESC to match production behavior
+    const tasks = Array.from(this.tasks.values())
+      .filter(t => t.status === status)
+      .sort((a, b) => b.createdAt - a.createdAt);
     return ok(tasks);
   }
 
@@ -304,6 +329,23 @@ export class TestTaskRepository implements TaskRepository {
     }
     this.tasks.delete(id);
     return ok(undefined);
+  }
+
+  async cleanupOldTasks(olderThanMs: number): Promise<Result<number, Error>> {
+    const cutoffTime = Date.now() - olderThanMs;
+    let deletedCount = 0;
+    for (const [id, task] of this.tasks.entries()) {
+      if (task.completedAt && task.completedAt < cutoffTime) {
+        this.tasks.delete(id);
+        deletedCount++;
+      }
+    }
+    return ok(deletedCount);
+  }
+
+  async transaction<T>(fn: (repo: TaskRepository) => Promise<Result<T>>): Promise<Result<T>> {
+    // In-memory implementation - just execute the function
+    return fn(this);
   }
 
   async deleteAll(): Promise<Result<void, Error>> {

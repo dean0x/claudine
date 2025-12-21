@@ -570,7 +570,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
 
       // CRITICAL ASSERTION: Graph should still show only ONE dependency
       // If graph was updated before checking transaction success, we'd have duplicates
-      const allDeps = await dependencyRepo.findAll();
+      const allDeps = await dependencyRepo.findAllUnbounded();
       expect(allDeps.ok).toBe(true);
       if (!allDeps.ok) throw new Error('Failed to get all deps');
 
@@ -612,7 +612,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
       expect(aDeps.value).toHaveLength(0);
 
       // Verify database also doesn't have the cycle
-      const allDeps = await dependencyRepo.findAll();
+      const allDeps = await dependencyRepo.findAllUnbounded();
       expect(allDeps.ok).toBe(true);
       if (!allDeps.ok) throw new Error('Failed to get all deps');
       expect(allDeps.value).toHaveLength(1); // Only A -> B, not B -> A
@@ -639,7 +639,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
       expect(deps.value).toHaveLength(0);
 
       // Verify database is also empty
-      const allDeps = await dependencyRepo.findAll();
+      const allDeps = await dependencyRepo.findAllUnbounded();
       expect(allDeps.ok).toBe(true);
       if (!allDeps.ok) throw new Error('Failed to get all deps');
       expect(allDeps.value).toHaveLength(0);
@@ -678,7 +678,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
       await eventBus.emit('TaskDelegated', { task: taskAWithInvalid });
 
       // CRITICAL ASSERTION: Graph should maintain original state
-      const allDeps = await dependencyRepo.findAll();
+      const allDeps = await dependencyRepo.findAllUnbounded();
       expect(allDeps.ok).toBe(true);
       if (!allDeps.ok) throw new Error('Failed to get all deps');
 
