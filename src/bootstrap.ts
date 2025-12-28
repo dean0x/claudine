@@ -19,6 +19,8 @@ import { ClaudineError, ErrorCode } from './core/errors.js';
 export interface BootstrapOptions {
   /** Custom ProcessSpawner implementation (e.g., NoOpProcessSpawner for tests) */
   processSpawner?: ProcessSpawner;
+  /** Custom ResourceMonitor implementation (e.g., TestResourceMonitor for tests) */
+  resourceMonitor?: ResourceMonitor;
   /** Skip starting resource monitoring (useful for tests to prevent CPU/memory overhead) */
   skipResourceMonitoring?: boolean;
 }
@@ -219,6 +221,12 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
   });
 
   container.registerSingleton('resourceMonitor', () => {
+    // Use provided resourceMonitor if given (e.g., TestResourceMonitor for tests)
+    if (options.resourceMonitor) {
+      logger.info('Using provided ResourceMonitor');
+      return options.resourceMonitor;
+    }
+
     const configResult = container.get<Configuration>('config');
     const loggerResult = container.get('logger');
     const eventBusResult = container.get('eventBus');

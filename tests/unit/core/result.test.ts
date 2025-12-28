@@ -531,14 +531,12 @@ describe('Result Type - REAL Behavior Tests', () => {
     });
 
     it('should handle async pipeline with proper error propagation', async () => {
-      vi.useFakeTimers();
-
       const fetchData = async (id: number): Promise<Result<string>> => {
         if (id < 0) {
           return err(new Error('Invalid ID'));
         }
-        // Simulate async fetch
-        await new Promise(resolve => setTimeout(resolve, 1));
+        // Simulate async fetch (just needs to be async, no actual delay needed)
+        await Promise.resolve();
         return ok(`Data for ${id}`);
       };
 
@@ -548,9 +546,7 @@ describe('Result Type - REAL Behavior Tests', () => {
       };
 
       // Success case
-      const resultPromise = fetchData(42);
-      await vi.runAllTimersAsync();
-      const successResult = await resultPromise;
+      const successResult = await fetchData(42);
       const processed = flatMap(successResult, data => processData(data));
 
       expect(isOk(processed)).toBe(true);
@@ -566,8 +562,6 @@ describe('Result Type - REAL Behavior Tests', () => {
       if (!failProcessed.ok) {
         expect(failProcessed.error.message).toBe('Invalid ID');
       }
-
-      vi.useRealTimers();
     });
   });
 

@@ -6,6 +6,8 @@ import { Task, TaskId, Priority } from '../../src/core/domain.js';
 import { EventBus, TaskDependencyFailedEvent } from '../../src/core/events/events.js';
 import { Database } from '../../src/implementations/database.js';
 import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
+import { TestResourceMonitor } from '../../src/implementations/resource-monitor.js';
+import { flushEventLoop } from '../utils/event-helpers.js';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -14,6 +16,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
   let container: Container;
   let taskManager: TaskManager;
   let dependencyRepo: DependencyRepository;
+  let eventBus: EventBus;
   let database: Database;
   let tempDir: string;
 
@@ -24,6 +27,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
     const result = await bootstrap({
       processSpawner: new NoOpProcessSpawner(),
+      resourceMonitor: new TestResourceMonitor(),
       skipResourceMonitoring: true
     });
     if (!result.ok) {
@@ -42,6 +46,12 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       throw new Error(`Failed to get DependencyRepository: ${drResult.error.message}`);
     }
     dependencyRepo = drResult.value;
+
+    const ebResult = container.get<EventBus>('eventBus');
+    if (!ebResult.ok) {
+      throw new Error(`Failed to get EventBus: ${ebResult.error.message}`);
+    }
+    eventBus = ebResult.value;
 
     const dbResult = container.get<Database>('database');
     if (!dbResult.ok) {
@@ -75,8 +85,8 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
       const taskA = taskAResult.value;
 
-      // Wait a bit for persistence
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Wait for Task A to be fully processed
+      await flushEventLoop();
 
       // Create Task B that depends on Task A
       const taskBResult = await taskManager.delegate({
@@ -90,8 +100,9 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
       const taskB = taskBResult.value;
 
-      // Wait for dependency to be processed
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Dependency processing happens during delegate() since emit() awaits handlers
+      // Just flush microtasks to ensure all promises resolve
+      await flushEventLoop();
 
       // Verify dependency was created
       const depsResult = await dependencyRepo.getDependencies(taskB.id);
@@ -122,7 +133,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       const task = taskResult.value;
 
       // Wait for processing
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await flushEventLoop();
 
       // Verify task is not blocked
       const isBlockedResult = await dependencyRepo.isBlocked(task.id);
@@ -155,12 +166,6 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       // When dependency target doesn't exist, TaskDependencyFailed event is emitted
       // See DependencyHandler.handleTaskDelegated() for validation flow
 
-      // Subscribe to TaskDependencyFailed event before delegating
-      const eventBusResult = container.get<EventBus>('eventBus');
-      expect(eventBusResult.ok).toBe(true);
-      if (!eventBusResult.ok) return;
-      const eventBus = eventBusResult.value;
-
       let failedEvent: TaskDependencyFailedEvent | null = null;
       eventBus.on('TaskDependencyFailed', (event: TaskDependencyFailedEvent) => {
         failedEvent = event;
@@ -176,13 +181,13 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       // Task creation succeeds (task is created before dependency validation)
       expect(taskResult.ok).toBe(true);
 
-      // Wait for dependency processing
-      await new Promise(resolve => setTimeout(resolve, 150));
+      // Event handlers run synchronously with emit(), so event is already captured
+      await flushEventLoop();
 
       // Verify TaskDependencyFailed event was emitted
       expect(failedEvent).not.toBeNull();
-      expect(failedEvent.failedDependencyId).toBe('non-existent-task-id');
-      expect(failedEvent.error.message).toMatch(/not found/i);
+      expect(failedEvent!.failedDependencyId).toBe('non-existent-task-id');
+      expect(failedEvent!.error.message).toMatch(/not found/i);
     });
 
     it('should accept valid dependencies on existing tasks', async () => {
@@ -198,7 +203,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       const taskA = taskAResult.value;
 
       // Wait for Task A to be persisted
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await flushEventLoop();
 
       // Create Task B that depends on Task A - should succeed
       const taskBResult = await taskManager.delegate({
@@ -210,8 +215,8 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       expect(taskBResult.ok).toBe(true);
       if (!taskBResult.ok) return;
 
-      // Wait for dependency to be processed
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Event handlers run synchronously with emit() - flush microtasks
+      await flushEventLoop();
 
       // Verify dependency was created
       const depsResult = await dependencyRepo.getDependencies(taskBResult.value.id);
@@ -244,7 +249,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       const taskB = taskBResult.value;
 
       // Wait for persistence
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await flushEventLoop();
 
       // Create Task C that depends on both A and B
       const taskCResult = await taskManager.delegate({
@@ -258,8 +263,8 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
       const taskC = taskCResult.value;
 
-      // Wait for dependencies to be processed
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Event handlers run synchronously with emit() - flush microtasks
+      await flushEventLoop();
 
       // Verify both dependencies were created
       const depsResult = await dependencyRepo.getDependencies(taskC.id);
@@ -294,7 +299,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
       const taskD = taskDResult.value;
 
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await flushEventLoop();
 
       // Create Tasks B and C that both depend on D
       const taskBResult = await taskManager.delegate({
@@ -316,7 +321,8 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       const taskB = taskBResult.value;
       const taskC = taskCResult.value;
 
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Event handlers run synchronously with emit() - flush microtasks
+      await flushEventLoop();
 
       // Create Task A that depends on both B and C (diamond pattern)
       const taskAResult = await taskManager.delegate({
@@ -330,7 +336,8 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
       const taskA = taskAResult.value;
 
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Event handlers run synchronously with emit() - flush microtasks
+      await flushEventLoop();
 
       // Verify all dependencies were created
       const depsA = await dependencyRepo.getDependencies(taskA.id);
@@ -359,7 +366,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
       const taskA = taskAResult.value;
 
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await flushEventLoop();
 
       // Create Tasks B and C that both depend on A
       const taskBResult = await taskManager.delegate({
@@ -380,7 +387,8 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       const taskB = taskBResult.value;
       const taskC = taskCResult.value;
 
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Event handlers run synchronously with emit() - flush microtasks
+      await flushEventLoop();
 
       // Get all dependents of Task A
       const dependentsResult = await dependencyRepo.getDependents(taskA.id);
@@ -413,7 +421,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       const taskA = taskAResult.value;
 
       // Wait for Task A to be persisted
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await flushEventLoop();
 
       // Create Task B that depends on Task A
       const taskBResult = await taskManager.delegate({
@@ -427,8 +435,8 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
       const taskB = taskBResult.value;
 
-      // Wait for dependency to be processed
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Event handlers run synchronously with emit() - flush microtasks
+      await flushEventLoop();
 
       // Verify Task B is initially blocked
       const isBlockedBeforeResult = await dependencyRepo.isBlocked(taskB.id);
@@ -459,8 +467,9 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
       expect(resolveResult.ok).toBe(true);
 
-      // Wait for event propagation (TaskUnblocked event → QueueHandler)
-      await new Promise(resolve => setTimeout(resolve, 150));
+      // Repository resolveDependency is synchronous - just flush microtasks
+      // Note: Full event-driven flow (TaskCompleted→TaskUnblocked) is tested in handler tests
+      await flushEventLoop();
 
       // Verify Task B is no longer blocked
       const isBlockedAfterResult = await dependencyRepo.isBlocked(taskB.id);
@@ -514,7 +523,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       const taskA = taskAResult.value;
       const taskB = taskBResult.value;
 
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await flushEventLoop();
 
       // Create Task C that depends on both A and B
       const taskCResult = await taskManager.delegate({
@@ -528,7 +537,8 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
       const taskC = taskCResult.value;
 
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Event handlers run synchronously with emit() - flush microtasks
+      await flushEventLoop();
 
       // Verify Task C is blocked
       const isBlockedInitial = await dependencyRepo.isBlocked(taskC.id);
@@ -536,7 +546,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
       // Resolve Task A
       await dependencyRepo.resolveDependency(taskC.id, taskA.id, 'completed');
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await flushEventLoop();
 
       // Task C should still be blocked (waiting for B)
       const isBlockedAfterA = await dependencyRepo.isBlocked(taskC.id);
@@ -544,7 +554,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
       // Resolve Task B
       await dependencyRepo.resolveDependency(taskC.id, taskB.id, 'completed');
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await flushEventLoop();
 
       // Now Task C should be unblocked (all dependencies resolved)
       const isBlockedAfterB = await dependencyRepo.isBlocked(taskC.id);

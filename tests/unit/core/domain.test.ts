@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   TaskId,
   WorkerId,
@@ -165,15 +165,22 @@ describe('Domain Models - REAL Behavior Tests', () => {
       expect(updated.completedAt).toBeDefined();
     });
 
-    it('should preserve immutability', async () => {
+    it('should preserve immutability', () => {
+      // Mock Date.now() to return different values
+      // createTask calls Date.now() once, updateTask calls it once
+      const originalTime = 1000;
+      const updatedTime = 2000;
+      const dateSpy = vi.spyOn(Date, 'now')
+        .mockReturnValueOnce(originalTime)  // createTask (for createdAt and updatedAt)
+        .mockReturnValueOnce(updatedTime);  // updateTask (for updatedAt)
+
       const task = createTask({ prompt: 'test' });
       const originalStatus = task.status;
       const originalUpdatedAt = task.updatedAt;
 
-      // FIX: Add small delay to ensure Date.now() returns different value
-      await new Promise(resolve => setTimeout(resolve, 2));
-
       const updated = updateTask(task, { status: TaskStatus.FAILED });
+
+      dateSpy.mockRestore();
 
       expect(task.status).toBe(TaskStatus.QUEUED); // Original unchanged
       expect(task.status).toBe(originalStatus);

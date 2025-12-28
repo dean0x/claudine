@@ -21,6 +21,7 @@ import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { Task, WorkerId } from '../../src/core/domain.js';
+import { flushEventLoop } from '../utils/event-helpers.js';
 
 describe('Integration: Event-driven task delegation flow', () => {
   it('should coordinate task delegation through events', async () => {
@@ -134,7 +135,7 @@ describe('Integration: Event-driven task delegation flow', () => {
     expect(task1).toBeTruthy();
 
     // Wait for async events to process
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await flushEventLoop();
 
     // Verify event sequence
     expect(events).toContain('TaskDelegated');
@@ -143,7 +144,7 @@ describe('Integration: Event-driven task delegation flow', () => {
 
     // Test 2: Query task status via event bus
     // Give time for the task to be saved to database
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await flushEventLoop();
     const statusResult = await eventBus.request('TaskStatusQuery', { taskId: task1!.id });
     expect(statusResult.ok).toBe(true);
     if (statusResult.ok) {
@@ -152,7 +153,7 @@ describe('Integration: Event-driven task delegation flow', () => {
 
     // Test 3: Handle task completion
     processSpawner.simulateCompletion(task1!.id, 'Integration test output');
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await flushEventLoop();
 
     expect(events).toContain('TaskCompleted');
     expect(taskStates.get(task1!.id)).toBe('completed');
@@ -166,7 +167,7 @@ describe('Integration: Event-driven task delegation flow', () => {
     await taskManager.delegate(requestP0);
     await taskManager.delegate(requestP1);
 
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await flushEventLoop();
 
     // Verify queue ordering (P0 should be dequeued first)
     const dequeueResult = queue.dequeue();
@@ -186,7 +187,7 @@ describe('Integration: Event-driven task delegation flow', () => {
     expect(errorTask).toBeTruthy();
 
     processSpawner.simulateError(errorTask!.id, new Error('Simulated error'));
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await flushEventLoop();
 
     expect(events).toContain('TaskFailed');
     expect(taskStates.get(errorTask!.id)).toBe('failed');
@@ -197,7 +198,7 @@ describe('Integration: Event-driven task delegation flow', () => {
     );
 
     await Promise.all(concurrentRequests.map(request => taskManager.delegate(request)));
-    await new Promise(resolve => setTimeout(resolve, 200));
+    await flushEventLoop();
 
     // Verify all tasks were queued
     const queuedCount = events.filter(e => e === 'TaskQueued').length;
@@ -220,7 +221,7 @@ describe('Integration: Request-response pattern with timeout', () => {
 
   // Setup handler that responds slowly
   eventBus.onRequest('SlowQuery', async () => {
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await flushEventLoop();
     return { ok: true, value: 'slow response' };
   });
 
@@ -262,7 +263,7 @@ describe('Integration: Event handler registration and cleanup', () => {
 
   // Emit event
   eventBus.emit('TestEvent', { value: 10 });
-  await new Promise(resolve => setTimeout(resolve, 10));
+  await flushEventLoop();
 
   expect(received.length).toBe(3);
   expect(received).toContain(10);
@@ -274,7 +275,7 @@ describe('Integration: Event handler registration and cleanup', () => {
   received.length = 0;
 
   eventBus.emit('TestEvent', { value: 5 });
-  await new Promise(resolve => setTimeout(resolve, 10));
+  await flushEventLoop();
 
   expect(received.length).toBe(2);
   expect(received).toContain(5);

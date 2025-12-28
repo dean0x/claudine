@@ -193,6 +193,82 @@ export class TestEventBus implements EventBus {
       .filter(e => e.type === `request:${eventType}`)
       .map(e => e.payload);
   }
+
+  // Event synchronization methods for replacing timing-based waits
+
+  /**
+   * Wait for a specific event to be emitted
+   * Checks already-emitted events first, then waits for new ones
+   */
+  async waitFor<T = any>(
+    eventType: string,
+    options: { timeout?: number; filter?: (payload: T) => boolean } = {}
+  ): Promise<T> {
+    const timeout = options.timeout ?? 5000;
+    const filter = options.filter ?? (() => true);
+
+    // Check already-emitted events first
+    const existing = this.emittedEvents.find(
+      e => e.type === eventType && filter(e.payload)
+    );
+    if (existing) {
+      return existing.payload;
+    }
+
+    // Otherwise wait for new event
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`Timeout waiting for '${eventType}' after ${timeout}ms`));
+      }, timeout);
+
+      const handler = async (event: any) => {
+        if (filter(event)) {
+          clearTimeout(timer);
+          resolve(event);
+        }
+      };
+
+      this.subscribe(eventType, handler);
+    });
+  }
+
+  /**
+   * Flush all pending microtasks and event loop cycles
+   * Useful when handlers have completed but microtasks are pending
+   */
+  async flushHandlers(): Promise<void> {
+    // Process microtasks first
+    await Promise.resolve();
+    // Then process any setImmediate callbacks
+    await new Promise(resolve => setImmediate(resolve));
+  }
+
+  /**
+   * Subscribe to a single event occurrence (Node EventEmitter style)
+   * Handler auto-unsubscribes after first invocation
+   */
+  once(eventType: string, handler: (data: any) => void): void {
+    let called = false;
+    const wrappedHandler = async (event: any) => {
+      if (!called) {
+        called = true;
+        handler(event);
+      }
+    };
+    this.subscribe(eventType, wrappedHandler);
+  }
+
+  /**
+   * Remove a specific event listener (for compatibility with event-helpers.ts)
+   */
+  removeListener(eventType: string, handler: (data: any) => void): void {
+    const handlers = this.handlers.get(eventType);
+    if (handlers) {
+      // Note: This is a simplified implementation - in tests we typically
+      // rely on dispose() for full cleanup rather than individual removal
+      handlers.delete(handler as any);
+    }
+  }
 }
 
 /**

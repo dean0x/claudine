@@ -18,6 +18,7 @@ import { TaskManagerService } from '../../src/services/task-manager.js';
 import { SystemResourceMonitor } from '../../src/implementations/resource-monitor.js';
 import { PriorityTaskQueue } from '../../src/implementations/task-queue.js';
 import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
+import { flushEventLoop } from '../utils/event-helpers.js';
 
 describe('Integration: Service initialization', () => {
   it('should initialize service container correctly', async () => {
@@ -195,8 +196,8 @@ describe('Integration: Service initialization', () => {
 
         const result = await taskManager.delegate(request);
 
-        // Give time for events to process
-        await new Promise(resolve => setTimeout(resolve, 50));
+        // Flush event handlers (emit() awaits handlers)
+        await flushEventLoop();
 
         expect(result.ok).toBe(true);
         expect(events).toContain('delegated');
@@ -275,7 +276,7 @@ describe('Integration: Service initialization', () => {
         });
 
         await eventBus.emit('HealthCheck', { timestamp: Date.now() });
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await flushEventLoop();
 
         expect(healthCheckReceived).toBe(true);
       }
@@ -334,8 +335,8 @@ describe('Integration: Service initialization', () => {
         // Dispose should trigger graceful shutdown
         await container.dispose();
 
-        // Give time for events to process
-        await new Promise(resolve => setTimeout(resolve, 50));
+        // Flush event handlers (emit() awaits handlers)
+        await flushEventLoop();
 
         // Verify shutdown occurred
         expect(shutdownEvents.length).toBeGreaterThan(0);

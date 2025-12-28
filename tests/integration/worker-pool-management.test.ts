@@ -17,6 +17,7 @@ import { createTestConfiguration } from '../fixtures/factories.js';
 import { TestWorktreeManager } from '../fixtures/test-doubles.js';
 import { randomUUID } from 'crypto';
 import type { Task } from '../../src/core/domain.js';
+import { flushEventLoop } from '../utils/event-helpers.js';
 
 describe('Integration: Worker pool management', () => {
   it('should handle worker pool lifecycle management', async () => {
@@ -108,7 +109,7 @@ describe('Integration: Worker pool management', () => {
     }
 
     // Wait for events to process
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await flushEventLoop();
 
     expect(activeWorkers.size).toBe(3);
 
@@ -123,7 +124,7 @@ describe('Integration: Worker pool management', () => {
 
     // Test 3: Complete a worker to free slot
     processSpawner.simulateCompletion(tasks[0].id, 'Task 0 complete');
-    await new Promise(resolve => setTimeout(resolve, 100)); // Give more time
+    await flushEventLoop();
     expect(activeWorkers.size).toBe(2);
 
     // Test 4: Can spawn new worker after slot freed
@@ -136,19 +137,19 @@ describe('Integration: Worker pool management', () => {
         taskId: tasks[3].id
       });
     }
-    await new Promise(resolve => setTimeout(resolve, 50)); // Wait for event
+    await flushEventLoop(); // Wait for event
     expect(activeWorkers.size).toBe(3);
 
     // Test 5: Handle worker failure
     processSpawner.simulateError(tasks[1].id, new Error('Worker crashed'));
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await flushEventLoop();
 
     expect(workerEvents.some(e => e.includes('failed'))).toBe(true);
     expect(activeWorkers.size).toBe(2);
 
     // Test 6: Terminate all workers
     await workerPool.killAll();
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await flushEventLoop();
 
     expect(activeWorkers.size).toBe(0);
 
@@ -228,7 +229,7 @@ describe('Integration: Worker pool management', () => {
     tasks.forEach(task => queue.enqueue(task));
 
     // Wait a bit - but workers won't spawn without WorkerHandler
-    await new Promise(resolve => setTimeout(resolve, 150));
+    await flushEventLoop();
 
     // Since we don't have WorkerHandler set up, no workers spawn
     expect(currentWorkerCount).toBe(0);
@@ -244,7 +245,7 @@ describe('Integration: Worker pool management', () => {
     );
     moreTasks.forEach(task => queue.enqueue(task));
 
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await flushEventLoop();
 
     // Should not scale beyond resource limits
     const workerCountUnderLoad = currentWorkerCount;
@@ -266,7 +267,7 @@ describe('Integration: Worker pool management', () => {
     resourceMonitor.simulateHighCPU(30);
 
     // Wait for scale down
-    await new Promise(resolve => setTimeout(resolve, 200));
+    await flushEventLoop();
 
     expect(currentWorkerCount).toBe(0);
 
@@ -274,7 +275,7 @@ describe('Integration: Worker pool management', () => {
     // Add tasks one by one
     for (let i = 0; i < 3; i++) {
       queue.enqueue(createTask({ prompt: `Rapid task ${i}` }));
-      await new Promise(resolve => setTimeout(resolve, 60));
+      await flushEventLoop();
     }
 
     // Queue should have tasks (only the 3 we just added, since we cleared earlier)
