@@ -287,7 +287,7 @@ describe('EventBus Request-Response Pattern', () => {
     it('should handle async handler errors', async () => {
       // FIXED: Provide explicit timeout to avoid undefined timeout issue
       eventBus.subscribe('TestQuery', async () => {
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await Promise.resolve(); // Just needs to be async, no delay needed
         throw new Error('Async error');
       });
 

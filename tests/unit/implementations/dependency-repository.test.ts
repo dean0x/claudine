@@ -4,7 +4,7 @@
  * Pattern: Behavior-driven testing with Result pattern validation
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Database } from '../../../src/implementations/database.js';
 import { SQLiteDependencyRepository } from '../../../src/implementations/dependency-repository.js';
 import { TaskId } from '../../../src/core/domain.js';
@@ -1025,18 +1025,19 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       const taskB = 'task-b' as TaskId;
       const taskC = 'task-c' as TaskId;
 
-      // Add dependencies with slight delays to ensure different timestamps
+      // Mock Date.now() to return incrementing timestamps
+      let mockTime = 1000;
+      const dateSpy = vi.spyOn(Date, 'now').mockImplementation(() => mockTime++);
 
       // Create tasks first (required for foreign key constraints)
       createTask('task-a' as TaskId);
       createTask('task-b' as TaskId);
       createTask('task-c' as TaskId);
-      await repo.addDependency(taskB, taskA);
-      await new Promise(resolve => setTimeout(resolve, 5));
-      await repo.addDependency(taskC, taskA);
-      await new Promise(resolve => setTimeout(resolve, 5));
-      await repo.addDependency(taskC, taskB);
+      await repo.addDependency(taskB, taskA);  // timestamp 1000
+      await repo.addDependency(taskC, taskA);  // timestamp 1001
+      await repo.addDependency(taskC, taskB);  // timestamp 1002
 
+      dateSpy.mockRestore();
       const result = await repo.findAll();
 
       expect(result.ok).toBe(true);
@@ -1098,12 +1099,15 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       createTask(taskB);
       createTask(taskC);
 
-      // Create dependencies with delays to ensure ordering
-      await repo.addDependency(taskB, taskA);
-      await new Promise(resolve => setTimeout(resolve, 5));
-      await repo.addDependency(taskC, taskA);
-      await new Promise(resolve => setTimeout(resolve, 5));
-      await repo.addDependency(taskC, taskB);
+      // Mock Date.now() to return incrementing timestamps for ordering
+      let mockTime = 1000;
+      const dateSpy = vi.spyOn(Date, 'now').mockImplementation(() => mockTime++);
+
+      await repo.addDependency(taskB, taskA);  // timestamp 1000 (oldest)
+      await repo.addDependency(taskC, taskA);  // timestamp 1001
+      await repo.addDependency(taskC, taskB);  // timestamp 1002 (newest)
+
+      dateSpy.mockRestore();
 
       // Skip first 2, get 1
       const result = await repo.findAll(1, 2);

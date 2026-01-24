@@ -38,6 +38,10 @@ export class TestEventBus implements EventBus {
   private emittedEvents: Array<{ type: string; payload: any; timestamp: number }> = [];
   private subscriptionCount = 0;
   private failingEventTypes = new Set<string>();
+  // Track subscription ID -> handler for unsubscribe
+  private subscriptionToHandler = new Map<string, { eventType: string; handler: (event: any) => Promise<void> }>();
+  // Track original handler -> subscription ID for removeListener compatibility
+  private handlerToSubscription = new Map<(data: any) => void, string>();
 
   async emit<T>(eventType: string, payload: T): Promise<Result<void, Error>> {
     this.emittedEvents.push({
@@ -89,6 +93,8 @@ export class TestEventBus implements EventBus {
     this.subscriptionCount++;
 
     const subscriptionId = `sub-${this.subscriptionCount}`;
+    // Track subscription for proper unsubscribe
+    this.subscriptionToHandler.set(subscriptionId, { eventType, handler: handler as any });
     return ok(subscriptionId);
   }
 
@@ -97,12 +103,21 @@ export class TestEventBus implements EventBus {
   }
 
   unsubscribe(subscriptionId: string): Result<void, Error> {
-    // Simplified unsubscribe for testing
+    const entry = this.subscriptionToHandler.get(subscriptionId);
+    if (entry) {
+      const handlers = this.handlers.get(entry.eventType);
+      if (handlers) {
+        handlers.delete(entry.handler);
+      }
+      this.subscriptionToHandler.delete(subscriptionId);
+    }
     return ok(undefined);
   }
 
   unsubscribeAll(): void {
     this.handlers.clear();
+    this.subscriptionToHandler.clear();
+    this.handlerToSubscription.clear();
     this.subscriptionCount = 0;
   }
 
@@ -192,6 +207,110 @@ export class TestEventBus implements EventBus {
     return this.emittedEvents
       .filter(e => e.type === `request:${eventType}`)
       .map(e => e.payload);
+  }
+
+  // Event synchronization methods for replacing timing-based waits
+
+  /**
+   * Wait for a specific event to be emitted
+   * Checks already-emitted events first, then waits for new ones
+   */
+  async waitFor<T = any>(
+    eventType: string,
+    options: { timeout?: number; filter?: (payload: T) => boolean } = {}
+  ): Promise<T> {
+    const timeout = options.timeout ?? 5000;
+    const filter = options.filter ?? (() => true);
+
+    // Check already-emitted events first
+    const existing = this.emittedEvents.find(
+      e => e.type === eventType && filter(e.payload)
+    );
+    if (existing) {
+      return existing.payload;
+    }
+
+    // Otherwise wait for new event
+    return new Promise((resolve, reject) => {
+      let subscriptionId: string | undefined;
+
+      const handler = async (event: any) => {
+        if (filter(event)) {
+          clearTimeout(timer);
+          if (subscriptionId) {
+            this.unsubscribe(subscriptionId);
+          }
+          resolve(event);
+        }
+      };
+
+      const result = this.subscribe(eventType, handler);
+      if (result.ok) {
+        subscriptionId = result.value;
+      }
+
+      const timer = setTimeout(() => {
+        if (subscriptionId) {
+          this.unsubscribe(subscriptionId);
+        }
+        reject(new Error(`Timeout waiting for '${eventType}' after ${timeout}ms`));
+      }, timeout);
+    });
+  }
+
+  /**
+   * Flush all pending microtasks and event loop cycles
+   * Useful when handlers have completed but microtasks are pending
+   */
+  async flushHandlers(): Promise<void> {
+    // Process microtasks first
+    await Promise.resolve();
+    // Then process any setImmediate callbacks
+    await new Promise(resolve => setImmediate(resolve));
+  }
+
+  /**
+   * Subscribe to a single event occurrence (Node EventEmitter style)
+   * Handler auto-unsubscribes after first invocation
+   */
+  once(eventType: string, handler: (data: any) => void): void {
+    let subscriptionId: string | undefined;
+
+    const wrappedHandler = async (event: any) => {
+      // Unsubscribe first to prevent any race conditions
+      if (subscriptionId) {
+        this.unsubscribe(subscriptionId);
+        // Clean up handler mapping
+        this.handlerToSubscription.delete(handler);
+      }
+      handler(event);
+    };
+
+    const result = this.subscribe(eventType, wrappedHandler);
+    if (result.ok) {
+      subscriptionId = result.value;
+      // Track original handler -> subscription for removeListener compatibility
+      this.handlerToSubscription.set(handler, subscriptionId);
+    }
+  }
+
+  /**
+   * Remove a specific event listener (for compatibility with event-helpers.ts)
+   */
+  removeListener(eventType: string, handler: (data: any) => void): void {
+    // First check if we have a subscription ID for this handler (from once())
+    const subscriptionId = this.handlerToSubscription.get(handler);
+    if (subscriptionId) {
+      this.unsubscribe(subscriptionId);
+      this.handlerToSubscription.delete(handler);
+      return;
+    }
+
+    // Fallback: try direct removal for handlers registered via on()
+    const handlers = this.handlers.get(eventType);
+    if (handlers) {
+      handlers.delete(handler as any);
+    }
   }
 }
 
