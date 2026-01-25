@@ -221,8 +221,8 @@ export class MCPAdapter {
                   },
                   useWorktree: {
                     type: 'boolean',
-                    description: 'Create a git worktree for isolated execution',
-                    default: true,
+                    description: 'Create a git worktree for isolated execution (opt-in)',
+                    default: false,
                   },
                   worktreeCleanup: {
                     type: 'string',

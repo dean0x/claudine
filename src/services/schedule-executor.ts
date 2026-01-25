@@ -11,12 +11,11 @@ import { Logger } from '../core/interfaces.js';
 import { Result, ok, err } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
 import {
-  Schedule,
-  ScheduleId,
   ScheduleStatus,
   ScheduleType,
   MissedRunPolicy,
 } from '../core/domain.js';
+import type { Schedule } from '../core/domain.js';
 import { getNextRunTime } from '../utils/cron.js';
 
 /**

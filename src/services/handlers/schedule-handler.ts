@@ -10,15 +10,12 @@ import { Result, ok, err } from '../../core/result.js';
 import { BaseEventHandler } from '../../core/events/handlers.js';
 import { EventBus } from '../../core/events/event-bus.js';
 import {
-  Schedule,
-  ScheduleId,
   ScheduleStatus,
   ScheduleType,
-  MissedRunPolicy,
   createTask,
   updateSchedule,
-  TaskId,
 } from '../../core/domain.js';
+import type { Schedule } from '../../core/domain.js';
 import {
   ScheduleCreatedEvent,
   ScheduleTriggeredEvent,
