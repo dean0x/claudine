@@ -4,7 +4,7 @@
  */
 
 import { Container } from './core/container.js';
-import { Config, Logger, ProcessSpawner, ResourceMonitor, OutputCapture, TaskQueue, WorkerPool, TaskRepository, TaskManager, WorktreeManager, DependencyRepository } from './core/interfaces.js';
+import { Config, Logger, ProcessSpawner, ResourceMonitor, OutputCapture, TaskQueue, WorkerPool, TaskRepository, TaskManager, WorktreeManager, DependencyRepository, ScheduleRepository } from './core/interfaces.js';
 import { EventBus } from './core/events/event-bus.js';
 import { Configuration, loadConfiguration } from './core/configuration.js';
 import { InMemoryEventBus } from './core/events/event-bus.js';
@@ -36,6 +36,10 @@ import { Database } from './implementations/database.js';
 import { SQLiteTaskRepository } from './implementations/task-repository.js';
 import { SQLiteOutputRepository } from './implementations/output-repository.js';
 import { SQLiteDependencyRepository } from './implementations/dependency-repository.js';
+import { SQLiteScheduleRepository } from './implementations/schedule-repository.js';
+
+// Schedule Executor
+import { ScheduleExecutor } from './services/schedule-executor.js';
 
 // Services
 import { TaskManagerService } from './services/task-manager.js';
@@ -205,6 +209,13 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
     return new SQLiteDependencyRepository(dbResult.value);
   });
 
+  // Register ScheduleRepository for task scheduling (v0.4.0)
+  container.registerSingleton('scheduleRepository', () => {
+    const dbResult = container.get<Database>('database');
+    if (!dbResult.ok) throw new Error('Failed to get database for ScheduleRepository');
+    return new SQLiteScheduleRepository(dbResult.value);
+  });
+
   // Register core services
   container.registerSingleton('taskQueue', () => new PriorityTaskQueue());
 
@@ -312,9 +323,10 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
     const setupResult = await setupEventHandlers(depsResult.value);
     if (!setupResult.ok) return setupResult;
 
-    // Store registry and dependency handler for shutdown access
+    // Store registry and handlers for shutdown access
     container.registerValue('handlerRegistry', setupResult.value.registry);
     container.registerValue('dependencyHandler', setupResult.value.dependencyHandler);
+    container.registerValue('scheduleHandler', setupResult.value.scheduleHandler);
 
     return taskManager;
   });
@@ -344,10 +356,12 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
     if (!taskManagerResult.ok) {
       throw new Error(`Failed to resolve taskManager for MCPAdapter: ${taskManagerResult.error.message}`);
     }
-    
+
     return new MCPAdapter(
       taskManagerResult.value,
-      getFromContainer<Logger>(container, 'logger').child({ module: 'MCP' })
+      getFromContainer<Logger>(container, 'logger').child({ module: 'MCP' }),
+      getFromContainer<ScheduleRepository>(container, 'scheduleRepository'),
+      getFromContainer<EventBus>(container, 'eventBus')
     );
   });
 
@@ -376,6 +390,41 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
         logger.error('Recovery failed', result.error);
       }
     });
+  }
+
+  // Register schedule executor for task scheduling (v0.4.0)
+  // ARCHITECTURE: ScheduleExecutor runs timer-based tick loop for due schedules
+  container.registerSingleton('scheduleExecutor', () => {
+    const scheduleRepoResult = container.get<ScheduleRepository>('scheduleRepository');
+    const eventBusResult = container.get<EventBus>('eventBus');
+    const loggerResult = container.get<Logger>('logger');
+
+    if (!scheduleRepoResult.ok || !eventBusResult.ok || !loggerResult.ok) {
+      throw new Error('Failed to get dependencies for ScheduleExecutor');
+    }
+
+    const executor = new ScheduleExecutor(
+      scheduleRepoResult.value,
+      eventBusResult.value,
+      loggerResult.value.child({ module: 'ScheduleExecutor' })
+    );
+
+    return executor;
+  });
+
+  // Initialize schedule executor after recovery completes
+  // ARCHITECTURE: Starts the 60-second tick loop for checking due schedules
+  const executorResult = container.get<ScheduleExecutor>('scheduleExecutor');
+  if (executorResult.ok) {
+    const executor = executorResult.value;
+    const startResult = executor.start();
+    if (!startResult.ok) {
+      logger.error('Failed to start ScheduleExecutor', startResult.error);
+    } else {
+      logger.info('ScheduleExecutor started');
+    }
+  } else {
+    logger.error('Failed to get ScheduleExecutor', executorResult.error);
   }
 
   logger.info('Bootstrap complete');

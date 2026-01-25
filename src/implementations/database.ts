@@ -427,10 +427,65 @@ export class Database {
             CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
           `);
         }
+      },
+      {
+        version: 4,
+        description: 'Add schedules and schedule_executions tables for task scheduling',
+        up: (db) => {
+          // Schedules table - stores schedule definitions
+          // ARCHITECTURE: Supports both cron-based recurring and one-time schedules
+          // Pattern: task_template stored as JSON for DelegateRequest serialization
+          db.exec(`
+            CREATE TABLE IF NOT EXISTS schedules (
+              id TEXT PRIMARY KEY,
+              task_template TEXT NOT NULL,
+              schedule_type TEXT NOT NULL CHECK (schedule_type IN ('cron', 'one_time')),
+              cron_expression TEXT,
+              scheduled_at INTEGER,
+              timezone TEXT NOT NULL DEFAULT 'UTC',
+              missed_run_policy TEXT NOT NULL DEFAULT 'skip' CHECK (missed_run_policy IN ('skip', 'catchup', 'fail')),
+              status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'completed', 'cancelled', 'expired')),
+              max_runs INTEGER,
+              run_count INTEGER NOT NULL DEFAULT 0,
+              last_run_at INTEGER,
+              next_run_at INTEGER,
+              expires_at INTEGER,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL
+            )
+          `);
+
+          // Schedule executions table - audit trail of schedule triggers
+          // ARCHITECTURE: Tracks each execution attempt for debugging and monitoring
+          // Pattern: References schedule and optionally created task
+          db.exec(`
+            CREATE TABLE IF NOT EXISTS schedule_executions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              schedule_id TEXT NOT NULL,
+              task_id TEXT,
+              scheduled_for INTEGER NOT NULL,
+              executed_at INTEGER,
+              status TEXT NOT NULL CHECK (status IN ('pending', 'triggered', 'completed', 'failed', 'missed', 'skipped')),
+              error_message TEXT,
+              created_at INTEGER NOT NULL,
+              FOREIGN KEY (schedule_id) REFERENCES schedules(id) ON DELETE CASCADE,
+              FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
+            )
+          `);
+
+          // Performance indexes for schedule queries
+          db.exec(`
+            CREATE INDEX IF NOT EXISTS idx_schedules_status ON schedules(status);
+            CREATE INDEX IF NOT EXISTS idx_schedules_next_run ON schedules(next_run_at);
+            CREATE INDEX IF NOT EXISTS idx_schedules_due ON schedules(status, next_run_at);
+            CREATE INDEX IF NOT EXISTS idx_schedule_executions_schedule ON schedule_executions(schedule_id);
+            CREATE INDEX IF NOT EXISTS idx_schedule_executions_status ON schedule_executions(status);
+          `);
+        }
       }
       // Future migrations go here:
       // {
-      //   version: 4,
+      //   version: 5,
       //   description: 'Add new column to tasks table',
       //   up: (db) => {
       //     db.exec('ALTER TABLE tasks ADD COLUMN new_field TEXT');

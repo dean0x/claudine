@@ -7,9 +7,11 @@ import { ClaudineError } from './errors.js';
 
 export type TaskId = string & { readonly __brand: 'TaskId' };
 export type WorkerId = string & { readonly __brand: 'WorkerId' };
+export type ScheduleId = string & { readonly __brand: 'ScheduleId' };
 
 export const TaskId = (id: string): TaskId => id as TaskId;
 export const WorkerId = (id: string): WorkerId => id as WorkerId;
+export const ScheduleId = (id: string): ScheduleId => id as ScheduleId;
 
 export enum Priority {
   P0 = 'P0', // Critical
@@ -23,6 +25,38 @@ export enum TaskStatus {
   COMPLETED = 'completed',
   FAILED = 'failed',
   CANCELLED = 'cancelled',
+}
+
+/**
+ * Schedule status values
+ * ARCHITECTURE: Tracks lifecycle of scheduled task triggers
+ */
+export enum ScheduleStatus {
+  ACTIVE = 'active',       // Schedule is active and will trigger at next scheduled time
+  PAUSED = 'paused',       // Schedule is temporarily paused (can be resumed)
+  COMPLETED = 'completed', // Schedule has completed (maxRuns reached or one-time schedule executed)
+  CANCELLED = 'cancelled', // Schedule was manually cancelled
+  EXPIRED = 'expired',     // Schedule has passed its expiration time
+}
+
+/**
+ * Schedule type discriminator
+ * ARCHITECTURE: Determines how next run time is calculated
+ */
+export enum ScheduleType {
+  CRON = 'cron',           // Recurring schedule using cron expression (5-field standard)
+  ONE_TIME = 'one_time',   // Single execution at specified timestamp
+}
+
+/**
+ * Policy for handling missed schedule runs
+ * ARCHITECTURE: Determines behavior when scheduled time passes without execution
+ * Common scenarios: server downtime, high load, maintenance windows
+ */
+export enum MissedRunPolicy {
+  SKIP = 'skip',           // Skip missed runs, continue with next scheduled time (default)
+  CATCHUP = 'catchup',     // Execute missed runs immediately (one by one)
+  FAIL = 'fail',           // Mark schedule as failed if run is missed
 }
 
 export interface Task {
@@ -221,4 +255,105 @@ export const canCancel = (task: Task): boolean => {
 export const comparePriority = (a: Priority, b: Priority): number => {
   const order = { [Priority.P0]: 0, [Priority.P1]: 1, [Priority.P2]: 2 };
   return order[a] - order[b];
+};
+
+/**
+ * Schedule interface - defines recurring or one-time task execution
+ * ARCHITECTURE: All fields readonly for immutability
+ * Pattern: Factory function createSchedule() for construction
+ */
+export interface Schedule {
+  readonly id: ScheduleId;
+  readonly taskTemplate: DelegateRequest;  // What to run when schedule triggers
+  readonly scheduleType: ScheduleType;
+  readonly cronExpression?: string;        // For CRON type: standard 5-field expression (minute hour day month weekday)
+  readonly scheduledAt?: number;           // For ONE_TIME type: epoch milliseconds
+  readonly timezone: string;               // IANA timezone identifier (e.g., 'America/New_York'), default 'UTC'
+  readonly missedRunPolicy: MissedRunPolicy;
+  readonly status: ScheduleStatus;
+  readonly maxRuns?: number;               // Optional limit for CRON schedules (undefined = unlimited)
+  readonly runCount: number;               // Number of times schedule has triggered
+  readonly lastRunAt?: number;             // Timestamp of last execution (epoch ms)
+  readonly nextRunAt?: number;             // Computed next execution time (epoch ms)
+  readonly expiresAt?: number;             // Optional expiration time (epoch ms)
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+/**
+ * Request type for creating schedules
+ * ARCHITECTURE: Subset of Schedule fields that caller provides
+ */
+export interface ScheduleRequest {
+  readonly taskTemplate: DelegateRequest;
+  readonly scheduleType: ScheduleType;
+  readonly cronExpression?: string;        // Required for CRON type
+  readonly scheduledAt?: number;           // Required for ONE_TIME type
+  readonly timezone?: string;              // Default: 'UTC'
+  readonly missedRunPolicy?: MissedRunPolicy; // Default: SKIP
+  readonly maxRuns?: number;               // Optional limit for CRON
+  readonly expiresAt?: number;             // Optional expiration
+}
+
+/**
+ * Update type for modifying schedules
+ * ARCHITECTURE: Only fields that can be modified after creation
+ */
+export interface ScheduleUpdate {
+  readonly status?: ScheduleStatus;
+  readonly cronExpression?: string;
+  readonly scheduledAt?: number;
+  readonly timezone?: string;
+  readonly missedRunPolicy?: MissedRunPolicy;
+  readonly maxRuns?: number;
+  readonly runCount?: number;
+  readonly lastRunAt?: number;
+  readonly nextRunAt?: number;
+  readonly expiresAt?: number;
+}
+
+/**
+ * Create a new schedule
+ * ARCHITECTURE: Factory function returns frozen immutable object
+ * Note: nextRunAt must be computed by caller (requires cron parsing logic)
+ */
+export const createSchedule = (request: ScheduleRequest): Schedule => {
+  const now = Date.now();
+  return Object.freeze({
+    id: ScheduleId(`schedule-${crypto.randomUUID()}`),
+    taskTemplate: request.taskTemplate,
+    scheduleType: request.scheduleType,
+    cronExpression: request.cronExpression,
+    scheduledAt: request.scheduledAt,
+    timezone: request.timezone ?? 'UTC',
+    missedRunPolicy: request.missedRunPolicy ?? MissedRunPolicy.SKIP,
+    status: ScheduleStatus.ACTIVE,
+    maxRuns: request.maxRuns,
+    runCount: 0,
+    lastRunAt: undefined,
+    nextRunAt: request.scheduleType === ScheduleType.ONE_TIME ? request.scheduledAt : undefined,
+    expiresAt: request.expiresAt,
+    createdAt: now,
+    updatedAt: now,
+  });
+};
+
+/**
+ * Immutable update helper for schedules
+ * ARCHITECTURE: Returns new frozen object, never mutates input
+ */
+export const updateSchedule = (schedule: Schedule, update: ScheduleUpdate): Schedule => {
+  return Object.freeze({
+    ...schedule,
+    ...update,
+    updatedAt: Date.now(),
+  });
+};
+
+/**
+ * Check if schedule is in active state (can trigger)
+ * ARCHITECTURE: Pure function for status checking
+ */
+export const isScheduleActive = (schedule: Schedule): boolean => {
+  return schedule.status === ScheduleStatus.ACTIVE;
 };
