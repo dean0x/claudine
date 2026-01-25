@@ -16,6 +16,13 @@ import {
   MissedRunPolicy,
 } from '../core/domain.js';
 import type { Schedule } from '../core/domain.js';
+import type {
+  TaskCompletedEvent,
+  TaskFailedEvent,
+  TaskCancelledEvent,
+  TaskTimeoutEvent,
+  ScheduleExecutedEvent,
+} from '../core/events/events.js';
 import { getNextRunTime } from '../utils/cron.js';
 
 /**
@@ -43,6 +50,13 @@ export class ScheduleExecutor {
   private readonly checkIntervalMs: number;
   private readonly missedRunGracePeriodMs: number;
 
+  /**
+   * Track schedules with currently running tasks
+   * ARCHITECTURE: Prevents concurrent execution of the same schedule
+   * Key: scheduleId, Value: taskId of running task
+   */
+  private readonly runningSchedules = new Map<string, string>();
+
   /** Default check interval: 60 seconds */
   private static readonly DEFAULT_CHECK_INTERVAL_MS = 60_000;
 
@@ -57,6 +71,79 @@ export class ScheduleExecutor {
   ) {
     this.checkIntervalMs = options?.checkIntervalMs ?? ScheduleExecutor.DEFAULT_CHECK_INTERVAL_MS;
     this.missedRunGracePeriodMs = options?.missedRunGracePeriodMs ?? ScheduleExecutor.DEFAULT_MISSED_RUN_GRACE_PERIOD_MS;
+
+    // Subscribe to task completion events to clear running state
+    this.subscribeToTaskEvents();
+  }
+
+  /**
+   * Subscribe to task events to track completion of scheduled tasks
+   */
+  private subscribeToTaskEvents(): void {
+    // When a schedule execution creates a task, track it
+    this.eventBus.subscribe('ScheduleExecuted', async (event) => {
+      const e = event as ScheduleExecutedEvent;
+      this.markScheduleRunning(e.scheduleId, e.taskId);
+      this.logger.debug('Marked schedule as running', {
+        scheduleId: e.scheduleId,
+        taskId: e.taskId,
+      });
+    });
+
+    // When a task completes, check if it was from a schedule and clear running state
+    this.eventBus.subscribe('TaskCompleted', async (event) => {
+      const e = event as TaskCompletedEvent;
+      this.clearRunningScheduleByTask(e.taskId);
+    });
+
+    this.eventBus.subscribe('TaskFailed', async (event) => {
+      const e = event as TaskFailedEvent;
+      this.clearRunningScheduleByTask(e.taskId);
+    });
+
+    this.eventBus.subscribe('TaskCancelled', async (event) => {
+      const e = event as TaskCancelledEvent;
+      this.clearRunningScheduleByTask(e.taskId);
+    });
+
+    this.eventBus.subscribe('TaskTimeout', async (event) => {
+      const e = event as TaskTimeoutEvent;
+      this.clearRunningScheduleByTask(e.taskId);
+    });
+  }
+
+  /**
+   * Clear running schedule state when a task completes
+   */
+  private clearRunningScheduleByTask(taskId: string): void {
+    for (const [scheduleId, runningTaskId] of this.runningSchedules.entries()) {
+      if (runningTaskId === taskId) {
+        this.runningSchedules.delete(scheduleId);
+        this.logger.debug('Cleared running state for schedule', { scheduleId, taskId });
+        break;
+      }
+    }
+  }
+
+  /**
+   * Mark a schedule as having a running task
+   */
+  markScheduleRunning(scheduleId: string, taskId: string): void {
+    this.runningSchedules.set(scheduleId, taskId);
+  }
+
+  /**
+   * Check if a schedule has a running task
+   */
+  isScheduleRunning(scheduleId: string): boolean {
+    return this.runningSchedules.has(scheduleId);
+  }
+
+  /**
+   * Get the running task ID for a schedule
+   */
+  getRunningTaskId(scheduleId: string): string | undefined {
+    return this.runningSchedules.get(scheduleId);
   }
 
   /**
@@ -164,11 +251,24 @@ export class ScheduleExecutor {
   /**
    * Execute a single due schedule
    *
+   * ARCHITECTURE: Prevents concurrent execution of the same schedule.
+   * If a previous task from this schedule is still running, skip this run.
    * Determines if the run was missed (based on grace period) and applies
    * the appropriate missed run policy.
    */
   private async executeSchedule(schedule: Schedule, now: number): Promise<void> {
     try {
+      // Check for concurrent execution - skip if previous task is still running
+      if (this.isScheduleRunning(schedule.id)) {
+        const runningTaskId = this.getRunningTaskId(schedule.id);
+        this.logger.info('Skipping schedule - previous task still running', {
+          scheduleId: schedule.id,
+          runningTaskId,
+        });
+        // Don't update nextRunAt - let it trigger again on next tick
+        return;
+      }
+
       // Calculate how late we are
       const scheduledTime = schedule.nextRunAt ?? now;
       const delayMs = now - scheduledTime;

@@ -13,8 +13,8 @@ import {
   ScheduleStatus,
   MissedRunPolicy,
   createSchedule,
-  TaskId,
 } from '../../../src/core/domain.js';
+import type { Schedule } from '../../../src/core/domain.js';
 
 describe('SQLiteScheduleRepository - Unit Tests', () => {
   let db: Database;
@@ -224,7 +224,7 @@ describe('SQLiteScheduleRepository - Unit Tests', () => {
     });
 
     it('should respect offset', async () => {
-      const schedules = [];
+      const schedules: Schedule[] = [];
       for (let i = 0; i < 10; i++) {
         const s = createTestSchedule();
         schedules.push(s);
