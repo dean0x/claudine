@@ -4,7 +4,7 @@
  */
 
 import { Result } from './result.js';
-import { Task, TaskId, Worker, WorkerId, SystemResources, TaskOutput, DelegateRequest } from './domain.js';
+import { Task, TaskId, Worker, WorkerId, SystemResources, TaskOutput, DelegateRequest, Schedule, ScheduleId, ScheduleStatus } from './domain.js';
 import { ChildProcess } from 'child_process';
 import { ClaudineEvent, EventHandler, BaseEvent } from './events/events.js';
 
@@ -214,6 +214,95 @@ export interface DependencyRepository {
    * Remove all dependencies for a task (on task deletion)
    */
   deleteDependencies(taskId: TaskId): Promise<Result<void>>;
+}
+
+/**
+ * Schedule execution history record
+ * ARCHITECTURE: Tracks individual executions of a schedule for audit/debugging
+ * Pattern: Immutable record of each trigger attempt and outcome
+ */
+export interface ScheduleExecution {
+  readonly id: number;
+  readonly scheduleId: ScheduleId;
+  readonly taskId?: TaskId;               // ID of created task (if execution succeeded in creating one)
+  readonly scheduledFor: number;          // Epoch ms - when execution was scheduled to run
+  readonly executedAt?: number;           // Epoch ms - when execution actually started
+  readonly status: 'pending' | 'triggered' | 'completed' | 'failed' | 'missed' | 'skipped';
+  readonly errorMessage?: string;         // Error details if status is 'failed' or 'missed'
+  readonly createdAt: number;
+}
+
+/**
+ * Schedule persistence and query interface
+ * ARCHITECTURE: Pure Result pattern, no exceptions
+ * Pattern: Repository pattern for schedule management
+ * Rationale: Enables schedule CRUD, status tracking, due schedule queries
+ */
+export interface ScheduleRepository {
+  /**
+   * Save a new schedule
+   */
+  save(schedule: Schedule): Promise<Result<void>>;
+
+  /**
+   * Update an existing schedule
+   */
+  update(id: ScheduleId, update: Partial<Schedule>): Promise<Result<void>>;
+
+  /**
+   * Find schedule by ID
+   */
+  findById(id: ScheduleId): Promise<Result<Schedule | null>>;
+
+  /**
+   * Find schedules with optional pagination
+   *
+   * All implementations MUST use DEFAULT_LIMIT = 100 when limit is not specified.
+   * This ensures consistent behavior across implementations.
+   *
+   * @param limit Maximum results to return (default: 100, max recommended: 1000)
+   * @param offset Skip first N results (default: 0)
+   * @returns Paginated schedule list ordered by created_at DESC
+   */
+  findAll(limit?: number, offset?: number): Promise<Result<readonly Schedule[]>>;
+
+  /**
+   * Find schedules by status
+   */
+  findByStatus(status: ScheduleStatus): Promise<Result<readonly Schedule[]>>;
+
+  /**
+   * Find schedules that are due to execute (nextRunAt <= beforeTime)
+   * ARCHITECTURE: Critical for scheduler tick - finds schedules ready to trigger
+   * @param beforeTime Epoch ms - find schedules with nextRunAt before this time
+   * @returns Schedules due for execution ordered by nextRunAt ASC
+   */
+  findDue(beforeTime: number): Promise<Result<readonly Schedule[]>>;
+
+  /**
+   * Delete a schedule
+   */
+  delete(id: ScheduleId): Promise<Result<void>>;
+
+  /**
+   * Count total schedules
+   */
+  count(): Promise<Result<number>>;
+
+  /**
+   * Record a schedule execution attempt
+   * @param execution Execution record without ID (ID auto-generated)
+   * @returns Created execution record with ID
+   */
+  recordExecution(execution: Omit<ScheduleExecution, 'id'>): Promise<Result<ScheduleExecution>>;
+
+  /**
+   * Get execution history for a schedule
+   * @param scheduleId Schedule to get history for
+   * @param limit Maximum records to return (default: 100)
+   * @returns Execution history ordered by scheduledFor DESC
+   */
+  getExecutionHistory(scheduleId: ScheduleId, limit?: number): Promise<Result<readonly ScheduleExecution[]>>;
 }
 
 /**

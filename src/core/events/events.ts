@@ -3,7 +3,7 @@
  * All system state changes flow through these events
  */
 
-import { Task, TaskId, Worker, WorkerId } from '../domain.js';
+import { Task, TaskId, Worker, WorkerId, Schedule, ScheduleId, ScheduleStatus, MissedRunPolicy } from '../domain.js';
 import { ClaudineError } from '../errors.js';
 
 /**
@@ -217,6 +217,78 @@ export interface TaskDependencyFailedEvent extends BaseEvent {
 }
 
 /**
+ * Schedule lifecycle events
+ * ARCHITECTURE: Part of scheduled task execution system
+ * Pattern: Event-driven schedule management with execution tracking
+ */
+export interface ScheduleCreatedEvent extends BaseEvent {
+  type: 'ScheduleCreated';
+  schedule: Schedule;
+}
+
+export interface ScheduleTriggeredEvent extends BaseEvent {
+  type: 'ScheduleTriggered';
+  scheduleId: ScheduleId;
+  triggeredAt: number;  // Epoch ms when trigger occurred
+}
+
+export interface ScheduleExecutedEvent extends BaseEvent {
+  type: 'ScheduleExecuted';
+  scheduleId: ScheduleId;
+  taskId: TaskId;       // ID of the task created from this execution
+  executedAt: number;   // Epoch ms when execution started
+}
+
+export interface ScheduleMissedEvent extends BaseEvent {
+  type: 'ScheduleMissed';
+  scheduleId: ScheduleId;
+  missedAt: number;     // Epoch ms of the missed run time
+  policy: MissedRunPolicy;  // Policy that will be applied
+}
+
+export interface ScheduleCancelledEvent extends BaseEvent {
+  type: 'ScheduleCancelled';
+  scheduleId: ScheduleId;
+  reason?: string;
+}
+
+export interface SchedulePausedEvent extends BaseEvent {
+  type: 'SchedulePaused';
+  scheduleId: ScheduleId;
+}
+
+export interface ScheduleResumedEvent extends BaseEvent {
+  type: 'ScheduleResumed';
+  scheduleId: ScheduleId;
+}
+
+export interface ScheduleExpiredEvent extends BaseEvent {
+  type: 'ScheduleExpired';
+  scheduleId: ScheduleId;
+}
+
+export interface ScheduleUpdatedEvent extends BaseEvent {
+  type: 'ScheduleUpdated';
+  scheduleId: ScheduleId;
+  update: Partial<Schedule>;  // Fields that were updated
+}
+
+/**
+ * Schedule query events - for pure event-driven reads
+ * ARCHITECTURE: Follows same pattern as TaskStatusQuery/TaskStatusResponse
+ */
+export interface ScheduleQueryEvent extends BaseEvent {
+  type: 'ScheduleQuery';
+  scheduleId?: ScheduleId;    // If omitted, return all schedules
+  status?: ScheduleStatus;    // Optional filter by status
+}
+
+export interface ScheduleQueryResponseEvent extends BaseEvent {
+  type: 'ScheduleQueryResponse';
+  schedules: readonly Schedule[];
+}
+
+/**
  * System events
  */
 export interface SystemResourcesUpdatedEvent extends BaseEvent {
@@ -270,6 +342,19 @@ export type ClaudineEvent =
   | TaskDependencyResolvedEvent
   | TaskUnblockedEvent
   | TaskDependencyFailedEvent
+  // Schedule lifecycle events
+  | ScheduleCreatedEvent
+  | ScheduleTriggeredEvent
+  | ScheduleExecutedEvent
+  | ScheduleMissedEvent
+  | ScheduleCancelledEvent
+  | SchedulePausedEvent
+  | ScheduleResumedEvent
+  | ScheduleExpiredEvent
+  | ScheduleUpdatedEvent
+  // Schedule query events
+  | ScheduleQueryEvent
+  | ScheduleQueryResponseEvent
   // Worker events
   | WorkerSpawnedEvent
   | WorkerKilledEvent
