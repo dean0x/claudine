@@ -18,8 +18,8 @@ export {
   retryWithBackoff,
   retryImmediate,
   isRetryableError,
-  type RetryOptions,
 } from './retry.js';
+export type { RetryOptions } from './retry.js';
 
 // Validation utilities
 export {
