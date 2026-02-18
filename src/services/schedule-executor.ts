@@ -51,6 +51,12 @@ export class ScheduleExecutor {
   private readonly missedRunGracePeriodMs: number;
 
   /**
+   * Track subscriptions for cleanup on stop()
+   * ARCHITECTURE: Prevents resource leaks on repeated start/stop cycles
+   */
+  private readonly subscriptionIds: string[] = [];
+
+  /**
    * Track schedules with currently running tasks
    * ARCHITECTURE: Prevents concurrent execution of the same schedule
    * Key: scheduleId, Value: taskId of running task
@@ -63,7 +69,12 @@ export class ScheduleExecutor {
   /** Default grace period before considering a run "missed": 5 minutes */
   private static readonly DEFAULT_MISSED_RUN_GRACE_PERIOD_MS = 300_000;
 
-  constructor(
+  /**
+   * Private constructor - use ScheduleExecutor.create() instead
+   * ARCHITECTURE: Factory pattern keeps constructor pure (no side effects),
+   * matching ScheduleHandler's pattern
+   */
+  private constructor(
     private readonly scheduleRepo: ScheduleRepository,
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
@@ -71,45 +82,76 @@ export class ScheduleExecutor {
   ) {
     this.checkIntervalMs = options?.checkIntervalMs ?? ScheduleExecutor.DEFAULT_CHECK_INTERVAL_MS;
     this.missedRunGracePeriodMs = options?.missedRunGracePeriodMs ?? ScheduleExecutor.DEFAULT_MISSED_RUN_GRACE_PERIOD_MS;
+  }
 
-    // Subscribe to task completion events to clear running state
-    this.subscribeToTaskEvents();
+  /**
+   * Factory method to create a fully initialized ScheduleExecutor
+   * ARCHITECTURE: Guarantees subscriptions are set up before use.
+   * Matches ScheduleHandler's factory pattern.
+   */
+  static create(
+    scheduleRepo: ScheduleRepository,
+    eventBus: EventBus,
+    logger: Logger,
+    options?: ScheduleExecutorOptions
+  ): Result<ScheduleExecutor, ClaudineError> {
+    const executor = new ScheduleExecutor(scheduleRepo, eventBus, logger, options);
+
+    const subscribeResult = executor.subscribeToTaskEvents();
+    if (!subscribeResult.ok) {
+      return subscribeResult;
+    }
+
+    return ok(executor);
   }
 
   /**
    * Subscribe to task events to track completion of scheduled tasks
+   * ARCHITECTURE: Returns Result so factory can detect subscription failures.
+   * Stores subscription IDs for cleanup in stop().
    */
-  private subscribeToTaskEvents(): void {
-    // When a schedule execution creates a task, track it
-    this.eventBus.subscribe('ScheduleExecuted', async (event) => {
-      const e = event as ScheduleExecutedEvent;
-      this.markScheduleRunning(e.scheduleId, e.taskId);
-      this.logger.debug('Marked schedule as running', {
-        scheduleId: e.scheduleId,
-        taskId: e.taskId,
-      });
-    });
+  private subscribeToTaskEvents(): Result<void, ClaudineError> {
+    const subscriptions = [
+      // When a schedule execution creates a task, track it
+      this.eventBus.subscribe<ScheduleExecutedEvent>('ScheduleExecuted', async (event) => {
+        this.markScheduleRunning(event.scheduleId, event.taskId);
+        this.logger.debug('Marked schedule as running', {
+          scheduleId: event.scheduleId,
+          taskId: event.taskId,
+        });
+      }),
 
-    // When a task completes, check if it was from a schedule and clear running state
-    this.eventBus.subscribe('TaskCompleted', async (event) => {
-      const e = event as TaskCompletedEvent;
-      this.clearRunningScheduleByTask(e.taskId);
-    });
+      // When a task completes, check if it was from a schedule and clear running state
+      this.eventBus.subscribe<TaskCompletedEvent>('TaskCompleted', async (event) => {
+        this.clearRunningScheduleByTask(event.taskId);
+      }),
 
-    this.eventBus.subscribe('TaskFailed', async (event) => {
-      const e = event as TaskFailedEvent;
-      this.clearRunningScheduleByTask(e.taskId);
-    });
+      this.eventBus.subscribe<TaskFailedEvent>('TaskFailed', async (event) => {
+        this.clearRunningScheduleByTask(event.taskId);
+      }),
 
-    this.eventBus.subscribe('TaskCancelled', async (event) => {
-      const e = event as TaskCancelledEvent;
-      this.clearRunningScheduleByTask(e.taskId);
-    });
+      this.eventBus.subscribe<TaskCancelledEvent>('TaskCancelled', async (event) => {
+        this.clearRunningScheduleByTask(event.taskId);
+      }),
 
-    this.eventBus.subscribe('TaskTimeout', async (event) => {
-      const e = event as TaskTimeoutEvent;
-      this.clearRunningScheduleByTask(e.taskId);
-    });
+      this.eventBus.subscribe<TaskTimeoutEvent>('TaskTimeout', async (event) => {
+        this.clearRunningScheduleByTask(event.taskId);
+      }),
+    ];
+
+    // Verify all subscriptions succeeded and store IDs for cleanup
+    for (const result of subscriptions) {
+      if (!result.ok) {
+        return err(new ClaudineError(
+          ErrorCode.SYSTEM_ERROR,
+          `Failed to subscribe to events: ${result.error.message}`,
+          { error: result.error }
+        ));
+      }
+      this.subscriptionIds.push(result.value);
+    }
+
+    return ok(undefined);
   }
 
   /**
@@ -180,20 +222,24 @@ export class ScheduleExecutor {
   }
 
   /**
-   * Stop the scheduler
+   * Stop the scheduler and clean up all resources
    *
    * @returns Result<void> - Always succeeds
    */
   stop(): Result<void, ClaudineError> {
-    if (!this.isRunning) {
-      return ok(undefined);
-    }
-
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
     this.isRunning = false;
+
+    // Unsubscribe all event handlers to prevent resource leaks
+    for (const id of this.subscriptionIds) {
+      this.eventBus.unsubscribe(id);
+    }
+    this.subscriptionIds.length = 0;
+
+    this.runningSchedules.clear();
 
     this.logger.info('ScheduleExecutor stopped');
     return ok(undefined);

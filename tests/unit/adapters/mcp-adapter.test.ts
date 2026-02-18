@@ -14,7 +14,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { MCPAdapter } from '../../../src/adapters/mcp-adapter';
 import { TaskFactory } from '../../fixtures/factories';
-import type { TaskManager, Logger } from '../../../src/core/interfaces';
+import type { TaskManager, Logger, ScheduleRepository } from '../../../src/core/interfaces';
+import type { EventBus } from '../../../src/core/events/event-bus';
 import { ok, err } from '../../../src/core/result';
 import { ClaudineError, ErrorCode, taskNotFound } from '../../../src/core/errors';
 
@@ -162,6 +163,28 @@ class MockLogger implements Logger {
   }
 }
 
+// Stub ScheduleRepository — tests in this file do not exercise schedule features
+const stubScheduleRepository: ScheduleRepository = {
+  save: vi.fn().mockResolvedValue(ok(undefined)),
+  update: vi.fn().mockResolvedValue(ok(undefined)),
+  findById: vi.fn().mockResolvedValue(ok(null)),
+  findAll: vi.fn().mockResolvedValue(ok([])),
+  findByStatus: vi.fn().mockResolvedValue(ok([])),
+  findDue: vi.fn().mockResolvedValue(ok([])),
+  delete: vi.fn().mockResolvedValue(ok(undefined)),
+  count: vi.fn().mockResolvedValue(ok(0)),
+};
+
+// Stub EventBus — tests in this file do not exercise event features
+const stubEventBus: EventBus = {
+  emit: vi.fn().mockResolvedValue(ok(undefined)),
+  request: vi.fn().mockResolvedValue(ok(undefined)),
+  subscribe: vi.fn().mockReturnValue(ok('sub-id')),
+  unsubscribe: vi.fn().mockReturnValue(ok(undefined)),
+  subscribeAll: vi.fn().mockReturnValue(ok('sub-id')),
+  unsubscribeAll: vi.fn(),
+};
+
 describe('MCPAdapter - Protocol Compliance', () => {
   let adapter: MCPAdapter;
   let mockTaskManager: MockTaskManager;
@@ -170,7 +193,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
   beforeEach(() => {
     mockTaskManager = new MockTaskManager();
     mockLogger = new MockLogger();
-    adapter = new MCPAdapter(mockTaskManager, mockLogger);
+    adapter = new MCPAdapter(mockTaskManager, mockLogger, stubScheduleRepository, stubEventBus);
   });
 
   afterEach(() => {

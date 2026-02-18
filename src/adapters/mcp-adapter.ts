@@ -105,8 +105,8 @@ export class MCPAdapter {
   constructor(
     private readonly taskManager: TaskManager,
     private readonly logger: Logger,
-    private readonly scheduleRepository?: ScheduleRepository,
-    private readonly eventBus?: EventBus
+    private readonly scheduleRepository: ScheduleRepository,
+    private readonly eventBus: EventBus
   ) {
     this.server = new Server(
       {
@@ -905,7 +905,31 @@ export class MCPAdapter {
       }
       nextRunAt = nextResult.value;
     } else {
-      nextRunAt = scheduledAtMs!;
+      if (scheduledAtMs === undefined) {
+        return {
+          content: [{ type: 'text', text: 'scheduledAt must be provided for one-time schedules' }],
+          isError: true,
+        };
+      }
+      nextRunAt = scheduledAtMs;
+    }
+
+    // SECURITY: Validate workingDirectory to prevent path traversal attacks
+    let validatedWorkingDirectory: string | undefined;
+    if (data.workingDirectory) {
+      const pathValidation = validatePath(data.workingDirectory);
+      if (!pathValidation.ok) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Invalid working directory: ${pathValidation.error.message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      validatedWorkingDirectory = pathValidation.value;
     }
 
     // Create schedule
@@ -913,7 +937,7 @@ export class MCPAdapter {
       taskTemplate: {
         prompt: data.prompt,
         priority: data.priority as Priority | undefined,
-        workingDirectory: data.workingDirectory,
+        workingDirectory: validatedWorkingDirectory,
       },
       scheduleType: data.scheduleType === 'cron' ? ScheduleType.CRON : ScheduleType.ONE_TIME,
       cronExpression: data.cronExpression,
@@ -926,24 +950,7 @@ export class MCPAdapter {
       expiresAt: expiresAtMs,
     });
 
-    // Check dependencies are available
-    if (!this.scheduleRepository || !this.eventBus) {
-      return {
-        content: [{ type: 'text', text: 'Schedule repository not available' }],
-        isError: true,
-      };
-    }
-
-    // Save schedule
-    const saveResult = await this.scheduleRepository.save(schedule);
-    if (!saveResult.ok) {
-      return {
-        content: [{ type: 'text', text: `Failed to save schedule: ${saveResult.error.message}` }],
-        isError: true,
-      };
-    }
-
-    // Emit event
+    // Emit event - ScheduleHandler persists with calculated nextRunAt
     await this.eventBus.emit('ScheduleCreated', { schedule });
 
     return {
@@ -974,26 +981,18 @@ export class MCPAdapter {
       };
     }
 
-    if (!this.scheduleRepository) {
-      return {
-        content: [{ type: 'text', text: 'Schedule repository not available' }],
-        isError: true,
-      };
-    }
-
     const { status, limit, offset } = parseResult.data;
 
     let schedules: readonly Schedule[];
     if (status) {
-      const statusResult = await this.scheduleRepository.findByStatus(status as ScheduleStatus);
+      const statusResult = await this.scheduleRepository.findByStatus(status as ScheduleStatus, limit, offset);
       if (!statusResult.ok) {
         return {
           content: [{ type: 'text', text: `Failed to list schedules: ${statusResult.error.message}` }],
           isError: true,
         };
       }
-      // Apply pagination manually for findByStatus
-      schedules = statusResult.value.slice(offset, offset + limit);
+      schedules = statusResult.value;
     } else {
       const result = await this.scheduleRepository.findAll(limit, offset);
       if (!result.ok) {
@@ -1036,13 +1035,6 @@ export class MCPAdapter {
     if (!parseResult.success) {
       return {
         content: [{ type: 'text', text: `Validation error: ${parseResult.error.message}` }],
-        isError: true,
-      };
-    }
-
-    if (!this.scheduleRepository) {
-      return {
-        content: [{ type: 'text', text: 'Schedule repository not available' }],
         isError: true,
       };
     }
@@ -1128,12 +1120,6 @@ export class MCPAdapter {
       };
     }
 
-    if (!this.scheduleRepository || !this.eventBus) {
-      return {
-        content: [{ type: 'text', text: 'Schedule repository not available' }],
-        isError: true,
-      };
-    }
 
     const { scheduleId, reason } = parseResult.data;
 
@@ -1184,12 +1170,6 @@ export class MCPAdapter {
       };
     }
 
-    if (!this.scheduleRepository || !this.eventBus) {
-      return {
-        content: [{ type: 'text', text: 'Schedule repository not available' }],
-        isError: true,
-      };
-    }
 
     const { scheduleId } = parseResult.data;
 
@@ -1245,12 +1225,6 @@ export class MCPAdapter {
       };
     }
 
-    if (!this.scheduleRepository || !this.eventBus) {
-      return {
-        content: [{ type: 'text', text: 'Schedule repository not available' }],
-        isError: true,
-      };
-    }
 
     const { scheduleId } = parseResult.data;
 

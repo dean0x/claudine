@@ -394,6 +394,7 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
 
   // Register schedule executor for task scheduling (v0.4.0)
   // ARCHITECTURE: ScheduleExecutor runs timer-based tick loop for due schedules
+  // Uses factory pattern (ScheduleExecutor.create()) to keep constructor pure
   container.registerSingleton('scheduleExecutor', () => {
     const scheduleRepoResult = container.get<ScheduleRepository>('scheduleRepository');
     const eventBusResult = container.get<EventBus>('eventBus');
@@ -403,13 +404,17 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
       throw new Error('Failed to get dependencies for ScheduleExecutor');
     }
 
-    const executor = new ScheduleExecutor(
+    const createResult = ScheduleExecutor.create(
       scheduleRepoResult.value,
       eventBusResult.value,
       loggerResult.value.child({ module: 'ScheduleExecutor' })
     );
 
-    return executor;
+    if (!createResult.ok) {
+      throw new Error(`Failed to create ScheduleExecutor: ${createResult.error.message}`);
+    }
+
+    return createResult.value;
   });
 
   // Initialize schedule executor after recovery completes
