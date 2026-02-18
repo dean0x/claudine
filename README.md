@@ -20,6 +20,7 @@
 - **Intelligent Resource Management**: Monitors CPU and memory in real-time, spawning workers when resources are available
 - **Task Persistence & Recovery**: SQLite storage with automatic crash recovery
 - **Task Dependencies**: DAG-based dependency resolution with cycle detection
+- **Task Scheduling**: Cron and one-time scheduling with timezone support and missed run policies
 
 See **[FEATURES.md](./docs/FEATURES.md)** for complete feature list.
 
@@ -73,6 +74,12 @@ Once configured, use these tools in Claude Code:
 | **TaskStatus** | Get real-time task status | `TaskStatus({ taskId })` |
 | **TaskLogs** | Stream or retrieve execution logs | `TaskLogs({ taskId })` |
 | **CancelTask** | Cancel tasks with resource cleanup | `CancelTask({ taskId, reason })` |
+| **ScheduleTask** | Schedule recurring or one-time tasks | `ScheduleTask({ prompt: "...", scheduleType: "cron", cronExpression: "0 2 * * *" })` |
+| **ListSchedules** | List schedules with optional status filter | `ListSchedules({ status: "active" })` |
+| **GetSchedule** | Get schedule details and execution history | `GetSchedule({ scheduleId })` |
+| **CancelSchedule** | Cancel an active schedule | `CancelSchedule({ scheduleId, reason })` |
+| **PauseSchedule** | Pause a schedule (resumable) | `PauseSchedule({ scheduleId })` |
+| **ResumeSchedule** | Resume a paused schedule | `ResumeSchedule({ scheduleId })` |
 
 ### CLI Commands
 
@@ -118,6 +125,30 @@ const commit = await DelegateTask({
 ```
 
 See **[Task Dependencies Documentation](./docs/TASK-DEPENDENCIES.md)** for advanced patterns (diamond dependencies, error handling, failure propagation).
+
+### Task Scheduling
+
+Schedule tasks for future or recurring execution:
+
+```typescript
+// Recurring: daily backup at 2am EST
+await ScheduleTask({
+  prompt: "Backup database to S3",
+  scheduleType: "cron",
+  cronExpression: "0 2 * * *",
+  timezone: "America/New_York",
+  missedRunPolicy: "catchup"
+});
+
+// One-time: deploy tomorrow at 8am UTC
+await ScheduleTask({
+  prompt: "Deploy to production",
+  scheduleType: "one_time",
+  scheduledAt: "2026-02-19T08:00:00Z"
+});
+```
+
+**Schedule types**: `cron` (5-field expressions) and `one_time` (ISO 8601 datetime). **Missed run policies**: `skip`, `catchup`, `fail`. Supports IANA timezones and concurrent execution prevention.
 
 ## Architecture
 
@@ -208,7 +239,7 @@ claudine/
 - [x] v0.2.3 - Stability improvements
 - [x] v0.3.0 - Task dependency resolution
 - [ ] v0.3.1 - Dependency performance optimizations
-- [ ] v0.4.0 - Task resumption and scheduling
+- [ ] v0.4.0 - Task resumption (scheduling implemented)
 - [ ] v0.5.0 - Distributed multi-server processing
 
 See **[ROADMAP.md](./docs/ROADMAP.md)** for detailed plans and timelines.

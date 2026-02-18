@@ -55,6 +55,8 @@ npm run test:coverage       # With coverage
 - `QueueHandler` → dependency-aware task queueing
 - `WorkerHandler` → worker lifecycle
 - `PersistenceHandler` → database operations
+- `ScheduleHandler` → schedule lifecycle (create, pause, resume, cancel)
+- `ScheduleExecutor` → cron/one-time execution engine (note: has direct repo writes, architectural exception to pure event-driven pattern)
 
 See `docs/architecture/` for implementation details.
 
@@ -140,6 +142,8 @@ gh release create v{version} --notes-file docs/releases/RELEASE_NOTES_v{version}
 - SQLite with WAL mode for concurrent access
 - All mutations go through event handlers (PersistenceHandler, DependencyHandler)
 - Use synchronous transactions for TOCTOU protection (cycle detection)
+- `schedules` table: schedule definitions, cron/one-time config, status, timezone
+- `schedule_executions` table: execution history and audit trail
 
 ### Dependencies
 
@@ -150,7 +154,7 @@ When adding task dependencies:
 
 ### MCP Tools
 
-All tools use PascalCase: `DelegateTask`, `TaskStatus`, `TaskLogs`, `CancelTask`
+All tools use PascalCase: `DelegateTask`, `TaskStatus`, `TaskLogs`, `CancelTask`, `ScheduleTask`, `ListSchedules`, `GetSchedule`, `CancelSchedule`, `PauseSchedule`, `ResumeSchedule`
 
 ## File Locations
 
@@ -167,6 +171,10 @@ Quick reference for common operations:
 | Handler setup | `src/services/handler-setup.ts` |
 | MCP adapter | `src/adapters/mcp-adapter.ts` |
 | CLI | `src/cli.ts` |
+| Schedule repository | `src/implementations/schedule-repository.ts` |
+| Schedule handler | `src/services/handlers/schedule-handler.ts` |
+| Schedule executor | `src/services/schedule-executor.ts` |
+| Cron utilities | `src/utils/cron.ts` |
 
 ## Documentation Structure
 

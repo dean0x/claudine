@@ -2,7 +2,7 @@
 
 This document lists all features that are **currently implemented and working** in Claudine v0.3.x.
 
-Last Updated: November 2025
+Last Updated: February 2026
 
 ## ✅ Core Task Delegation
 
@@ -172,11 +172,41 @@ Last Updated: November 2025
 - **DependencyResolved**: Emitted when blocking dependency completes
 - **TaskUnblocked**: Emitted when all dependencies resolved, triggers automatic queuing
 
+## ✅ Task Scheduling (v0.4.0)
+
+### MCP Tools
+- **ScheduleTask**: Create recurring (cron) or one-time scheduled tasks
+- **ListSchedules**: List all schedules with optional status filter and pagination
+- **GetSchedule**: Get schedule details including execution history
+- **CancelSchedule**: Cancel an active schedule with optional reason
+- **PauseSchedule**: Pause an active schedule (can be resumed later)
+- **ResumeSchedule**: Resume a paused schedule
+
+### Schedule Types
+- **CRON**: Standard 5-field cron expressions for recurring task execution
+- **ONE_TIME**: ISO 8601 datetime for single future execution
+
+### Configuration
+- **Timezone Support**: IANA timezone identifiers (e.g., `America/New_York`) with DST awareness
+- **Missed Run Policies**: `skip` (ignore missed runs), `catchup` (execute missed runs), `fail` (mark as failed)
+- **Max Runs**: Optional limit on number of executions for cron schedules
+- **Expiration**: Optional ISO 8601 expiry datetime for schedules
+
+### Concurrent Execution Prevention
+- **Lock-Based Protection**: Prevents overlapping executions of the same schedule
+- **Execution Tracking**: Full history of schedule executions with status and timing
+
+### Event-Driven Integration
+- **ScheduleCreated**: Emitted when a new schedule is created
+- **ScheduleCancelled**: Emitted when a schedule is cancelled
+- **SchedulePaused**: Emitted when a schedule is paused
+- **ScheduleResumed**: Emitted when a schedule is resumed
+- **ScheduleExecuted**: Emitted when a scheduled task is triggered
+
 ## ❌ NOT Implemented (Despite Some Documentation Claims)
 - **Distributed Processing**: Single-server only
 - **Web UI**: No dashboard interface
 - **Task Templates**: No preset task configurations
-- **Scheduled Tasks**: No cron-like scheduling
 - **Multi-User Support**: Single-user focused
 - **REST API**: MCP protocol only
 

@@ -134,7 +134,7 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
     `);
 
     this.findByStatusStmt = this.db.prepare(`
-      SELECT * FROM schedules WHERE status = ? ORDER BY created_at DESC
+      SELECT * FROM schedules WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?
     `);
 
     // ARCHITECTURE: Critical query for scheduler tick - finds schedules ready to trigger
@@ -279,15 +279,20 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
   }
 
   /**
-   * Find schedules by status
+   * Find schedules by status with optional pagination
    *
    * @param status - The schedule status to filter by
-   * @returns Result containing array of schedules matching status
+   * @param limit - Maximum results to return (default: 100)
+   * @param offset - Number of records to skip (default: 0)
+   * @returns Result containing paginated array of schedules matching status
    */
-  async findByStatus(status: ScheduleStatus): Promise<Result<readonly Schedule[]>> {
+  async findByStatus(status: ScheduleStatus, limit?: number, offset?: number): Promise<Result<readonly Schedule[]>> {
     return tryCatchAsync(
       async () => {
-        const rows = this.findByStatusStmt.all(status) as ScheduleRow[];
+        const effectiveLimit = limit ?? SQLiteScheduleRepository.DEFAULT_LIMIT;
+        const effectiveOffset = offset ?? 0;
+
+        const rows = this.findByStatusStmt.all(status, effectiveLimit, effectiveOffset) as ScheduleRow[];
         return rows.map(row => this.rowToSchedule(row));
       },
       operationErrorHandler('find schedules by status', { status })
@@ -399,8 +404,31 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
 
     // Parse taskTemplate from JSON
     let taskTemplate: DelegateRequest;
+    // Zod schema for DelegateRequest - validates at system boundary (parse, don't validate)
+    const DelegateRequestSchema = z.object({
+      prompt: z.string().min(1),
+      priority: z.enum(['P0', 'P1', 'P2']).optional(),
+      workingDirectory: z.string().optional(),
+      useWorktree: z.boolean().optional(),
+      worktreeCleanup: z.enum(['auto', 'keep', 'delete']).optional(),
+      mergeStrategy: z.enum(['pr', 'auto', 'manual', 'patch']).optional(),
+      branchName: z.string().optional(),
+      baseBranch: z.string().optional(),
+      autoCommit: z.boolean().optional(),
+      pushToRemote: z.boolean().optional(),
+      prTitle: z.string().optional(),
+      prBody: z.string().optional(),
+      timeout: z.number().optional(),
+      maxOutputBuffer: z.number().optional(),
+      parentTaskId: z.string().optional(),
+      retryCount: z.number().optional(),
+      retryOf: z.string().optional(),
+      dependsOn: z.array(z.string()).optional(),
+    });
+
     try {
-      taskTemplate = JSON.parse(data.task_template) as DelegateRequest;
+      const parsed = JSON.parse(data.task_template);
+      taskTemplate = DelegateRequestSchema.parse(parsed) as DelegateRequest;
     } catch (e) {
       throw new Error(`Invalid task_template JSON for schedule ${data.id}: ${e}`);
     }
@@ -455,7 +483,7 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
       case 'fail':
         return MissedRunPolicy.FAIL;
       default:
-        return MissedRunPolicy.SKIP;
+        throw new Error(`Unknown missed_run_policy: ${value} - possible data corruption`);
     }
   }
 
@@ -475,7 +503,7 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
       case 'expired':
         return ScheduleStatus.EXPIRED;
       default:
-        return ScheduleStatus.ACTIVE;
+        throw new Error(`Unknown schedule status: ${value} - possible data corruption`);
     }
   }
 }

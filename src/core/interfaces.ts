@@ -267,9 +267,17 @@ export interface ScheduleRepository {
   findAll(limit?: number, offset?: number): Promise<Result<readonly Schedule[]>>;
 
   /**
-   * Find schedules by status
+   * Find schedules by status with optional pagination
+   *
+   * All implementations MUST use DEFAULT_LIMIT = 100 when limit is not specified.
+   * This ensures consistent behavior across implementations.
+   *
+   * @param status Schedule status to filter by
+   * @param limit Maximum results to return (default: 100, max recommended: 1000)
+   * @param offset Skip first N results (default: 0)
+   * @returns Paginated schedule list matching status, ordered by created_at DESC
    */
-  findByStatus(status: ScheduleStatus): Promise<Result<readonly Schedule[]>>;
+  findByStatus(status: ScheduleStatus, limit?: number, offset?: number): Promise<Result<readonly Schedule[]>>;
 
   /**
    * Find schedules that are due to execute (nextRunAt <= beforeTime)

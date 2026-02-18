@@ -445,8 +445,8 @@ export class Database {
               timezone TEXT NOT NULL DEFAULT 'UTC',
               missed_run_policy TEXT NOT NULL DEFAULT 'skip' CHECK (missed_run_policy IN ('skip', 'catchup', 'fail')),
               status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'completed', 'cancelled', 'expired')),
-              max_runs INTEGER,
-              run_count INTEGER NOT NULL DEFAULT 0,
+              max_runs INTEGER CHECK (max_runs > 0),
+              run_count INTEGER NOT NULL DEFAULT 0 CHECK (run_count >= 0),
               last_run_at INTEGER,
               next_run_at INTEGER,
               expires_at INTEGER,
@@ -479,6 +479,7 @@ export class Database {
             CREATE INDEX IF NOT EXISTS idx_schedules_next_run ON schedules(next_run_at);
             CREATE INDEX IF NOT EXISTS idx_schedules_due ON schedules(status, next_run_at);
             CREATE INDEX IF NOT EXISTS idx_schedule_executions_schedule ON schedule_executions(schedule_id);
+            CREATE INDEX IF NOT EXISTS idx_schedule_executions_schedule_time ON schedule_executions(schedule_id, scheduled_for DESC);
             CREATE INDEX IF NOT EXISTS idx_schedule_executions_status ON schedule_executions(status);
           `);
         }
