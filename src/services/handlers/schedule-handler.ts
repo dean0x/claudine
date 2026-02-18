@@ -24,8 +24,6 @@ import {
   ScheduleResumedEvent,
   ScheduleQueryEvent,
   ScheduleUpdatedEvent,
-  TaskCompletedEvent,
-  TaskFailedEvent,
 } from '../../core/events/events.js';
 import { ClaudineError, ErrorCode } from '../../core/errors.js';
 import { validateCronExpression, getNextRunTime, isValidTimezone } from '../../utils/cron.js';
@@ -113,9 +111,6 @@ export class ScheduleHandler extends BaseEventHandler {
       this.eventBus.subscribe('ScheduleUpdated', this.handleScheduleUpdated.bind(this)),
       // Query events
       this.eventBus.subscribe('ScheduleQuery', this.handleScheduleQuery.bind(this)),
-      // Task completion events - update execution history
-      this.eventBus.subscribe('TaskCompleted', this.handleTaskCompleted.bind(this)),
-      this.eventBus.subscribe('TaskFailed', this.handleTaskFailed.bind(this)),
     ];
 
     // Check if any subscription failed
@@ -203,6 +198,13 @@ export class ScheduleHandler extends BaseEventHandler {
           ));
         }
         nextRunAt = schedule.scheduledAt;
+      } else {
+        const _exhaustive: never = schedule.scheduleType;
+        return err(new ClaudineError(
+          ErrorCode.INVALID_INPUT,
+          `Unknown schedule type: ${schedule.scheduleType}`,
+          { scheduleId: schedule.id }
+        ));
       }
 
       // Update schedule with calculated nextRunAt and save
@@ -303,6 +305,13 @@ export class ScheduleHandler extends BaseEventHandler {
         );
         if (nextResult.ok) {
           newNextRunAt = nextResult.value;
+        } else {
+          this.logger.error('Failed to calculate next run, pausing schedule', nextResult.error, {
+            scheduleId,
+            cronExpression: schedule.cronExpression,
+          });
+          newStatus = ScheduleStatus.PAUSED;
+          // newNextRunAt remains undefined -- will be explicitly set below to clear nextRunAt
         }
       } else if (schedule.scheduleType === ScheduleType.ONE_TIME) {
         // ONE_TIME schedules complete after single execution
@@ -329,10 +338,13 @@ export class ScheduleHandler extends BaseEventHandler {
       }
 
       // Build update object immutably
+      // IMPORTANT: Always include nextRunAt to prevent infinite retrigger when getNextRunTime fails.
+      // If newNextRunAt is undefined (e.g., cron parse failure), this clears the old past nextRunAt
+      // so the schedule is not returned by findDue on every tick.
       const updates: Partial<Schedule> = {
         runCount: newRunCount,
         lastRunAt: triggeredAt,
-        ...(newNextRunAt !== undefined ? { nextRunAt: newNextRunAt } : {}),
+        nextRunAt: newNextRunAt,
         ...(newStatus !== undefined ? { status: newStatus } : {}),
       };
 
@@ -562,32 +574,4 @@ export class ScheduleHandler extends BaseEventHandler {
     });
   }
 
-  // ============================================================================
-  // TASK COMPLETION HANDLERS - Update execution history
-  // ============================================================================
-
-  /**
-   * Handle task completion - update related execution history
-   */
-  private async handleTaskCompleted(event: TaskCompletedEvent): Promise<void> {
-    await this.handleEvent(event, async (e) => {
-      // This is a lightweight check - only update if the task was from a scheduled execution
-      // We don't have a direct link from task to schedule, so this is best-effort
-      // The execution record was already created with status 'triggered' when schedule fired
-      // For full tracking, we would need to add scheduleId to Task model (future enhancement)
-      this.logger.debug('Task completed', { taskId: e.taskId });
-      return ok(undefined);
-    });
-  }
-
-  /**
-   * Handle task failure - update related execution history
-   */
-  private async handleTaskFailed(event: TaskFailedEvent): Promise<void> {
-    await this.handleEvent(event, async (e) => {
-      // Same note as handleTaskCompleted - best-effort tracking
-      this.logger.debug('Task failed', { taskId: e.taskId, error: e.error.message });
-      return ok(undefined);
-    });
-  }
 }
