@@ -769,7 +769,7 @@ export class TestOutputCapture implements OutputCapture {
     return ok(undefined);
   }
 
-  getOutput(taskId: TaskId): Result<TaskOutput, Error> {
+  getOutput(taskId: TaskId, _tail?: number): Result<TaskOutput, Error> {
     const output = this.outputs.get(taskId);
 
     if (!output) {

@@ -10,10 +10,19 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TaskFactory } from '../fixtures/factories';
-import type { TaskManager } from '../../src/core/interfaces';
+import type { TaskManager, ScheduleService } from '../../src/core/interfaces';
 import type { Container } from '../../src/core/container';
 import { ok, err } from '../../src/core/result';
 import { ClaudineError, ErrorCode, taskNotFound } from '../../src/core/errors';
+import {
+  ScheduleType,
+  ScheduleStatus,
+  MissedRunPolicy,
+  ScheduleId,
+  TaskId,
+  createSchedule,
+} from '../../src/core/domain';
+import type { Schedule, ScheduleExecution, ResumeTaskRequest } from '../../src/core/domain';
 
 // Test constants
 const VALID_PROMPT = 'analyze the codebase';
@@ -90,13 +99,136 @@ class MockTaskManager implements TaskManager {
     return ok(newTask);
   }
 
+  resumeCalls: any[] = [];
+
+  async resume(request: ResumeTaskRequest) {
+    this.resumeCalls.push(request);
+    const oldTask = this.taskStorage.get(request.taskId);
+    if (!oldTask) {
+      return err(taskNotFound(request.taskId));
+    }
+    if (oldTask.status !== 'completed' && oldTask.status !== 'failed' && oldTask.status !== 'cancelled') {
+      return err(new ClaudineError(
+        ErrorCode.INVALID_OPERATION,
+        `Task ${request.taskId} cannot be resumed in state ${oldTask.status}`
+      ));
+    }
+    const newTask = new TaskFactory()
+      .withPrompt(`PREVIOUS TASK CONTEXT:\n${oldTask.prompt}`)
+      .build();
+    (newTask as any).retryCount = 1;
+    (newTask as any).parentTaskId = request.taskId;
+    this.taskStorage.set(newTask.id, newTask);
+    return ok(newTask);
+  }
+
+  // Stub worktree methods to satisfy interface
+  async listWorktrees() { return ok([]); }
+  async getWorktreeStatus() { return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, 'Not implemented')); }
+  async cleanupWorktrees() { return ok({ removed: 0, kept: 0, errors: [] }); }
+
   reset() {
     this.delegateCalls = [];
     this.statusCalls = [];
     this.logsCalls = [];
     this.cancelCalls = [];
     this.retryCalls = [];
+    this.resumeCalls = [];
     this.taskStorage.clear();
+  }
+}
+
+/**
+ * Mock ScheduleService for CLI schedule command testing
+ */
+class MockScheduleService implements ScheduleService {
+  createCalls: any[] = [];
+  listCalls: any[] = [];
+  getCalls: any[] = [];
+  cancelCalls: any[] = [];
+  pauseCalls: any[] = [];
+  resumeCalls: any[] = [];
+
+  private scheduleStorage = new Map<string, Schedule>();
+
+  async createSchedule(request: any) {
+    this.createCalls.push(request);
+    const schedule = createSchedule({
+      taskTemplate: {
+        prompt: request.prompt,
+        priority: request.priority,
+        workingDirectory: request.workingDirectory,
+      },
+      scheduleType: request.scheduleType,
+      cronExpression: request.cronExpression,
+      scheduledAt: request.scheduledAt ? Date.parse(request.scheduledAt) : undefined,
+      timezone: request.timezone ?? 'UTC',
+      missedRunPolicy: request.missedRunPolicy ?? MissedRunPolicy.SKIP,
+      maxRuns: request.maxRuns,
+      expiresAt: request.expiresAt ? Date.parse(request.expiresAt) : undefined,
+      afterScheduleId: request.afterScheduleId,
+    });
+    this.scheduleStorage.set(schedule.id, schedule);
+    return ok(schedule);
+  }
+
+  async listSchedules(status?: ScheduleStatus, limit?: number, offset?: number) {
+    this.listCalls.push({ status, limit, offset });
+    const all = Array.from(this.scheduleStorage.values());
+    if (status) {
+      return ok(all.filter(s => s.status === status));
+    }
+    return ok(all);
+  }
+
+  async getSchedule(scheduleId: string, includeHistory?: boolean, historyLimit?: number) {
+    this.getCalls.push({ scheduleId, includeHistory, historyLimit });
+    const schedule = this.scheduleStorage.get(scheduleId);
+    if (!schedule) {
+      return err(new ClaudineError(
+        ErrorCode.TASK_NOT_FOUND,
+        `Schedule ${scheduleId} not found`
+      ));
+    }
+    const history: ScheduleExecution[] = includeHistory ? [] : undefined as any;
+    return ok({ schedule, history });
+  }
+
+  async cancelSchedule(scheduleId: string, reason?: string) {
+    this.cancelCalls.push({ scheduleId, reason });
+    const schedule = this.scheduleStorage.get(scheduleId);
+    if (!schedule) {
+      return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`));
+    }
+    return ok(undefined);
+  }
+
+  async pauseSchedule(scheduleId: string) {
+    this.pauseCalls.push({ scheduleId });
+    const schedule = this.scheduleStorage.get(scheduleId);
+    if (!schedule) {
+      return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`));
+    }
+    return ok(undefined);
+  }
+
+  async resumeSchedule(scheduleId: string) {
+    this.resumeCalls.push({ scheduleId });
+    const schedule = this.scheduleStorage.get(scheduleId);
+    if (!schedule) {
+      return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`));
+    }
+    return ok(undefined);
+  }
+
+  reset() {
+    this.createCalls = [];
+    this.listCalls = [];
+    this.getCalls = [];
+    this.cancelCalls = [];
+    this.pauseCalls = [];
+    this.resumeCalls = [];
+    this.scheduleStorage.clear();
   }
 }
 
@@ -681,11 +813,402 @@ describe('CLI - Command Parsing and Validation', () => {
 });
 
 // ============================================================================
+// Schedule, Pipeline, and Resume Command Tests
+// ============================================================================
+
+describe('CLI - Schedule Commands', () => {
+  let mockScheduleService: MockScheduleService;
+
+  beforeEach(() => {
+    mockScheduleService = new MockScheduleService();
+  });
+
+  afterEach(() => {
+    mockScheduleService.reset();
+  });
+
+  describe('schedule create', () => {
+    it('should create a cron schedule with required fields', async () => {
+      const result = await simulateScheduleCreate(mockScheduleService, {
+        prompt: 'run tests',
+        type: 'cron',
+        cron: '0 9 * * *',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockScheduleService.createCalls).toHaveLength(1);
+      expect(mockScheduleService.createCalls[0].prompt).toBe('run tests');
+      expect(mockScheduleService.createCalls[0].scheduleType).toBe(ScheduleType.CRON);
+      expect(mockScheduleService.createCalls[0].cronExpression).toBe('0 9 * * *');
+    });
+
+    it('should create a one-time schedule with scheduledAt', async () => {
+      const futureDate = new Date(Date.now() + 86400000).toISOString();
+      const result = await simulateScheduleCreate(mockScheduleService, {
+        prompt: 'deploy',
+        type: 'one_time',
+        at: futureDate,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockScheduleService.createCalls[0].scheduleType).toBe(ScheduleType.ONE_TIME);
+      expect(mockScheduleService.createCalls[0].scheduledAt).toBe(futureDate);
+    });
+
+    it('should pass optional parameters through correctly', async () => {
+      const result = await simulateScheduleCreate(mockScheduleService, {
+        prompt: 'run tests',
+        type: 'cron',
+        cron: '0 9 * * 1-5',
+        timezone: 'America/New_York',
+        missedRunPolicy: 'catchup',
+        priority: 'P0',
+        workingDirectory: '/workspace',
+        maxRuns: 10,
+      });
+
+      expect(result.ok).toBe(true);
+      const call = mockScheduleService.createCalls[0];
+      expect(call.timezone).toBe('America/New_York');
+      expect(call.missedRunPolicy).toBe(MissedRunPolicy.CATCHUP);
+      expect(call.maxRuns).toBe(10);
+    });
+
+    it('should pass afterScheduleId for schedule chaining', async () => {
+      const result = await simulateScheduleCreate(mockScheduleService, {
+        prompt: 'second task',
+        type: 'cron',
+        cron: '0 9 * * *',
+        afterScheduleId: 'schedule-abc123',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockScheduleService.createCalls[0].afterScheduleId).toBe(ScheduleId('schedule-abc123'));
+    });
+
+    it('should reject missing prompt', () => {
+      const validation = validateScheduleCreateInput('', { type: 'cron', cron: '0 9 * * *' });
+      expect(validation.ok).toBe(false);
+    });
+
+    it('should reject missing schedule type', () => {
+      const validation = validateScheduleCreateInput('run tests', {});
+      expect(validation.ok).toBe(false);
+    });
+
+    it('should reject invalid schedule type', () => {
+      const validation = validateScheduleCreateInput('run tests', { type: 'weekly' });
+      expect(validation.ok).toBe(false);
+    });
+  });
+
+  describe('schedule list', () => {
+    it('should list all schedules without filter', async () => {
+      await simulateScheduleCreate(mockScheduleService, {
+        prompt: 'task 1',
+        type: 'cron',
+        cron: '0 9 * * *',
+      });
+
+      const result = await mockScheduleService.listSchedules();
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.length).toBe(1);
+      }
+    });
+
+    it('should filter by status', async () => {
+      const result = await mockScheduleService.listSchedules(ScheduleStatus.ACTIVE);
+
+      expect(result.ok).toBe(true);
+      expect(mockScheduleService.listCalls).toHaveLength(1);
+      expect(mockScheduleService.listCalls[0].status).toBe(ScheduleStatus.ACTIVE);
+    });
+  });
+
+  describe('schedule get', () => {
+    it('should get schedule details by ID', async () => {
+      const createResult = await simulateScheduleCreate(mockScheduleService, {
+        prompt: 'test',
+        type: 'cron',
+        cron: '0 9 * * *',
+      });
+      expect(createResult.ok).toBe(true);
+      if (!createResult.ok) return;
+
+      const result = await mockScheduleService.getSchedule(createResult.value.id);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.schedule.id).toBe(createResult.value.id);
+      }
+    });
+
+    it('should return error for non-existent schedule', async () => {
+      const result = await mockScheduleService.getSchedule(ScheduleId('non-existent'));
+      expect(result.ok).toBe(false);
+    });
+  });
+
+  describe('schedule cancel', () => {
+    it('should cancel existing schedule', async () => {
+      const createResult = await simulateScheduleCreate(mockScheduleService, {
+        prompt: 'test',
+        type: 'cron',
+        cron: '0 9 * * *',
+      });
+      expect(createResult.ok).toBe(true);
+      if (!createResult.ok) return;
+
+      const result = await mockScheduleService.cancelSchedule(createResult.value.id, 'no longer needed');
+      expect(result.ok).toBe(true);
+      expect(mockScheduleService.cancelCalls[0].reason).toBe('no longer needed');
+    });
+
+    it('should return error for non-existent schedule', async () => {
+      const result = await mockScheduleService.cancelSchedule(ScheduleId('non-existent'));
+      expect(result.ok).toBe(false);
+    });
+  });
+
+  describe('schedule pause', () => {
+    it('should pause existing schedule', async () => {
+      const createResult = await simulateScheduleCreate(mockScheduleService, {
+        prompt: 'test',
+        type: 'cron',
+        cron: '0 9 * * *',
+      });
+      expect(createResult.ok).toBe(true);
+      if (!createResult.ok) return;
+
+      const result = await mockScheduleService.pauseSchedule(createResult.value.id);
+      expect(result.ok).toBe(true);
+    });
+  });
+
+  describe('schedule resume', () => {
+    it('should resume existing schedule', async () => {
+      const createResult = await simulateScheduleCreate(mockScheduleService, {
+        prompt: 'test',
+        type: 'cron',
+        cron: '0 9 * * *',
+      });
+      expect(createResult.ok).toBe(true);
+      if (!createResult.ok) return;
+
+      const result = await mockScheduleService.resumeSchedule(createResult.value.id);
+      expect(result.ok).toBe(true);
+    });
+  });
+});
+
+describe('CLI - Pipeline Command', () => {
+  let mockScheduleService: MockScheduleService;
+
+  beforeEach(() => {
+    mockScheduleService = new MockScheduleService();
+  });
+
+  afterEach(() => {
+    mockScheduleService.reset();
+  });
+
+  describe('parseDelay', () => {
+    it('should parse seconds correctly', () => {
+      expect(testParseDelay('30s')).toBe(30 * 1000);
+      expect(testParseDelay('1s')).toBe(1000);
+    });
+
+    it('should parse minutes correctly', () => {
+      expect(testParseDelay('5m')).toBe(5 * 60 * 1000);
+      expect(testParseDelay('1m')).toBe(60 * 1000);
+    });
+
+    it('should parse hours correctly', () => {
+      expect(testParseDelay('2h')).toBe(2 * 60 * 60 * 1000);
+    });
+
+    it('should return null for invalid format', () => {
+      expect(testParseDelay('abc')).toBeNull();
+      expect(testParseDelay('5')).toBeNull();
+      expect(testParseDelay('m5')).toBeNull();
+      expect(testParseDelay('')).toBeNull();
+    });
+  });
+
+  describe('pipeline creation', () => {
+    it('should create pipeline with single step', async () => {
+      const result = await simulatePipeline(mockScheduleService, ['setup db']);
+
+      expect(result.ok).toBe(true);
+      expect(mockScheduleService.createCalls).toHaveLength(1);
+      expect(mockScheduleService.createCalls[0].prompt).toBe('setup db');
+      expect(mockScheduleService.createCalls[0].scheduleType).toBe(ScheduleType.ONE_TIME);
+    });
+
+    it('should create pipeline with multiple chained steps', async () => {
+      const result = await simulatePipeline(mockScheduleService, [
+        'setup db',
+        '5m',
+        'run migrations',
+        '10m',
+        'seed data',
+      ]);
+
+      expect(result.ok).toBe(true);
+      expect(mockScheduleService.createCalls).toHaveLength(3);
+
+      // First step has no afterScheduleId
+      expect(mockScheduleService.createCalls[0].prompt).toBe('setup db');
+      expect(mockScheduleService.createCalls[0].afterScheduleId).toBeUndefined();
+
+      // Second step chains to first
+      expect(mockScheduleService.createCalls[1].prompt).toBe('run migrations');
+      expect(mockScheduleService.createCalls[1].afterScheduleId).toBeDefined();
+
+      // Third step chains to second
+      expect(mockScheduleService.createCalls[2].prompt).toBe('seed data');
+      expect(mockScheduleService.createCalls[2].afterScheduleId).toBeDefined();
+    });
+
+    it('should reject empty pipeline', () => {
+      const validation = validatePipelineInput([]);
+      expect(validation.ok).toBe(false);
+    });
+  });
+});
+
+describe('CLI - Resume Command', () => {
+  let mockTaskManager: MockTaskManager;
+
+  beforeEach(() => {
+    mockTaskManager = new MockTaskManager();
+  });
+
+  afterEach(() => {
+    mockTaskManager.reset();
+  });
+
+  describe('resume', () => {
+    it('should resume a failed task', async () => {
+      // Create and fail a task first
+      const delegateResult = await simulateDelegateCommand(mockTaskManager, 'original task');
+      expect(delegateResult.ok).toBe(true);
+      if (!delegateResult.ok) return;
+
+      const taskId = delegateResult.value.id;
+      // Manually set task as failed
+      const task = mockTaskManager['taskStorage'].get(taskId);
+      task.status = 'failed';
+
+      const result = await simulateResumeCommand(mockTaskManager, taskId);
+
+      expect(result.ok).toBe(true);
+      expect(mockTaskManager.resumeCalls).toHaveLength(1);
+      expect(mockTaskManager.resumeCalls[0].taskId).toBe(taskId);
+    });
+
+    it('should pass additional context to resume', async () => {
+      const delegateResult = await simulateDelegateCommand(mockTaskManager, 'original');
+      expect(delegateResult.ok).toBe(true);
+      if (!delegateResult.ok) return;
+
+      const taskId = delegateResult.value.id;
+      const task = mockTaskManager['taskStorage'].get(taskId);
+      task.status = 'completed';
+
+      const result = await simulateResumeCommand(mockTaskManager, taskId, 'Try a different approach');
+
+      expect(result.ok).toBe(true);
+      expect(mockTaskManager.resumeCalls[0].additionalContext).toBe('Try a different approach');
+    });
+
+    it('should return new task with retry metadata', async () => {
+      const delegateResult = await simulateDelegateCommand(mockTaskManager, 'original');
+      expect(delegateResult.ok).toBe(true);
+      if (!delegateResult.ok) return;
+
+      const taskId = delegateResult.value.id;
+      const task = mockTaskManager['taskStorage'].get(taskId);
+      task.status = 'failed';
+
+      const result = await simulateResumeCommand(mockTaskManager, taskId);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.id).not.toBe(taskId);
+        expect(result.value.retryCount).toBe(1);
+        expect(result.value.parentTaskId).toBe(taskId);
+      }
+    });
+
+    it('should reject resume for non-existent task', async () => {
+      const result = await simulateResumeCommand(mockTaskManager, 'non-existent');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe(ErrorCode.TASK_NOT_FOUND);
+      }
+    });
+
+    it('should reject resume for non-terminal task', async () => {
+      const delegateResult = await simulateDelegateCommand(mockTaskManager, 'original');
+      expect(delegateResult.ok).toBe(true);
+      if (!delegateResult.ok) return;
+
+      const taskId = delegateResult.value.id;
+      // Task is still in 'queued' status (non-terminal)
+
+      const result = await simulateResumeCommand(mockTaskManager, taskId);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe(ErrorCode.INVALID_OPERATION);
+      }
+    });
+  });
+});
+
+describe('CLI - Help Text Coverage', () => {
+  it('should include schedule commands in help text', () => {
+    const helpText = getHelpText();
+
+    expect(helpText).toContain('schedule create');
+    expect(helpText).toContain('schedule list');
+    expect(helpText).toContain('schedule get');
+    expect(helpText).toContain('schedule cancel');
+    expect(helpText).toContain('schedule pause');
+    expect(helpText).toContain('schedule resume');
+  });
+
+  it('should include pipeline command in help text', () => {
+    const helpText = getHelpText();
+
+    expect(helpText).toContain('pipeline');
+    expect(helpText).toContain('--delay');
+  });
+
+  it('should include resume command in help text', () => {
+    const helpText = getHelpText();
+
+    expect(helpText).toContain('resume');
+    expect(helpText).toContain('--context');
+  });
+
+  it('should include scheduling examples', () => {
+    const helpText = getHelpText();
+
+    expect(helpText).toContain('--type cron');
+    expect(helpText).toContain('--cron');
+  });
+});
+
+// ============================================================================
 // Helper Functions - Simulate CLI commands without actually running CLI
 // ============================================================================
 
 function getHelpText(): string {
-  // Simulate help text extraction
+  // Simulate help text extraction - must match actual showHelp() output
   return `
 🤖 Claudine - MCP Server for Task Delegation
 
@@ -702,9 +1225,29 @@ Task Commands:
   logs <task-id> [--tail N]    Get output logs
   cancel <task-id> [reason]    Cancel a running task
 
+Schedule Commands:
+  schedule create <prompt> [options]   Create a scheduled task
+    --type cron|one_time               Schedule type (required)
+    --cron "0 9 * * 1-5"              Cron expression (5-field, for cron type)
+    --at "2025-03-01T09:00:00Z"       ISO 8601 datetime (for one_time type)
+  schedule list [--status active|paused|...] [--limit N]
+  schedule get <schedule-id> [--history] [--history-limit N]
+  schedule cancel <schedule-id> [reason]
+  schedule pause <schedule-id>
+  schedule resume <schedule-id>
+
+Pipeline Commands:
+  pipeline <prompt> [--delay Nm <prompt>]...   Create chained one-time schedules
+
+Task Resumption:
+  resume <task-id> [--context "additional instructions"]
+
 Examples:
   claudine delegate "analyze codebase" --priority P0
   claudine status abc123
+  claudine schedule create "run tests" --type cron --cron "0 9 * * 1-5"
+  claudine pipeline "setup db" --delay 5m "run migrations"
+  claudine resume <task-id> --context "Try a different approach"
 `;
 }
 
@@ -855,4 +1398,150 @@ async function simulateRetryCommand(
   taskId: string
 ) {
   return await taskManager.retry(taskId);
+}
+
+// ============================================================================
+// Schedule, Pipeline, Resume Helpers
+// ============================================================================
+
+function validateScheduleCreateInput(prompt: string, options: any) {
+  if (!prompt || prompt.trim().length === 0) {
+    return err(new ClaudineError(
+      ErrorCode.INVALID_INPUT,
+      'Prompt is required for schedule creation',
+      { field: 'prompt' }
+    ));
+  }
+
+  if (!options.type || !['cron', 'one_time'].includes(options.type)) {
+    return err(new ClaudineError(
+      ErrorCode.INVALID_INPUT,
+      '--type must be "cron" or "one_time"',
+      { field: 'type', value: options.type }
+    ));
+  }
+
+  return ok(undefined);
+}
+
+async function simulateScheduleCreate(
+  service: MockScheduleService,
+  options: {
+    prompt: string;
+    type: string;
+    cron?: string;
+    at?: string;
+    timezone?: string;
+    missedRunPolicy?: string;
+    priority?: string;
+    workingDirectory?: string;
+    maxRuns?: number;
+    expiresAt?: string;
+    afterScheduleId?: string;
+  }
+) {
+  const validation = validateScheduleCreateInput(options.prompt, options);
+  if (!validation.ok) return validation;
+
+  return service.createSchedule({
+    prompt: options.prompt,
+    scheduleType: options.type === 'cron' ? ScheduleType.CRON : ScheduleType.ONE_TIME,
+    cronExpression: options.cron,
+    scheduledAt: options.at,
+    timezone: options.timezone,
+    missedRunPolicy: options.missedRunPolicy === 'catchup' ? MissedRunPolicy.CATCHUP : options.missedRunPolicy === 'fail' ? MissedRunPolicy.FAIL : options.missedRunPolicy ? MissedRunPolicy.SKIP : undefined,
+    priority: options.priority,
+    workingDirectory: options.workingDirectory,
+    maxRuns: options.maxRuns,
+    expiresAt: options.expiresAt,
+    afterScheduleId: options.afterScheduleId ? ScheduleId(options.afterScheduleId) : undefined,
+  });
+}
+
+/**
+ * Test-safe parseDelay that returns null instead of process.exit
+ */
+function testParseDelay(delayStr: string): number | null {
+  const match = delayStr.match(/^(\d+)(s|m|h)$/);
+  if (!match) return null;
+  const value = parseInt(match[1]);
+  const unit = match[2];
+  switch (unit) {
+    case 's': return value * 1000;
+    case 'm': return value * 60 * 1000;
+    case 'h': return value * 60 * 60 * 1000;
+    default: return value * 1000;
+  }
+}
+
+function validatePipelineInput(steps: string[]) {
+  if (steps.length === 0) {
+    return err(new ClaudineError(
+      ErrorCode.INVALID_INPUT,
+      'No pipeline steps found',
+      { field: 'steps' }
+    ));
+  }
+  return ok(undefined);
+}
+
+async function simulatePipeline(
+  service: MockScheduleService,
+  pipelineArgs: string[]
+) {
+  // Parse pipeline: prompt, delay, prompt, delay, prompt...
+  const steps: Array<{ prompt: string; delayMs: number }> = [];
+  let currentPromptWords: string[] = [];
+  let cumulativeDelay = 0;
+
+  for (let i = 0; i < pipelineArgs.length; i++) {
+    const arg = pipelineArgs[i];
+    const delayMs = testParseDelay(arg);
+    if (delayMs !== null) {
+      // This is a delay value - save current prompt and add delay
+      if (currentPromptWords.length > 0) {
+        steps.push({ prompt: currentPromptWords.join(' '), delayMs: cumulativeDelay });
+        currentPromptWords = [];
+      }
+      cumulativeDelay += delayMs;
+    } else {
+      currentPromptWords.push(arg);
+    }
+  }
+
+  if (currentPromptWords.length > 0) {
+    steps.push({ prompt: currentPromptWords.join(' '), delayMs: cumulativeDelay });
+  }
+
+  const validation = validatePipelineInput(steps.map(s => s.prompt));
+  if (!validation.ok) return validation;
+
+  const now = Date.now();
+  let previousScheduleId: string | undefined;
+
+  for (const step of steps) {
+    const scheduledAt = new Date(now + step.delayMs).toISOString();
+    const result = await service.createSchedule({
+      prompt: step.prompt,
+      scheduleType: ScheduleType.ONE_TIME,
+      scheduledAt,
+      afterScheduleId: previousScheduleId ? ScheduleId(previousScheduleId) : undefined,
+    });
+
+    if (!result.ok) return result;
+    previousScheduleId = result.value.id;
+  }
+
+  return ok(undefined);
+}
+
+async function simulateResumeCommand(
+  taskManager: MockTaskManager,
+  taskId: string,
+  additionalContext?: string
+) {
+  return taskManager.resume({
+    taskId: TaskId(taskId),
+    additionalContext,
+  });
 }
