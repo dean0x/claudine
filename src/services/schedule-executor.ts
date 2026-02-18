@@ -6,8 +6,7 @@
  */
 
 import { EventBus } from '../core/events/event-bus.js';
-import { ScheduleRepository } from '../core/interfaces.js';
-import { Logger } from '../core/interfaces.js';
+import { ScheduleRepository, Logger } from '../core/interfaces.js';
 import { Result, ok, err } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
 import {

@@ -58,6 +58,32 @@ const ScheduleExecutionRowSchema = z.object({
 });
 
 /**
+ * Zod schema for validating task_template JSON from database
+ * Pattern: Parse, don't validate - ensures type safety at system boundary
+ * Hoisted to module level to avoid recreation on every rowToSchedule() call
+ */
+const DelegateRequestSchema = z.object({
+  prompt: z.string().min(1),
+  priority: z.enum(['P0', 'P1', 'P2']).optional(),
+  workingDirectory: z.string().optional(),
+  useWorktree: z.boolean().optional(),
+  worktreeCleanup: z.enum(['auto', 'keep', 'delete']).optional(),
+  mergeStrategy: z.enum(['pr', 'auto', 'manual', 'patch']).optional(),
+  branchName: z.string().optional(),
+  baseBranch: z.string().optional(),
+  autoCommit: z.boolean().optional(),
+  pushToRemote: z.boolean().optional(),
+  prTitle: z.string().optional(),
+  prBody: z.string().optional(),
+  timeout: z.number().optional(),
+  maxOutputBuffer: z.number().optional(),
+  parentTaskId: z.string().optional(),
+  retryCount: z.number().optional(),
+  retryOf: z.string().optional(),
+  dependsOn: z.array(z.string()).optional(),
+});
+
+/**
  * Database row type for schedules table
  * TYPE-SAFETY: Explicit typing instead of Record<string, any>
  */
@@ -402,30 +428,8 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
     // This catches database corruption or schema mismatches early
     const data = ScheduleRowSchema.parse(row);
 
-    // Parse taskTemplate from JSON
+    // Parse and validate taskTemplate JSON at system boundary
     let taskTemplate: DelegateRequest;
-    // Zod schema for DelegateRequest - validates at system boundary (parse, don't validate)
-    const DelegateRequestSchema = z.object({
-      prompt: z.string().min(1),
-      priority: z.enum(['P0', 'P1', 'P2']).optional(),
-      workingDirectory: z.string().optional(),
-      useWorktree: z.boolean().optional(),
-      worktreeCleanup: z.enum(['auto', 'keep', 'delete']).optional(),
-      mergeStrategy: z.enum(['pr', 'auto', 'manual', 'patch']).optional(),
-      branchName: z.string().optional(),
-      baseBranch: z.string().optional(),
-      autoCommit: z.boolean().optional(),
-      pushToRemote: z.boolean().optional(),
-      prTitle: z.string().optional(),
-      prBody: z.string().optional(),
-      timeout: z.number().optional(),
-      maxOutputBuffer: z.number().optional(),
-      parentTaskId: z.string().optional(),
-      retryCount: z.number().optional(),
-      retryOf: z.string().optional(),
-      dependsOn: z.array(z.string()).optional(),
-    });
-
     try {
       const parsed = JSON.parse(data.task_template);
       taskTemplate = DelegateRequestSchema.parse(parsed) as DelegateRequest;

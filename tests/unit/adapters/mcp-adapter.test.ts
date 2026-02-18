@@ -173,6 +173,8 @@ const stubScheduleRepository: ScheduleRepository = {
   findDue: vi.fn().mockResolvedValue(ok([])),
   delete: vi.fn().mockResolvedValue(ok(undefined)),
   count: vi.fn().mockResolvedValue(ok(0)),
+  recordExecution: vi.fn().mockResolvedValue(ok({ id: 1, scheduleId: '', scheduledFor: 0, status: 'pending', createdAt: 0 })),
+  getExecutionHistory: vi.fn().mockResolvedValue(ok([])),
 };
 
 // Stub EventBus — tests in this file do not exercise event features

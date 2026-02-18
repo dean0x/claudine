@@ -99,6 +99,27 @@ const ResumeScheduleSchema = z.object({
   scheduleId: z.string().describe('Schedule ID to resume'),
 });
 
+/** Standard MCP tool response shape */
+interface MCPToolResponse {
+  content: { type: string; text: string }[];
+  isError?: boolean;
+}
+
+/**
+ * Map missedRunPolicy string to MissedRunPolicy enum
+ * Defaults to SKIP for unrecognized values (Zod schema already validates)
+ */
+function toMissedRunPolicy(value: string | undefined): MissedRunPolicy {
+  switch (value) {
+    case 'catchup':
+      return MissedRunPolicy.CATCHUP;
+    case 'fail':
+      return MissedRunPolicy.FAIL;
+    default:
+      return MissedRunPolicy.SKIP;
+  }
+}
+
 export class MCPAdapter {
   private server: Server;
 
@@ -818,7 +839,7 @@ export class MCPAdapter {
    * Handle ScheduleTask tool call
    * Creates a new schedule for recurring or one-time task execution
    */
-  private async handleScheduleTask(args: unknown): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+  private async handleScheduleTask(args: unknown): Promise<MCPToolResponse> {
     // Validate input at boundary
     const parseResult = ScheduleTaskSchema.safeParse(args);
     if (!parseResult.success) {
@@ -943,9 +964,7 @@ export class MCPAdapter {
       cronExpression: data.cronExpression,
       scheduledAt: scheduledAtMs,
       timezone: tz,
-      missedRunPolicy: data.missedRunPolicy === 'catchup' ? MissedRunPolicy.CATCHUP
-        : data.missedRunPolicy === 'fail' ? MissedRunPolicy.FAIL
-        : MissedRunPolicy.SKIP,
+      missedRunPolicy: toMissedRunPolicy(data.missedRunPolicy),
       maxRuns: data.maxRuns,
       expiresAt: expiresAtMs,
     });
@@ -972,7 +991,7 @@ export class MCPAdapter {
    * Handle ListSchedules tool call
    * Lists schedules with optional status filter and pagination
    */
-  private async handleListSchedules(args: unknown): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+  private async handleListSchedules(args: unknown): Promise<MCPToolResponse> {
     const parseResult = ListSchedulesSchema.safeParse(args);
     if (!parseResult.success) {
       return {
@@ -1030,7 +1049,7 @@ export class MCPAdapter {
    * Handle GetSchedule tool call
    * Gets details of a specific schedule with optional execution history
    */
-  private async handleGetSchedule(args: unknown): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+  private async handleGetSchedule(args: unknown): Promise<MCPToolResponse> {
     const parseResult = GetScheduleSchema.safeParse(args);
     if (!parseResult.success) {
       return {
@@ -1111,7 +1130,7 @@ export class MCPAdapter {
    * Handle CancelSchedule tool call
    * Cancels an active schedule
    */
-  private async handleCancelSchedule(args: unknown): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+  private async handleCancelSchedule(args: unknown): Promise<MCPToolResponse> {
     const parseResult = CancelScheduleSchema.safeParse(args);
     if (!parseResult.success) {
       return {
@@ -1119,7 +1138,6 @@ export class MCPAdapter {
         isError: true,
       };
     }
-
 
     const { scheduleId, reason } = parseResult.data;
 
@@ -1161,7 +1179,7 @@ export class MCPAdapter {
    * Handle PauseSchedule tool call
    * Pauses an active schedule (can be resumed later)
    */
-  private async handlePauseSchedule(args: unknown): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+  private async handlePauseSchedule(args: unknown): Promise<MCPToolResponse> {
     const parseResult = PauseScheduleSchema.safeParse(args);
     if (!parseResult.success) {
       return {
@@ -1169,7 +1187,6 @@ export class MCPAdapter {
         isError: true,
       };
     }
-
 
     const { scheduleId } = parseResult.data;
 
@@ -1216,7 +1233,7 @@ export class MCPAdapter {
    * Handle ResumeSchedule tool call
    * Resumes a paused schedule
    */
-  private async handleResumeSchedule(args: unknown): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+  private async handleResumeSchedule(args: unknown): Promise<MCPToolResponse> {
     const parseResult = ResumeScheduleSchema.safeParse(args);
     if (!parseResult.success) {
       return {
@@ -1224,7 +1241,6 @@ export class MCPAdapter {
         isError: true,
       };
     }
-
 
     const { scheduleId } = parseResult.data;
 
