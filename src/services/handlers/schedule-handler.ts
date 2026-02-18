@@ -268,8 +268,8 @@ export class ScheduleHandler extends BaseEventHandler {
       const task = createTask(schedule.taskTemplate);
       const taskSaveResult = await this.taskRepo.save(task);
       if (!taskSaveResult.ok) {
-        // Record failed execution
-        await this.scheduleRepo.recordExecution({
+        // Record failed execution (audit trail - log on failure but don't block)
+        const failedExecResult = await this.scheduleRepo.recordExecution({
           scheduleId,
           scheduledFor: schedule.nextRunAt ?? triggeredAt,
           executedAt: triggeredAt,
@@ -277,11 +277,14 @@ export class ScheduleHandler extends BaseEventHandler {
           errorMessage: `Failed to create task: ${taskSaveResult.error.message}`,
           createdAt: Date.now(),
         });
+        if (!failedExecResult.ok) {
+          this.logger.error('Failed to record failed execution', failedExecResult.error, { scheduleId });
+        }
         return taskSaveResult;
       }
 
-      // Record successful execution
-      await this.scheduleRepo.recordExecution({
+      // Record successful execution (audit trail - log on failure but don't block)
+      const execResult = await this.scheduleRepo.recordExecution({
         scheduleId,
         taskId: task.id,
         scheduledFor: schedule.nextRunAt ?? triggeredAt,
@@ -289,6 +292,9 @@ export class ScheduleHandler extends BaseEventHandler {
         status: 'triggered',
         createdAt: Date.now(),
       });
+      if (!execResult.ok) {
+        this.logger.error('Failed to record triggered execution', execResult.error, { scheduleId });
+      }
 
       // Calculate update fields for schedule
       const newRunCount = schedule.runCount + 1;

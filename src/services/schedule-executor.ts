@@ -391,12 +391,17 @@ export class ScheduleExecutor {
         this.logger.info('Catching up missed schedule run', { scheduleId: schedule.id });
         break;
 
-      case MissedRunPolicy.FAIL:
+      case MissedRunPolicy.FAIL: {
         // Mark schedule as cancelled due to missed run
-        await this.scheduleRepo.update(schedule.id, {
+        const cancelResult = await this.scheduleRepo.update(schedule.id, {
           status: ScheduleStatus.CANCELLED,
           nextRunAt: undefined,
         });
+        if (!cancelResult.ok) {
+          this.logger.error('Failed to cancel schedule on missed run', cancelResult.error, {
+            scheduleId: schedule.id,
+          });
+        }
 
         await this.eventBus.emit('ScheduleMissed', {
           scheduleId: schedule.id,
@@ -404,17 +409,23 @@ export class ScheduleExecutor {
           policy: MissedRunPolicy.FAIL,
         });
 
-        // Record failed execution
-        await this.scheduleRepo.recordExecution({
+        // Record failed execution (audit trail - log on failure but don't block)
+        const execResult = await this.scheduleRepo.recordExecution({
           scheduleId: schedule.id,
           scheduledFor: missedAt,
           status: 'missed',
           errorMessage: `Schedule missed by ${now - missedAt}ms, policy: FAIL`,
           createdAt: now,
         });
+        if (!execResult.ok) {
+          this.logger.error('Failed to record missed execution', execResult.error, {
+            scheduleId: schedule.id,
+          });
+        }
 
         this.logger.info('Schedule failed due to missed run', { scheduleId: schedule.id });
         break;
+      }
     }
   }
 
@@ -427,10 +438,15 @@ export class ScheduleExecutor {
   private async updateNextRun(schedule: Schedule): Promise<void> {
     if (schedule.scheduleType === ScheduleType.ONE_TIME) {
       // One-time schedules don't repeat - mark as completed
-      await this.scheduleRepo.update(schedule.id, {
+      const completeResult = await this.scheduleRepo.update(schedule.id, {
         status: ScheduleStatus.COMPLETED,
         nextRunAt: undefined,
       });
+      if (!completeResult.ok) {
+        this.logger.error('Failed to mark one-time schedule as completed', completeResult.error, {
+          scheduleId: schedule.id,
+        });
+      }
 
       this.logger.info('One-time schedule completed', { scheduleId: schedule.id });
       return;
@@ -445,9 +461,15 @@ export class ScheduleExecutor {
       );
 
       if (nextResult.ok) {
-        await this.scheduleRepo.update(schedule.id, {
+        const updateResult = await this.scheduleRepo.update(schedule.id, {
           nextRunAt: nextResult.value,
         });
+        if (!updateResult.ok) {
+          this.logger.error('Failed to update nextRunAt', updateResult.error, {
+            scheduleId: schedule.id,
+            nextRunAt: nextResult.value,
+          });
+        }
 
         this.logger.debug('Updated nextRunAt for schedule', {
           scheduleId: schedule.id,
