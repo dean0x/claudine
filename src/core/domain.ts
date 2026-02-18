@@ -276,6 +276,7 @@ export interface Schedule {
   readonly lastRunAt?: number;             // Timestamp of last execution (epoch ms)
   readonly nextRunAt?: number;             // Computed next execution time (epoch ms)
   readonly expiresAt?: number;             // Optional expiration time (epoch ms)
+  readonly afterScheduleId?: ScheduleId;  // Chain: new tasks depend on this schedule's latest task
   readonly createdAt: number;
   readonly updatedAt: number;
 }
@@ -293,6 +294,7 @@ export interface ScheduleRequest {
   readonly missedRunPolicy?: MissedRunPolicy; // Default: SKIP
   readonly maxRuns?: number;               // Optional limit for CRON
   readonly expiresAt?: number;             // Optional expiration
+  readonly afterScheduleId?: ScheduleId;   // Chain: block until after-schedule's latest task completes
 }
 
 /**
@@ -310,6 +312,7 @@ export interface ScheduleUpdate {
   readonly lastRunAt?: number;
   readonly nextRunAt?: number;
   readonly expiresAt?: number;
+  readonly afterScheduleId?: ScheduleId;
 }
 
 /**
@@ -333,6 +336,7 @@ export const createSchedule = (request: ScheduleRequest): Schedule => {
     lastRunAt: undefined,
     nextRunAt: request.scheduleType === ScheduleType.ONE_TIME ? request.scheduledAt : undefined,
     expiresAt: request.expiresAt,
+    afterScheduleId: request.afterScheduleId,
     createdAt: now,
     updatedAt: now,
   });
@@ -357,3 +361,48 @@ export const updateSchedule = (schedule: Schedule, update: ScheduleUpdate): Sche
 export const isScheduleActive = (schedule: Schedule): boolean => {
   return schedule.status === ScheduleStatus.ACTIVE;
 };
+
+/**
+ * Request type for creating schedules via ScheduleService
+ * ARCHITECTURE: Flat structure for CLI/service consumption (not event-oriented)
+ */
+export interface ScheduleCreateRequest {
+  readonly prompt: string;
+  readonly scheduleType: ScheduleType;
+  readonly cronExpression?: string;
+  readonly scheduledAt?: string;        // ISO 8601 string (parsed by service)
+  readonly timezone?: string;           // IANA timezone, default 'UTC'
+  readonly missedRunPolicy?: MissedRunPolicy;
+  readonly priority?: Priority;
+  readonly workingDirectory?: string;
+  readonly maxRuns?: number;
+  readonly expiresAt?: string;          // ISO 8601 string (parsed by service)
+  readonly afterScheduleId?: ScheduleId; // Chain: block until after-schedule's latest task completes
+}
+
+/**
+ * Task checkpoint - snapshot of task state at completion/failure
+ * ARCHITECTURE: Captures enough context to create enriched retry prompts
+ * Pattern: Immutable record, created by CheckpointHandler on task terminal events
+ */
+export interface TaskCheckpoint {
+  readonly id: number;
+  readonly taskId: TaskId;
+  readonly checkpointType: 'completed' | 'failed' | 'cancelled';
+  readonly outputSummary?: string;      // Last N lines of stdout
+  readonly errorSummary?: string;       // Last N lines of stderr or error message
+  readonly gitBranch?: string;
+  readonly gitCommitSha?: string;
+  readonly gitDirtyFiles?: readonly string[];
+  readonly contextNote?: string;        // User-provided context on resume
+  readonly createdAt: number;
+}
+
+/**
+ * Request type for resuming a failed/completed task with enriched context
+ * ARCHITECTURE: "Smart retry" - captures checkpoint + additional context to create better retry
+ */
+export interface ResumeTaskRequest {
+  readonly taskId: TaskId;
+  readonly additionalContext?: string;   // User-provided instructions for retry
+}

@@ -4,7 +4,7 @@
  */
 
 import { Result } from './result.js';
-import { Task, TaskId, Worker, WorkerId, SystemResources, TaskOutput, DelegateRequest, Schedule, ScheduleId, ScheduleStatus } from './domain.js';
+import { Task, TaskId, Worker, WorkerId, SystemResources, TaskOutput, DelegateRequest, Schedule, ScheduleId, ScheduleStatus, ScheduleCreateRequest, TaskCheckpoint, ResumeTaskRequest } from './domain.js';
 import { ChildProcess } from 'child_process';
 import { ClaudineEvent, EventHandler, BaseEvent } from './events/events.js';
 
@@ -366,6 +366,7 @@ export interface TaskManager {
   getLogs(taskId: TaskId, tail?: number): Promise<Result<TaskOutput>>;
   cancel(taskId: TaskId, reason?: string): Promise<Result<void>>;
   retry(taskId: TaskId): Promise<Result<Task>>;
+  resume(request: ResumeTaskRequest): Promise<Result<Task>>;
 
   // Worktree management methods (event-driven)
   listWorktrees(includeStale?: boolean, olderThanDays?: number): Promise<Result<readonly WorktreeStatus[]>>;
@@ -472,4 +473,30 @@ export interface WorktreeCleanupResult {
     ageInDays: number;
   }>;
   warnings?: string[];
+}
+
+/**
+ * Schedule management service
+ * ARCHITECTURE: Extracted from MCP adapter for CLI reuse
+ * Pattern: Service layer with DI, Result types, event emission
+ */
+export interface ScheduleService {
+  createSchedule(request: ScheduleCreateRequest): Promise<Result<Schedule>>;
+  listSchedules(status?: ScheduleStatus, limit?: number, offset?: number): Promise<Result<readonly Schedule[]>>;
+  getSchedule(scheduleId: ScheduleId, includeHistory?: boolean, historyLimit?: number): Promise<Result<{ schedule: Schedule; history?: readonly ScheduleExecution[] }>>;
+  cancelSchedule(scheduleId: ScheduleId, reason?: string): Promise<Result<void>>;
+  pauseSchedule(scheduleId: ScheduleId): Promise<Result<void>>;
+  resumeSchedule(scheduleId: ScheduleId): Promise<Result<void>>;
+}
+
+/**
+ * Checkpoint persistence for task resumption
+ * ARCHITECTURE: Stores task state snapshots for "smart retry" enrichment
+ * Pattern: Repository pattern following ScheduleRepository conventions
+ */
+export interface CheckpointRepository {
+  save(checkpoint: Omit<TaskCheckpoint, 'id'>): Promise<Result<TaskCheckpoint>>;
+  findLatest(taskId: TaskId): Promise<Result<TaskCheckpoint | null>>;
+  findAll(taskId: TaskId, limit?: number): Promise<Result<readonly TaskCheckpoint[]>>;
+  deleteByTask(taskId: TaskId): Promise<Result<void>>;
 }

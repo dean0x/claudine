@@ -4,19 +4,19 @@
  */
 
 import { TaskRepository, Logger } from '../../core/interfaces.js';
-import { Result, ok, err } from '../../core/result.js';
+import { Result, ok } from '../../core/result.js';
 import { BaseEventHandler } from '../../core/events/handlers.js';
 import { EventBus } from '../../core/events/event-bus.js';
-import { 
-  TaskDelegatedEvent, 
-  TaskStartedEvent, 
-  TaskCompletedEvent, 
-  TaskFailedEvent, 
+import {
+  TaskDelegatedEvent,
+  TaskStartedEvent,
+  TaskCompletedEvent,
+  TaskFailedEvent,
   TaskCancelledEvent,
   TaskTimeoutEvent,
-  createEvent
 } from '../../core/events/events.js';
-import { TaskStatus, updateTask } from '../../core/domain.js';
+import { TaskStatus } from '../../core/domain.js';
+import type { Task } from '../../core/domain.js';
 
 export class PersistenceHandler extends BaseEventHandler {
   private eventBus?: EventBus;
@@ -90,22 +90,12 @@ export class PersistenceHandler extends BaseEventHandler {
    */
   private async handleTaskStarted(event: TaskStartedEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
-      // Get current task from database
-      const taskResult = await this.repository.findById(event.taskId);
-      
-      if (!taskResult.ok || !taskResult.value) {
-        return err(new Error(`Task ${event.taskId} not found for start update`));
-      }
-
-      // Update task with running status
-      const updatedTask = updateTask(taskResult.value, {
+      const result = await this.repository.update(event.taskId, {
         status: TaskStatus.RUNNING,
         startedAt: Date.now(),
-        workerId: event.workerId
-      });
+        workerId: event.workerId,
+      } as Partial<Task>);
 
-      const result = await this.repository.save(updatedTask);
-      
       if (!result.ok) {
         this.logger.error('Failed to persist task start', result.error, {
           taskId: event.taskId
@@ -127,23 +117,13 @@ export class PersistenceHandler extends BaseEventHandler {
    */
   private async handleTaskCompleted(event: TaskCompletedEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
-      // Get current task from database
-      const taskResult = await this.repository.findById(event.taskId);
-      
-      if (!taskResult.ok || !taskResult.value) {
-        return err(new Error(`Task ${event.taskId} not found for completion update`));
-      }
-
-      // Update task with completion status
-      const updatedTask = updateTask(taskResult.value, {
+      const result = await this.repository.update(event.taskId, {
         status: TaskStatus.COMPLETED,
         completedAt: Date.now(),
         exitCode: event.exitCode,
-        duration: event.duration
-      });
+        duration: event.duration,
+      } as Partial<Task>);
 
-      const result = await this.repository.save(updatedTask);
-      
       if (!result.ok) {
         this.logger.error('Failed to persist task completion', result.error, {
           taskId: event.taskId
@@ -166,23 +146,12 @@ export class PersistenceHandler extends BaseEventHandler {
    */
   private async handleTaskFailed(event: TaskFailedEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
-      // Get current task from database
-      const taskResult = await this.repository.findById(event.taskId);
-      
-      if (!taskResult.ok || !taskResult.value) {
-        return err(new Error(`Task ${event.taskId} not found for failure update`));
-      }
-
-      // Update task with failure status
-      const updatedTask = updateTask(taskResult.value, {
+      const result = await this.repository.update(event.taskId, {
         status: TaskStatus.FAILED,
         completedAt: Date.now(),
         exitCode: event.exitCode,
-        error: event.error?.toJSON ? event.error.toJSON() : event.error
-      });
+      } as Partial<Task>);
 
-      const result = await this.repository.save(updatedTask);
-      
       if (!result.ok) {
         this.logger.error('Failed to persist task failure', result.error, {
           taskId: event.taskId
@@ -204,21 +173,11 @@ export class PersistenceHandler extends BaseEventHandler {
    */
   private async handleTaskCancelled(event: TaskCancelledEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
-      // Get current task from database
-      const taskResult = await this.repository.findById(event.taskId);
-      
-      if (!taskResult.ok || !taskResult.value) {
-        return err(new Error(`Task ${event.taskId} not found for cancellation update`));
-      }
-
-      // Update task with cancelled status
-      const updatedTask = updateTask(taskResult.value, {
+      const result = await this.repository.update(event.taskId, {
         status: TaskStatus.CANCELLED,
-        completedAt: Date.now()
-      });
+        completedAt: Date.now(),
+      } as Partial<Task>);
 
-      const result = await this.repository.save(updatedTask);
-      
       if (!result.ok) {
         this.logger.error('Failed to persist task cancellation', result.error, {
           taskId: event.taskId
@@ -240,22 +199,11 @@ export class PersistenceHandler extends BaseEventHandler {
    */
   private async handleTaskTimeout(event: TaskTimeoutEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
-      // Get current task from database
-      const taskResult = await this.repository.findById(event.taskId);
-      
-      if (!taskResult.ok || !taskResult.value) {
-        return err(new Error(`Task ${event.taskId} not found for timeout update`));
-      }
-
-      // Update task with timeout failure status
-      const updatedTask = updateTask(taskResult.value, {
+      const result = await this.repository.update(event.taskId, {
         status: TaskStatus.FAILED,
         completedAt: Date.now(),
-        error: event.error?.toJSON ? event.error.toJSON() : event.error
-      });
+      } as Partial<Task>);
 
-      const result = await this.repository.save(updatedTask);
-      
       if (!result.ok) {
         this.logger.error('Failed to persist task timeout', result.error, {
           taskId: event.taskId

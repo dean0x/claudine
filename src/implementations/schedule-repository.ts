@@ -131,6 +131,7 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
   private readonly findDueStmt: SQLite.Statement;
   private readonly deleteStmt: SQLite.Statement;
   private readonly countStmt: SQLite.Statement;
+  private readonly updateStmt: SQLite.Statement;
   private readonly recordExecutionStmt: SQLite.Statement;
   private readonly getExecutionByIdStmt: SQLite.Statement;
   private readonly getExecutionHistoryStmt: SQLite.Statement;
@@ -149,6 +150,26 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
         @timezone, @missedRunPolicy, @status, @maxRuns, @runCount,
         @lastRunAt, @nextRunAt, @expiresAt, @createdAt, @updatedAt
       )
+    `);
+
+    // UPDATE preserves the row (unlike INSERT OR REPLACE which deletes + inserts,
+    // triggering ON DELETE CASCADE on child tables like schedule_executions)
+    this.updateStmt = this.db.prepare(`
+      UPDATE schedules SET
+        task_template = @taskTemplate,
+        schedule_type = @scheduleType,
+        cron_expression = @cronExpression,
+        scheduled_at = @scheduledAt,
+        timezone = @timezone,
+        missed_run_policy = @missedRunPolicy,
+        status = @status,
+        max_runs = @maxRuns,
+        run_count = @runCount,
+        last_run_at = @lastRunAt,
+        next_run_at = @nextRunAt,
+        expires_at = @expiresAt,
+        updated_at = @updatedAt
+      WHERE id = @id
     `);
 
     this.findByIdStmt = this.db.prepare(`
@@ -259,8 +280,29 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
       updatedAt: Date.now(),
     };
 
-    // Save the updated schedule
-    return this.save(updatedSchedule);
+    // Use UPDATE (not INSERT OR REPLACE) to preserve child rows
+    // INSERT OR REPLACE deletes the old row first, triggering ON DELETE CASCADE
+    return tryCatchAsync(
+      async () => {
+        this.updateStmt.run({
+          id: updatedSchedule.id,
+          taskTemplate: JSON.stringify(updatedSchedule.taskTemplate),
+          scheduleType: updatedSchedule.scheduleType,
+          cronExpression: updatedSchedule.cronExpression ?? null,
+          scheduledAt: updatedSchedule.scheduledAt ?? null,
+          timezone: updatedSchedule.timezone,
+          missedRunPolicy: updatedSchedule.missedRunPolicy,
+          status: updatedSchedule.status,
+          maxRuns: updatedSchedule.maxRuns ?? null,
+          runCount: updatedSchedule.runCount,
+          lastRunAt: updatedSchedule.lastRunAt ?? null,
+          nextRunAt: updatedSchedule.nextRunAt ?? null,
+          expiresAt: updatedSchedule.expiresAt ?? null,
+          updatedAt: updatedSchedule.updatedAt,
+        });
+      },
+      operationErrorHandler('update schedule', { scheduleId: id })
+    );
   }
 
   /**

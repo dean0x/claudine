@@ -18,7 +18,8 @@ import {
   WorkerPool,
   ResourceMonitor,
   WorktreeManager,
-  ScheduleRepository
+  ScheduleRepository,
+  CheckpointRepository
 } from '../core/interfaces.js';
 import { Configuration } from '../core/configuration.js';
 
@@ -31,6 +32,7 @@ import { OutputHandler } from './handlers/output-handler.js';
 import { WorktreeHandler } from './handlers/worktree-handler.js';
 import { DependencyHandler } from './handlers/dependency-handler.js';
 import { ScheduleHandler } from './handlers/schedule-handler.js';
+import { CheckpointHandler } from './handlers/checkpoint-handler.js';
 
 /**
  * Dependencies required for handler setup
@@ -48,6 +50,7 @@ export interface HandlerDependencies {
   readonly resourceMonitor: ResourceMonitor;
   readonly worktreeManager: WorktreeManager;
   readonly scheduleRepository: ScheduleRepository;
+  readonly checkpointRepository: CheckpointRepository;
 }
 
 /**
@@ -59,6 +62,8 @@ export interface HandlerSetupResult {
   readonly dependencyHandler: DependencyHandler;
   /** ScheduleHandler uses factory pattern, returned separately for unified lifecycle */
   readonly scheduleHandler: ScheduleHandler;
+  /** CheckpointHandler uses factory pattern, returned separately for unified lifecycle */
+  readonly checkpointHandler: CheckpointHandler;
 }
 
 /**
@@ -136,6 +141,9 @@ export function extractHandlerDependencies(
   const scheduleRepositoryResult = getDependency<ScheduleRepository>(container, 'scheduleRepository');
   if (!scheduleRepositoryResult.ok) return scheduleRepositoryResult;
 
+  const checkpointRepositoryResult = getDependency<CheckpointRepository>(container, 'checkpointRepository');
+  if (!checkpointRepositoryResult.ok) return checkpointRepositoryResult;
+
   return ok({
     config: configResult.value,
     logger: loggerResult.value,
@@ -147,7 +155,8 @@ export function extractHandlerDependencies(
     workerPool: workerPoolResult.value,
     resourceMonitor: resourceMonitorResult.value,
     worktreeManager: worktreeManagerResult.value,
-    scheduleRepository: scheduleRepositoryResult.value
+    scheduleRepository: scheduleRepositoryResult.value,
+    checkpointRepository: checkpointRepositoryResult.value
   });
 }
 
@@ -297,10 +306,31 @@ export async function setupEventHandlers(
 
   const scheduleHandler = scheduleHandlerResult.value;
 
+  // 9. Checkpoint Handler - auto-creates checkpoints on task terminal events
+  // ARCHITECTURE: Factory pattern ensures handler is fully initialized before use
+  const checkpointHandlerResult = await CheckpointHandler.create(
+    deps.checkpointRepository,
+    deps.outputCapture,
+    deps.taskRepository,
+    eventBus,
+    childLogger('CheckpointHandler')
+  );
+  if (!checkpointHandlerResult.ok) {
+    // Cleanup previous handlers on failure
+    await registry.shutdown();
+    return err(new ClaudineError(
+      ErrorCode.SYSTEM_ERROR,
+      `Failed to create CheckpointHandler: ${checkpointHandlerResult.error.message}`,
+      { error: checkpointHandlerResult.error }
+    ));
+  }
+
+  const checkpointHandler = checkpointHandlerResult.value;
+
   setupLogger.info('Event handlers initialized successfully', {
     standardHandlers: standardHandlers.length,
-    totalHandlers: standardHandlers.length + 2 // +2 for DependencyHandler and ScheduleHandler
+    totalHandlers: standardHandlers.length + 3 // +3 for DependencyHandler, ScheduleHandler, CheckpointHandler
   });
 
-  return ok({ registry, dependencyHandler, scheduleHandler });
+  return ok({ registry, dependencyHandler, scheduleHandler, checkpointHandler });
 }

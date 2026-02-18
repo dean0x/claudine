@@ -483,15 +483,41 @@ export class Database {
             CREATE INDEX IF NOT EXISTS idx_schedule_executions_status ON schedule_executions(status);
           `);
         }
+      },
+      {
+        version: 5,
+        description: 'Add task_checkpoints table and after_schedule_id column for v0.4.0',
+        up: (db) => {
+          // Task checkpoints table for "smart retry" resumption
+          // ARCHITECTURE: Captures task state snapshots for enriched retry prompts
+          db.exec(`
+            CREATE TABLE IF NOT EXISTS task_checkpoints (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              task_id TEXT NOT NULL,
+              checkpoint_type TEXT NOT NULL CHECK (checkpoint_type IN ('completed', 'failed', 'cancelled')),
+              output_summary TEXT,
+              error_summary TEXT,
+              git_branch TEXT,
+              git_commit_sha TEXT,
+              git_dirty_files TEXT,
+              context_note TEXT,
+              created_at INTEGER NOT NULL,
+              FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+            )
+          `);
+
+          // Performance indexes for checkpoint queries
+          db.exec(`
+            CREATE INDEX IF NOT EXISTS idx_task_checkpoints_task_id ON task_checkpoints(task_id);
+            CREATE INDEX IF NOT EXISTS idx_task_checkpoints_task_time ON task_checkpoints(task_id, created_at DESC);
+          `);
+
+          // Add after_schedule_id column for schedule chaining
+          db.exec(`
+            ALTER TABLE schedules ADD COLUMN after_schedule_id TEXT
+          `);
+        }
       }
-      // Future migrations go here:
-      // {
-      //   version: 5,
-      //   description: 'Add new column to tasks table',
-      //   up: (db) => {
-      //     db.exec('ALTER TABLE tasks ADD COLUMN new_field TEXT');
-      //   }
-      // }
     ];
   }
 

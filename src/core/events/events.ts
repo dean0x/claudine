@@ -3,7 +3,7 @@
  * All system state changes flow through these events
  */
 
-import { Task, TaskId, Worker, WorkerId, Schedule, ScheduleId, ScheduleStatus, MissedRunPolicy } from '../domain.js';
+import { Task, TaskId, Worker, WorkerId, Schedule, ScheduleId, ScheduleStatus, MissedRunPolicy, TaskCheckpoint } from '../domain.js';
 import { ClaudineError } from '../errors.js';
 
 /**
@@ -289,6 +289,23 @@ export interface ScheduleQueryResponseEvent extends BaseEvent {
 }
 
 /**
+ * Checkpoint and resumption events
+ * ARCHITECTURE: Part of task resumption system ("smart retry with context")
+ */
+export interface CheckpointCreatedEvent extends BaseEvent {
+  type: 'CheckpointCreated';
+  taskId: TaskId;
+  checkpoint: TaskCheckpoint;
+}
+
+export interface TaskResumedEvent extends BaseEvent {
+  type: 'TaskResumed';
+  originalTaskId: TaskId;
+  newTaskId: TaskId;
+  checkpointUsed: boolean;
+}
+
+/**
  * System events
  */
 export interface SystemResourcesUpdatedEvent extends BaseEvent {
@@ -355,6 +372,9 @@ export type ClaudineEvent =
   // Schedule query events
   | ScheduleQueryEvent
   | ScheduleQueryResponseEvent
+  // Checkpoint and resumption events
+  | CheckpointCreatedEvent
+  | TaskResumedEvent
   // Worker events
   | WorkerSpawnedEvent
   | WorkerKilledEvent

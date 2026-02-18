@@ -78,6 +78,7 @@ interface TaskRow {
 export class SQLiteTaskRepository implements TaskRepository {
   private readonly db: SQLite.Database;
   private readonly saveStmt: SQLite.Statement;
+  private readonly updateStmt: SQLite.Statement;
   private readonly findByIdStmt: SQLite.Statement;
   private readonly findAllUnboundedStmt: SQLite.Statement;
   private readonly findByStatusStmt: SQLite.Statement;
@@ -94,7 +95,7 @@ export class SQLiteTaskRepository implements TaskRepository {
     
     // Prepare statements for better performance
     this.saveStmt = this.db.prepare(`
-      INSERT OR REPLACE INTO tasks (
+      INSERT OR IGNORE INTO tasks (
         id, prompt, status, priority, working_directory, use_worktree,
         worktree_cleanup, merge_strategy, branch_name, base_branch,
         auto_commit, push_to_remote, pr_title, pr_body,
@@ -109,6 +110,36 @@ export class SQLiteTaskRepository implements TaskRepository {
         @createdAt, @startedAt, @completedAt, @workerId, @exitCode, @dependencies,
         @parentTaskId, @retryCount, @retryOf
       )
+    `);
+
+    // UPDATE preserves the row (unlike INSERT OR REPLACE which deletes + inserts,
+    // triggering ON DELETE CASCADE/SET NULL on child tables like schedule_executions, task_checkpoints)
+    this.updateStmt = this.db.prepare(`
+      UPDATE tasks SET
+        prompt = @prompt,
+        status = @status,
+        priority = @priority,
+        working_directory = @workingDirectory,
+        use_worktree = @useWorktree,
+        worktree_cleanup = @worktreeCleanup,
+        merge_strategy = @mergeStrategy,
+        branch_name = @branchName,
+        base_branch = @baseBranch,
+        auto_commit = @autoCommit,
+        push_to_remote = @pushToRemote,
+        pr_title = @prTitle,
+        pr_body = @prBody,
+        timeout = @timeout,
+        max_output_buffer = @maxOutputBuffer,
+        started_at = @startedAt,
+        completed_at = @completedAt,
+        worker_id = @workerId,
+        exit_code = @exitCode,
+        dependencies = @dependencies,
+        parent_task_id = @parentTaskId,
+        retry_count = @retryCount,
+        retry_of = @retryOf
+      WHERE id = @id
     `);
 
     this.findByIdStmt = this.db.prepare(`
@@ -183,7 +214,7 @@ export class SQLiteTaskRepository implements TaskRepository {
   async update(taskId: TaskId, update: Partial<Task>): Promise<Result<void>> {
     // First get the existing task
     const existingResult = await this.findById(taskId);
-    
+
     if (!existingResult.ok) {
       return existingResult;
     }
@@ -197,9 +228,41 @@ export class SQLiteTaskRepository implements TaskRepository {
 
     // Merge updates with existing task
     const updatedTask = { ...existingResult.value, ...update };
-    
-    // Save the updated task
-    return this.save(updatedTask);
+
+    // Use UPDATE (not INSERT OR REPLACE) to preserve child rows
+    // INSERT OR REPLACE deletes the old row first, triggering ON DELETE CASCADE/SET NULL
+    // on child tables like schedule_executions and task_checkpoints
+    return tryCatchAsync(
+      async () => {
+        this.updateStmt.run({
+          id: updatedTask.id,
+          prompt: updatedTask.prompt,
+          status: updatedTask.status,
+          priority: updatedTask.priority,
+          workingDirectory: updatedTask.workingDirectory || null,
+          useWorktree: updatedTask.useWorktree ? 1 : 0,
+          worktreeCleanup: updatedTask.worktreeCleanup || 'auto',
+          mergeStrategy: updatedTask.mergeStrategy || 'pr',
+          branchName: updatedTask.branchName || null,
+          baseBranch: updatedTask.baseBranch || null,
+          autoCommit: updatedTask.autoCommit ? 1 : 0,
+          pushToRemote: updatedTask.pushToRemote ? 1 : 0,
+          prTitle: updatedTask.prTitle || null,
+          prBody: updatedTask.prBody || null,
+          timeout: updatedTask.timeout || null,
+          maxOutputBuffer: updatedTask.maxOutputBuffer || null,
+          startedAt: updatedTask.startedAt || null,
+          completedAt: updatedTask.completedAt || null,
+          workerId: updatedTask.workerId || null,
+          exitCode: updatedTask.exitCode ?? null,
+          dependencies: null,
+          parentTaskId: updatedTask.parentTaskId || null,
+          retryCount: updatedTask.retryCount || null,
+          retryOf: updatedTask.retryOf || null,
+        });
+      },
+      operationErrorHandler('update task', { taskId })
+    );
   }
 
   async findById(taskId: TaskId): Promise<Result<Task | null>> {

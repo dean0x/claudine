@@ -5,22 +5,20 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { z } from 'zod';
-import { TaskManager, Logger, ScheduleRepository } from '../core/interfaces.js';
+import { TaskManager, Logger, ScheduleService } from '../core/interfaces.js';
 import {
   DelegateRequest,
+  ResumeTaskRequest,
   Priority,
   TaskId,
-  Schedule,
   ScheduleId,
   ScheduleStatus,
   ScheduleType,
-  MissedRunPolicy,
-  createSchedule,
+  ScheduleCreateRequest,
 } from '../core/domain.js';
 import { match } from '../core/result.js';
 import { validatePath } from '../utils/validation.js';
-import { validateCronExpression, isValidTimezone, getNextRunTime } from '../utils/cron.js';
-import { EventBus } from '../core/events/event-bus.js';
+import { toMissedRunPolicy } from '../services/schedule-manager.js';
 import pkg from '../../package.json' with { type: 'json' };
 
 // Zod schemas for MCP protocol validation
@@ -60,6 +58,11 @@ const RetryTaskSchema = z.object({
   taskId: z.string(),
 });
 
+const ResumeTaskSchema = z.object({
+  taskId: z.string().describe('Task ID to resume (must be in terminal state)'),
+  additionalContext: z.string().max(4000).optional().describe('Additional instructions for the resumed task'),
+});
+
 // Schedule-related Zod schemas (v0.4.0 Task Scheduling)
 const ScheduleTaskSchema = z.object({
   prompt: z.string().min(1).max(4000).describe('Task prompt to execute'),
@@ -72,6 +75,7 @@ const ScheduleTaskSchema = z.object({
   workingDirectory: z.string().optional(),
   maxRuns: z.number().min(1).optional().describe('Maximum number of runs for cron schedules'),
   expiresAt: z.string().optional().describe('ISO 8601 datetime when schedule expires'),
+  afterSchedule: z.string().optional().describe('Schedule ID to chain after (new tasks depend on this schedule\'s latest task)'),
 });
 
 const ListSchedulesSchema = z.object({
@@ -105,29 +109,13 @@ interface MCPToolResponse {
   isError?: boolean;
 }
 
-/**
- * Map missedRunPolicy string to MissedRunPolicy enum
- * Defaults to SKIP for unrecognized values (Zod schema already validates)
- */
-function toMissedRunPolicy(value: string | undefined): MissedRunPolicy {
-  switch (value) {
-    case 'catchup':
-      return MissedRunPolicy.CATCHUP;
-    case 'fail':
-      return MissedRunPolicy.FAIL;
-    default:
-      return MissedRunPolicy.SKIP;
-  }
-}
-
 export class MCPAdapter {
   private server: Server;
 
   constructor(
     private readonly taskManager: TaskManager,
     private readonly logger: Logger,
-    private readonly scheduleRepository: ScheduleRepository,
-    private readonly eventBus: EventBus
+    private readonly scheduleService: ScheduleService
   ) {
     this.server = new Server(
       {
@@ -181,6 +169,8 @@ export class MCPAdapter {
             return await this.handleCancelTask(args);
           case 'RetryTask':
             return await this.handleRetryTask(args);
+          case 'ResumeTask':
+            return await this.handleResumeTask(args);
           // Schedule tools (v0.4.0 Task Scheduling)
           case 'ScheduleTask':
             return await this.handleScheduleTask(args);
@@ -378,6 +368,26 @@ export class MCPAdapter {
                 required: ['taskId'],
               },
             },
+            {
+              name: 'ResumeTask',
+              description: 'Resume a failed/completed task with enriched context from its checkpoint (smart retry with previous output, errors, and git state)',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  taskId: {
+                    type: 'string',
+                    description: 'Task ID to resume (must be in terminal state: completed, failed, or cancelled)',
+                    pattern: '^task-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  },
+                  additionalContext: {
+                    type: 'string',
+                    description: 'Additional instructions or context for the resumed task',
+                    maxLength: 4000,
+                  },
+                },
+                required: ['taskId'],
+              },
+            },
             // Schedule tools (v0.4.0 Task Scheduling)
             {
               name: 'ScheduleTask',
@@ -425,6 +435,10 @@ export class MCPAdapter {
                   expiresAt: {
                     type: 'string',
                     description: 'ISO 8601 expiration datetime',
+                  },
+                  afterSchedule: {
+                    type: 'string',
+                    description: 'Schedule ID to chain after (new tasks depend on this schedule\'s latest task)',
                   },
                 },
                 required: ['prompt', 'scheduleType'],
@@ -831,49 +845,55 @@ export class MCPAdapter {
     });
   }
 
+  private async handleResumeTask(args: unknown): Promise<MCPToolResponse> {
+    const parseResult = ResumeTaskSchema.safeParse(args);
+
+    if (!parseResult.success) {
+      return {
+        content: [{ type: 'text', text: `Validation error: ${parseResult.error.message}` }],
+        isError: true,
+      };
+    }
+
+    const { taskId, additionalContext } = parseResult.data;
+
+    const request: ResumeTaskRequest = {
+      taskId: TaskId(taskId),
+      additionalContext,
+    };
+
+    const result = await this.taskManager.resume(request);
+
+    return match(result, {
+      ok: (newTask) => ({
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            message: `Task ${taskId} resumed successfully`,
+            newTaskId: newTask.id,
+            retryCount: newTask.retryCount || 1,
+            parentTaskId: newTask.parentTaskId,
+          }, null, 2),
+        }],
+      }),
+      err: (error) => ({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
+        isError: true,
+      }),
+    });
+  }
+
   // ============================================================================
   // SCHEDULE HANDLERS (v0.4.0 Task Scheduling)
+  // Thin wrappers: Zod parse -> service call -> format MCP response
   // ============================================================================
-
-  /**
-   * Fetch and validate a schedule exists, optionally checking expected status.
-   * Returns the schedule on success, or an MCP error response on failure.
-   */
-  private async fetchScheduleOrError(
-    scheduleId: string,
-    expectedStatus?: ScheduleStatus
-  ): Promise<{ schedule: Schedule } | MCPToolResponse> {
-    const result = await this.scheduleRepository.findById(ScheduleId(scheduleId));
-    if (!result.ok) {
-      return {
-        content: [{ type: 'text', text: `Failed to get schedule: ${result.error.message}` }],
-        isError: true,
-      };
-    }
-
-    if (!result.value) {
-      return {
-        content: [{ type: 'text', text: `Schedule ${scheduleId} not found` }],
-        isError: true,
-      };
-    }
-
-    if (expectedStatus !== undefined && result.value.status !== expectedStatus) {
-      return {
-        content: [{ type: 'text', text: `Schedule ${scheduleId} is not ${expectedStatus} (status: ${result.value.status})` }],
-        isError: true,
-      };
-    }
-
-    return { schedule: result.value };
-  }
 
   /**
    * Handle ScheduleTask tool call
    * Creates a new schedule for recurring or one-time task execution
    */
   private async handleScheduleTask(args: unknown): Promise<MCPToolResponse> {
-    // Validate input at boundary
     const parseResult = ScheduleTaskSchema.safeParse(args);
     if (!parseResult.success) {
       return {
@@ -883,141 +903,41 @@ export class MCPAdapter {
     }
     const data = parseResult.data;
 
-    // Validate schedule type requirements
-    if (data.scheduleType === 'cron' && !data.cronExpression) {
-      return {
-        content: [{ type: 'text', text: 'cronExpression is required for cron schedules' }],
-        isError: true,
-      };
-    }
-    if (data.scheduleType === 'one_time' && !data.scheduledAt) {
-      return {
-        content: [{ type: 'text', text: 'scheduledAt is required for one-time schedules' }],
-        isError: true,
-      };
-    }
-
-    // Validate cron expression
-    if (data.cronExpression) {
-      const cronResult = validateCronExpression(data.cronExpression);
-      if (!cronResult.ok) {
-        return {
-          content: [{ type: 'text', text: cronResult.error.message }],
-          isError: true,
-        };
-      }
-    }
-
-    // Validate timezone
-    const tz = data.timezone ?? 'UTC';
-    if (!isValidTimezone(tz)) {
-      return {
-        content: [{ type: 'text', text: `Invalid timezone: ${data.timezone}` }],
-        isError: true,
-      };
-    }
-
-    // Parse scheduledAt if provided
-    let scheduledAtMs: number | undefined;
-    if (data.scheduledAt) {
-      scheduledAtMs = Date.parse(data.scheduledAt);
-      if (isNaN(scheduledAtMs)) {
-        return {
-          content: [{ type: 'text', text: `Invalid scheduledAt datetime: ${data.scheduledAt}` }],
-          isError: true,
-        };
-      }
-      if (scheduledAtMs <= Date.now()) {
-        return {
-          content: [{ type: 'text', text: 'scheduledAt must be in the future' }],
-          isError: true,
-        };
-      }
-    }
-
-    // Parse expiresAt if provided
-    let expiresAtMs: number | undefined;
-    if (data.expiresAt) {
-      expiresAtMs = Date.parse(data.expiresAt);
-      if (isNaN(expiresAtMs)) {
-        return {
-          content: [{ type: 'text', text: `Invalid expiresAt datetime: ${data.expiresAt}` }],
-          isError: true,
-        };
-      }
-    }
-
-    // Calculate nextRunAt
-    let nextRunAt: number;
-    if (data.scheduleType === 'cron' && data.cronExpression) {
-      const nextResult = getNextRunTime(data.cronExpression, tz);
-      if (!nextResult.ok) {
-        return {
-          content: [{ type: 'text', text: nextResult.error.message }],
-          isError: true,
-        };
-      }
-      nextRunAt = nextResult.value;
-    } else {
-      if (scheduledAtMs === undefined) {
-        return {
-          content: [{ type: 'text', text: 'scheduledAt must be provided for one-time schedules' }],
-          isError: true,
-        };
-      }
-      nextRunAt = scheduledAtMs;
-    }
-
-    // SECURITY: Validate workingDirectory to prevent path traversal attacks
-    let validatedWorkingDirectory: string | undefined;
-    if (data.workingDirectory) {
-      const pathValidation = validatePath(data.workingDirectory);
-      if (!pathValidation.ok) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Invalid working directory: ${pathValidation.error.message}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      validatedWorkingDirectory = pathValidation.value;
-    }
-
-    // Create schedule
-    const schedule = createSchedule({
-      taskTemplate: {
-        prompt: data.prompt,
-        priority: data.priority as Priority | undefined,
-        workingDirectory: validatedWorkingDirectory,
-      },
+    const request: ScheduleCreateRequest = {
+      prompt: data.prompt,
       scheduleType: data.scheduleType === 'cron' ? ScheduleType.CRON : ScheduleType.ONE_TIME,
       cronExpression: data.cronExpression,
-      scheduledAt: scheduledAtMs,
-      timezone: tz,
+      scheduledAt: data.scheduledAt,
+      timezone: data.timezone,
       missedRunPolicy: toMissedRunPolicy(data.missedRunPolicy),
+      priority: data.priority as Priority | undefined,
+      workingDirectory: data.workingDirectory,
       maxRuns: data.maxRuns,
-      expiresAt: expiresAtMs,
-    });
-
-    // Emit event - ScheduleHandler persists with calculated nextRunAt
-    await this.eventBus.emit('ScheduleCreated', { schedule });
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          success: true,
-          scheduleId: schedule.id,
-          scheduleType: schedule.scheduleType,
-          nextRunAt: new Date(nextRunAt).toISOString(),
-          timezone: schedule.timezone,
-          status: schedule.status,
-        }, null, 2),
-      }],
+      expiresAt: data.expiresAt,
+      afterScheduleId: data.afterSchedule ? ScheduleId(data.afterSchedule) : undefined,
     };
+
+    const result = await this.scheduleService.createSchedule(request);
+
+    return match(result, {
+      ok: (schedule) => ({
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            scheduleId: schedule.id,
+            scheduleType: schedule.scheduleType,
+            nextRunAt: schedule.nextRunAt ? new Date(schedule.nextRunAt).toISOString() : null,
+            timezone: schedule.timezone,
+            status: schedule.status,
+          }, null, 2),
+        }],
+      }),
+      err: (error) => ({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
+        isError: true,
+      }),
+    });
   }
 
   /**
@@ -1035,47 +955,40 @@ export class MCPAdapter {
 
     const { status, limit, offset } = parseResult.data;
 
-    let schedules: readonly Schedule[];
-    if (status) {
-      const statusResult = await this.scheduleRepository.findByStatus(status as ScheduleStatus, limit, offset);
-      if (!statusResult.ok) {
-        return {
-          content: [{ type: 'text', text: `Failed to list schedules: ${statusResult.error.message}` }],
-          isError: true,
-        };
-      }
-      schedules = statusResult.value;
-    } else {
-      const result = await this.scheduleRepository.findAll(limit, offset);
-      if (!result.ok) {
-        return {
-          content: [{ type: 'text', text: `Failed to list schedules: ${result.error.message}` }],
-          isError: true,
-        };
-      }
-      schedules = result.value;
-    }
+    const result = await this.scheduleService.listSchedules(
+      status as ScheduleStatus | undefined,
+      limit,
+      offset
+    );
 
-    const simplifiedSchedules = schedules.map(s => ({
-      id: s.id,
-      status: s.status,
-      scheduleType: s.scheduleType,
-      cronExpression: s.cronExpression,
-      nextRunAt: s.nextRunAt ? new Date(s.nextRunAt).toISOString() : null,
-      runCount: s.runCount,
-      maxRuns: s.maxRuns,
-    }));
+    return match(result, {
+      ok: (schedules) => {
+        const simplifiedSchedules = schedules.map(s => ({
+          id: s.id,
+          status: s.status,
+          scheduleType: s.scheduleType,
+          cronExpression: s.cronExpression,
+          nextRunAt: s.nextRunAt ? new Date(s.nextRunAt).toISOString() : null,
+          runCount: s.runCount,
+          maxRuns: s.maxRuns,
+        }));
 
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          success: true,
-          schedules: simplifiedSchedules,
-          count: simplifiedSchedules.length,
-        }, null, 2),
-      }],
-    };
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              schedules: simplifiedSchedules,
+              count: simplifiedSchedules.length,
+            }, null, 2),
+          }],
+        };
+      },
+      err: (error) => ({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
+        isError: true,
+      }),
+    });
   }
 
   /**
@@ -1093,58 +1006,61 @@ export class MCPAdapter {
 
     const { scheduleId, includeHistory, historyLimit } = parseResult.data;
 
-    const lookup = await this.fetchScheduleOrError(scheduleId);
-    if (!('schedule' in lookup)) return lookup;
+    const result = await this.scheduleService.getSchedule(
+      ScheduleId(scheduleId),
+      includeHistory,
+      historyLimit
+    );
 
-    const schedule = lookup.schedule;
-    const response: Record<string, unknown> = {
-      success: true,
-      schedule: {
-        id: schedule.id,
-        status: schedule.status,
-        scheduleType: schedule.scheduleType,
-        cronExpression: schedule.cronExpression,
-        scheduledAt: schedule.scheduledAt ? new Date(schedule.scheduledAt).toISOString() : null,
-        timezone: schedule.timezone,
-        missedRunPolicy: schedule.missedRunPolicy,
-        maxRuns: schedule.maxRuns,
-        runCount: schedule.runCount,
-        lastRunAt: schedule.lastRunAt ? new Date(schedule.lastRunAt).toISOString() : null,
-        nextRunAt: schedule.nextRunAt ? new Date(schedule.nextRunAt).toISOString() : null,
-        expiresAt: schedule.expiresAt ? new Date(schedule.expiresAt).toISOString() : null,
-        createdAt: new Date(schedule.createdAt).toISOString(),
-        updatedAt: new Date(schedule.updatedAt).toISOString(),
-        taskTemplate: {
-          prompt: schedule.taskTemplate.prompt.substring(0, 100) + (schedule.taskTemplate.prompt.length > 100 ? '...' : ''),
-          priority: schedule.taskTemplate.priority,
-          workingDirectory: schedule.taskTemplate.workingDirectory,
-        },
+    return match(result, {
+      ok: ({ schedule, history }) => {
+        const response: Record<string, unknown> = {
+          success: true,
+          schedule: {
+            id: schedule.id,
+            status: schedule.status,
+            scheduleType: schedule.scheduleType,
+            cronExpression: schedule.cronExpression,
+            scheduledAt: schedule.scheduledAt ? new Date(schedule.scheduledAt).toISOString() : null,
+            timezone: schedule.timezone,
+            missedRunPolicy: schedule.missedRunPolicy,
+            maxRuns: schedule.maxRuns,
+            runCount: schedule.runCount,
+            lastRunAt: schedule.lastRunAt ? new Date(schedule.lastRunAt).toISOString() : null,
+            nextRunAt: schedule.nextRunAt ? new Date(schedule.nextRunAt).toISOString() : null,
+            expiresAt: schedule.expiresAt ? new Date(schedule.expiresAt).toISOString() : null,
+            createdAt: new Date(schedule.createdAt).toISOString(),
+            updatedAt: new Date(schedule.updatedAt).toISOString(),
+            taskTemplate: {
+              prompt: schedule.taskTemplate.prompt.substring(0, 100) + (schedule.taskTemplate.prompt.length > 100 ? '...' : ''),
+              priority: schedule.taskTemplate.priority,
+              workingDirectory: schedule.taskTemplate.workingDirectory,
+            },
+          },
+        };
+
+        if (history) {
+          response.history = history.map(h => ({
+            scheduledFor: new Date(h.scheduledFor).toISOString(),
+            executedAt: h.executedAt ? new Date(h.executedAt).toISOString() : null,
+            status: h.status,
+            taskId: h.taskId,
+            errorMessage: h.errorMessage,
+          }));
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify(response, null, 2),
+          }],
+        };
       },
-    };
-
-    // Include execution history if requested
-    if (includeHistory) {
-      const historyResult = await this.scheduleRepository.getExecutionHistory(
-        ScheduleId(scheduleId),
-        historyLimit
-      );
-      if (historyResult.ok) {
-        response.history = historyResult.value.map(h => ({
-          scheduledFor: new Date(h.scheduledFor).toISOString(),
-          executedAt: h.executedAt ? new Date(h.executedAt).toISOString() : null,
-          status: h.status,
-          taskId: h.taskId,
-          errorMessage: h.errorMessage,
-        }));
-      }
-    }
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify(response, null, 2),
-      }],
-    };
+      err: (error) => ({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
+        isError: true,
+      }),
+    });
   }
 
   /**
@@ -1162,24 +1078,24 @@ export class MCPAdapter {
 
     const { scheduleId, reason } = parseResult.data;
 
-    const lookup = await this.fetchScheduleOrError(scheduleId);
-    if (!('schedule' in lookup)) return lookup;
+    const result = await this.scheduleService.cancelSchedule(ScheduleId(scheduleId), reason);
 
-    await this.eventBus.emit('ScheduleCancelled', {
-      scheduleId: ScheduleId(scheduleId),
-      reason,
+    return match(result, {
+      ok: () => ({
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            message: `Schedule ${scheduleId} cancelled`,
+            reason,
+          }, null, 2),
+        }],
+      }),
+      err: (error) => ({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
+        isError: true,
+      }),
     });
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          success: true,
-          message: `Schedule ${scheduleId} cancelled`,
-          reason,
-        }, null, 2),
-      }],
-    };
   }
 
   /**
@@ -1197,22 +1113,23 @@ export class MCPAdapter {
 
     const { scheduleId } = parseResult.data;
 
-    const lookup = await this.fetchScheduleOrError(scheduleId, ScheduleStatus.ACTIVE);
-    if (!('schedule' in lookup)) return lookup;
+    const result = await this.scheduleService.pauseSchedule(ScheduleId(scheduleId));
 
-    await this.eventBus.emit('SchedulePaused', {
-      scheduleId: ScheduleId(scheduleId),
+    return match(result, {
+      ok: () => ({
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            message: `Schedule ${scheduleId} paused`,
+          }, null, 2),
+        }],
+      }),
+      err: (error) => ({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
+        isError: true,
+      }),
     });
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          success: true,
-          message: `Schedule ${scheduleId} paused`,
-        }, null, 2),
-      }],
-    };
   }
 
   /**
@@ -1230,21 +1147,22 @@ export class MCPAdapter {
 
     const { scheduleId } = parseResult.data;
 
-    const lookup = await this.fetchScheduleOrError(scheduleId, ScheduleStatus.PAUSED);
-    if (!('schedule' in lookup)) return lookup;
+    const result = await this.scheduleService.resumeSchedule(ScheduleId(scheduleId));
 
-    await this.eventBus.emit('ScheduleResumed', {
-      scheduleId: ScheduleId(scheduleId),
+    return match(result, {
+      ok: () => ({
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            message: `Schedule ${scheduleId} resumed`,
+          }, null, 2),
+        }],
+      }),
+      err: (error) => ({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
+        isError: true,
+      }),
     });
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          success: true,
-          message: `Schedule ${scheduleId} resumed`,
-        }, null, 2),
-      }],
-    };
   }
 }

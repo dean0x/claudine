@@ -16,6 +16,7 @@
 import {
   TaskManager,
   TaskRepository,
+  CheckpointRepository,
   Logger,
   OutputCapture,
   WorktreeStatus,
@@ -34,6 +35,7 @@ import {
   TaskId,
   DelegateRequest,
   TaskOutput,
+  ResumeTaskRequest,
   createTask,
   canCancel,
   isTerminalState
@@ -46,7 +48,8 @@ export class TaskManagerService implements TaskManager {
   constructor(
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
-    private readonly config: Configuration
+    private readonly config: Configuration,
+    private readonly checkpointRepo?: CheckpointRepository
   ) {
     // ARCHITECTURE: Pure event-driven - ALL operations go through EventBus
     this.logger.debug('TaskManager initialized with pure event-driven architecture');
@@ -249,6 +252,170 @@ export class TaskManagerService implements TaskManager {
     }
 
     return ok(newTask);
+  }
+
+  /**
+   * Resume a terminal task with enriched context from its checkpoint
+   *
+   * Creates a new task with an enriched prompt that includes the previous attempt's
+   * output, errors, and git state. This enables "smart retry" where the new Claude
+   * Code instance understands what happened in the previous attempt.
+   *
+   * RESUME vs RETRY:
+   * - retry(): Creates a new task with the exact same prompt (blind retry)
+   * - resume(): Creates a new task with enriched prompt including checkpoint context
+   *
+   * @param request - Resume request with taskId and optional additional context
+   * @returns New task with enriched prompt, or error if task cannot be resumed
+   */
+  async resume(request: ResumeTaskRequest): Promise<Result<Task>> {
+    const { taskId, additionalContext } = request;
+
+    // Fetch original task via event bus
+    const taskResult = await this.eventBus.request<TaskStatusQueryEvent, Task | null>(
+      'TaskStatusQuery',
+      { taskId }
+    );
+
+    if (!taskResult.ok) {
+      return err(taskResult.error);
+    }
+
+    if (taskResult.value === null) {
+      return err(taskNotFound(taskId));
+    }
+
+    const originalTask = taskResult.value;
+
+    // Only resume tasks in terminal states
+    if (!isTerminalState(originalTask.status)) {
+      return err(new ClaudineError(
+        ErrorCode.INVALID_OPERATION,
+        `Task ${taskId} cannot be resumed in state ${originalTask.status}`
+      ));
+    }
+
+    this.logger.info('Resuming task', {
+      taskId,
+      status: originalTask.status,
+      hasCheckpointRepo: !!this.checkpointRepo,
+      hasAdditionalContext: !!additionalContext,
+    });
+
+    // Fetch latest checkpoint if repository is available
+    let checkpointUsed = false;
+    let enrichedPrompt = this.buildEnrichedPrompt(originalTask, null, additionalContext);
+
+    if (this.checkpointRepo) {
+      const checkpointResult = await this.checkpointRepo.findLatest(taskId);
+      if (checkpointResult.ok && checkpointResult.value) {
+        enrichedPrompt = this.buildEnrichedPrompt(originalTask, checkpointResult.value, additionalContext);
+        checkpointUsed = true;
+      } else if (!checkpointResult.ok) {
+        this.logger.warn('Failed to fetch checkpoint for resume, proceeding without', {
+          taskId,
+          error: checkpointResult.error.message,
+        });
+      }
+    }
+
+    // Build retry chain tracking
+    const parentTaskId = originalTask.parentTaskId || taskId;
+    const retryCount = (originalTask.retryCount || 0) + 1;
+
+    // Create new task with enriched prompt and same configuration
+    const resumeRequest: DelegateRequest = {
+      prompt: enrichedPrompt,
+      priority: originalTask.priority,
+      workingDirectory: originalTask.workingDirectory,
+      useWorktree: originalTask.useWorktree,
+      worktreeCleanup: originalTask.worktreeCleanup,
+      mergeStrategy: originalTask.mergeStrategy,
+      branchName: originalTask.branchName,
+      baseBranch: originalTask.baseBranch,
+      autoCommit: originalTask.autoCommit,
+      pushToRemote: originalTask.pushToRemote,
+      prTitle: originalTask.prTitle,
+      prBody: originalTask.prBody,
+      timeout: originalTask.timeout,
+      maxOutputBuffer: originalTask.maxOutputBuffer,
+      parentTaskId: TaskId(parentTaskId),
+      retryCount,
+      retryOf: taskId,
+    };
+
+    const newTask = createTask(resumeRequest);
+
+    this.logger.info('Creating resume task', {
+      originalTaskId: taskId,
+      newTaskId: newTask.id,
+      retryCount,
+      parentTaskId,
+      checkpointUsed,
+    });
+
+    // Emit TaskDelegated event for the new task
+    const delegateResult = await this.eventBus.emit('TaskDelegated', { task: newTask });
+
+    if (!delegateResult.ok) {
+      this.logger.error('Failed to delegate resume task', delegateResult.error, {
+        originalTaskId: taskId,
+        newTaskId: newTask.id,
+      });
+      return err(delegateResult.error);
+    }
+
+    // Emit TaskResumed event
+    await this.eventBus.emit('TaskResumed', {
+      originalTaskId: taskId,
+      newTaskId: newTask.id,
+      checkpointUsed,
+    });
+
+    return ok(newTask);
+  }
+
+  /**
+   * Build an enriched prompt that includes previous attempt context
+   * ARCHITECTURE: Pure function - takes data in, returns string out
+   */
+  private buildEnrichedPrompt(
+    originalTask: Task,
+    checkpoint: import('../core/domain.js').TaskCheckpoint | null,
+    additionalContext?: string
+  ): string {
+    const parts: string[] = [];
+
+    parts.push('PREVIOUS TASK CONTEXT:');
+    parts.push(`The previous attempt at this task ended with status: ${originalTask.status}`);
+    parts.push('');
+    parts.push(`Original prompt: ${originalTask.prompt}`);
+
+    if (checkpoint) {
+      parts.push('');
+      if (checkpoint.outputSummary) {
+        parts.push(`Last output: ${checkpoint.outputSummary}`);
+      }
+      if (checkpoint.errorSummary) {
+        parts.push(`Error: ${checkpoint.errorSummary}`);
+      }
+      if (checkpoint.gitBranch) {
+        parts.push(`Git state: branch=${checkpoint.gitBranch}, commit=${checkpoint.gitCommitSha ?? 'unknown'}`);
+      }
+      if (checkpoint.gitDirtyFiles && checkpoint.gitDirtyFiles.length > 0) {
+        parts.push(`Modified files: ${checkpoint.gitDirtyFiles.join(', ')}`);
+      }
+    }
+
+    if (additionalContext) {
+      parts.push('');
+      parts.push(`Additional context: ${additionalContext}`);
+    }
+
+    parts.push('');
+    parts.push('Please continue or retry the task, taking into account the previous attempt\'s results.');
+
+    return parts.join('\n');
   }
 
   /**

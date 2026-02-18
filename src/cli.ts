@@ -9,6 +9,8 @@ import { fileURLToPath } from 'url';
 import { bootstrap } from './bootstrap.js';
 import { validatePath, validateBufferSize, validateTimeout } from './utils/validation.js';
 import type { Task } from './core/domain.js';
+import type { TaskManager, ScheduleService } from './core/interfaces.js';
+import { TaskId, ScheduleId } from './core/domain.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,6 +19,40 @@ const __dirname = path.dirname(__filename);
 const args = process.argv.slice(2);
 const mainCommand = args[0];
 const subCommand = args[1];
+
+/**
+ * Bootstrap and resolve services, eliminating repeated boilerplate
+ * Returns typed services or exits on failure
+ */
+async function withServices(): Promise<{
+  taskManager: TaskManager;
+  scheduleService: ScheduleService;
+}> {
+  console.log('🚀 Bootstrapping Claudine...');
+  const containerResult = await bootstrap();
+  if (!containerResult.ok) {
+    console.error('❌ Bootstrap failed:', containerResult.error.message);
+    process.exit(1);
+  }
+  const container = containerResult.value;
+
+  const taskManagerResult = await container.resolve<TaskManager>('taskManager');
+  if (!taskManagerResult.ok) {
+    console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
+    process.exit(1);
+  }
+
+  const scheduleServiceResult = container.get<ScheduleService>('scheduleService');
+  if (!scheduleServiceResult.ok) {
+    console.error('❌ Failed to get schedule service:', scheduleServiceResult.error.message);
+    process.exit(1);
+  }
+
+  return {
+    taskManager: taskManagerResult.value,
+    scheduleService: scheduleServiceResult.value,
+  };
+}
 
 function showHelp() {
   console.log(`
@@ -53,12 +89,36 @@ Task Commands:
   Note: Worktrees are complex and most users don't need them. Tasks run in your
         current directory by default. Use --use-worktree to opt-in to isolation.
 
+Schedule Commands:
+  schedule create <prompt> [options]   Create a scheduled task
+    --type cron|one_time               Schedule type (required)
+    --cron "0 9 * * 1-5"              Cron expression (5-field, for cron type)
+    --at "2025-03-01T09:00:00Z"       ISO 8601 datetime (for one_time type)
+    --timezone "America/New_York"      IANA timezone (default: UTC)
+    --missed-run-policy skip|catchup|fail  (default: skip)
+    -p, --priority P0|P1|P2           Task priority
+    -w, --working-directory DIR        Working directory
+    --max-runs N                       Max executions for cron schedules
+    --expires-at "ISO8601"             Schedule expiration
+    --after <schedule-id>              Chain: wait for this schedule's task to complete
+
+  schedule list [--status active|paused|...] [--limit N]
+  schedule get <schedule-id> [--history] [--history-limit N]
+  schedule cancel <schedule-id> [reason]
+  schedule pause <schedule-id>
+  schedule resume <schedule-id>
+
+Pipeline Commands:
+  pipeline <prompt> [--delay Nm <prompt>]...   Create chained one-time schedules
+    Example: pipeline "set up db" --delay 5m "run migrations" --delay 10m "seed data"
+
+Task Resumption:
+  resume <task-id> [--context "additional instructions"]
+    Resume a failed/completed task with context from its checkpoint
+
 Configuration:
   config show                Show current configuration
   config set <key> <value>   Update configuration
-    worktree-max-age <days>    Set minimum age for worktree cleanup (default: 30)
-    worktree-max-count <num>   Set maximum number of worktrees (default: 50)
-    worktree-safety-check <bool> Enable/disable safety checks (default: true)
   status [task-id]             Get status of task(s)
     --show-dependencies        Show dependency graph for tasks
   logs <task-id> [--tail N]    Get output logs for a task (optionally limit to last N lines)
@@ -68,19 +128,22 @@ Configuration:
 
 Examples:
   claudine mcp start                                    # Start MCP server
-  claudine delegate "analyze this codebase"            # Delegate task (PR by default)
+  claudine delegate "analyze this codebase"            # Delegate task
   claudine delegate "fix the bug" --priority P0        # High priority task
-  claudine delegate "test changes" --no-worktree      # Run directly without worktree
-  claudine delegate "new feature" --strategy auto     # Auto-merge if no conflicts
-  claudine delegate "experiment" --keep-worktree      # Preserve worktree after completion
-  claudine delegate "run tests" --depends-on task-abc123  # Wait for task-abc123 to complete
-  claudine delegate "deploy" --depends-on task-1,task-2   # Wait for multiple tasks
-  claudine status                                       # List all tasks
-  claudine status abc123                                # Get specific task status
-  claudine status --show-dependencies                   # Show dependency graph
-  claudine logs abc123                                  # Get task output
-  claudine cancel abc123                                # Cancel task
-  
+  claudine delegate "run tests" --depends-on task-abc123  # Wait for dependency
+
+  # Scheduling
+  claudine schedule create "run tests" --type cron --cron "0 9 * * 1-5"
+  claudine schedule create "deploy" --type one_time --at "2025-03-01T09:00:00Z"
+  claudine schedule list --status active
+  claudine schedule pause <id>
+
+  # Pipeline (sequential tasks with delays)
+  claudine pipeline "setup db" --delay 5m "run migrations" --delay 10m "seed data"
+
+  # Resume failed task with context
+  claudine resume <task-id> --context "Try a different approach"
+
 Repository: https://github.com/dean0x/claudine
 `);
 }
@@ -403,6 +466,451 @@ async function retryTask(taskId: string) {
       process.exit(0);
     } else {
       console.error('❌ Failed to retry task:', result.error.message);
+      process.exit(1);
+    }
+  } catch (error) {
+    console.error('❌ Error:', error);
+    process.exit(1);
+  }
+}
+
+// ============================================================================
+// SCHEDULE COMMANDS
+// ============================================================================
+
+async function handleScheduleCommand(subCmd: string | undefined, scheduleArgs: string[]) {
+  if (!subCmd) {
+    console.error('❌ Usage: claudine schedule <create|list|get|cancel|pause|resume>');
+    process.exit(1);
+  }
+
+  const { scheduleService } = await withServices();
+
+  switch (subCmd) {
+    case 'create':
+      await scheduleCreate(scheduleService, scheduleArgs);
+      break;
+    case 'list':
+      await scheduleList(scheduleService, scheduleArgs);
+      break;
+    case 'get':
+      await scheduleGet(scheduleService, scheduleArgs);
+      break;
+    case 'cancel':
+      await scheduleCancel(scheduleService, scheduleArgs);
+      break;
+    case 'pause':
+      await schedulePause(scheduleService, scheduleArgs);
+      break;
+    case 'resume':
+      await scheduleResume(scheduleService, scheduleArgs);
+      break;
+    default:
+      console.error(`❌ Unknown schedule subcommand: ${subCmd}`);
+      console.log('Valid subcommands: create, list, get, cancel, pause, resume');
+      process.exit(1);
+  }
+  process.exit(0);
+}
+
+async function scheduleCreate(service: ScheduleService, scheduleArgs: string[]) {
+  let promptWords: string[] = [];
+  let scheduleType: 'cron' | 'one_time' | undefined;
+  let cronExpression: string | undefined;
+  let scheduledAt: string | undefined;
+  let timezone: string | undefined;
+  let missedRunPolicy: 'skip' | 'catchup' | 'fail' | undefined;
+  let priority: 'P0' | 'P1' | 'P2' | undefined;
+  let workingDirectory: string | undefined;
+  let maxRuns: number | undefined;
+  let expiresAt: string | undefined;
+  let afterScheduleId: string | undefined;
+
+  for (let i = 0; i < scheduleArgs.length; i++) {
+    const arg = scheduleArgs[i];
+    const next = scheduleArgs[i + 1];
+
+    if (arg === '--type' && next) {
+      if (next !== 'cron' && next !== 'one_time') {
+        console.error('❌ --type must be "cron" or "one_time"');
+        process.exit(1);
+      }
+      scheduleType = next;
+      i++;
+    } else if (arg === '--cron' && next) {
+      cronExpression = next;
+      i++;
+    } else if (arg === '--at' && next) {
+      scheduledAt = next;
+      i++;
+    } else if (arg === '--timezone' && next) {
+      timezone = next;
+      i++;
+    } else if (arg === '--missed-run-policy' && next) {
+      if (!['skip', 'catchup', 'fail'].includes(next)) {
+        console.error('❌ --missed-run-policy must be "skip", "catchup", or "fail"');
+        process.exit(1);
+      }
+      missedRunPolicy = next as 'skip' | 'catchup' | 'fail';
+      i++;
+    } else if ((arg === '--priority' || arg === '-p') && next) {
+      if (!['P0', 'P1', 'P2'].includes(next)) {
+        console.error('❌ Priority must be P0, P1, or P2');
+        process.exit(1);
+      }
+      priority = next as 'P0' | 'P1' | 'P2';
+      i++;
+    } else if ((arg === '--working-directory' || arg === '-w') && next) {
+      const pathResult = validatePath(next);
+      if (!pathResult.ok) {
+        console.error(`❌ Invalid working directory: ${pathResult.error.message}`);
+        process.exit(1);
+      }
+      workingDirectory = pathResult.value;
+      i++;
+    } else if (arg === '--max-runs' && next) {
+      maxRuns = parseInt(next);
+      if (isNaN(maxRuns) || maxRuns < 1) {
+        console.error('❌ --max-runs must be a positive integer');
+        process.exit(1);
+      }
+      i++;
+    } else if (arg === '--expires-at' && next) {
+      expiresAt = next;
+      i++;
+    } else if (arg === '--after' && next) {
+      afterScheduleId = next;
+      i++;
+    } else if (arg.startsWith('-')) {
+      console.error(`❌ Unknown flag: ${arg}`);
+      process.exit(1);
+    } else {
+      promptWords.push(arg);
+    }
+  }
+
+  const prompt = promptWords.join(' ');
+  if (!prompt) {
+    console.error('❌ Usage: claudine schedule create <prompt> --type cron|one_time [options]');
+    process.exit(1);
+  }
+  if (!scheduleType) {
+    console.error('❌ --type is required (cron or one_time)');
+    process.exit(1);
+  }
+
+  const { ScheduleType, MissedRunPolicy, Priority } = await import('./core/domain.js');
+
+  const result = await service.createSchedule({
+    prompt,
+    scheduleType: scheduleType === 'cron' ? ScheduleType.CRON : ScheduleType.ONE_TIME,
+    cronExpression,
+    scheduledAt,
+    timezone,
+    missedRunPolicy: missedRunPolicy === 'catchup' ? MissedRunPolicy.CATCHUP : missedRunPolicy === 'fail' ? MissedRunPolicy.FAIL : missedRunPolicy ? MissedRunPolicy.SKIP : undefined,
+    priority: priority ? Priority[priority] : undefined,
+    workingDirectory,
+    maxRuns,
+    expiresAt,
+    afterScheduleId: afterScheduleId ? ScheduleId(afterScheduleId) : undefined,
+  });
+
+  if (result.ok) {
+    console.log('✅ Schedule created successfully!');
+    console.log('📋 Schedule ID:', result.value.id);
+    console.log('📅 Type:', result.value.scheduleType);
+    console.log('🔄 Status:', result.value.status);
+    if (result.value.nextRunAt) {
+      console.log('⏰ Next run:', new Date(result.value.nextRunAt).toISOString());
+    }
+    if (result.value.cronExpression) {
+      console.log('📝 Cron:', result.value.cronExpression);
+    }
+    if (result.value.afterScheduleId) {
+      console.log('🔗 After schedule:', result.value.afterScheduleId);
+    }
+  } else {
+    console.error('❌ Failed to create schedule:', result.error.message);
+    process.exit(1);
+  }
+}
+
+async function scheduleList(service: ScheduleService, scheduleArgs: string[]) {
+  let status: string | undefined;
+  let limit: number | undefined;
+
+  for (let i = 0; i < scheduleArgs.length; i++) {
+    const arg = scheduleArgs[i];
+    const next = scheduleArgs[i + 1];
+
+    if (arg === '--status' && next) {
+      status = next;
+      i++;
+    } else if (arg === '--limit' && next) {
+      limit = parseInt(next);
+      i++;
+    }
+  }
+
+  const { ScheduleStatus } = await import('./core/domain.js');
+  const statusEnum = status ? (status as keyof typeof ScheduleStatus) : undefined;
+
+  const result = await service.listSchedules(
+    statusEnum ? ScheduleStatus[statusEnum.toUpperCase() as keyof typeof ScheduleStatus] : undefined,
+    limit
+  );
+
+  if (result.ok) {
+    const schedules = result.value;
+    if (schedules.length === 0) {
+      console.log('📋 No schedules found');
+    } else {
+      console.log(`📋 Found ${schedules.length} schedule(s):\n`);
+      for (const s of schedules) {
+        const nextRun = s.nextRunAt ? new Date(s.nextRunAt).toISOString() : 'none';
+        console.log(`  ${s.id} | ${s.status} | ${s.scheduleType} | runs: ${s.runCount}${s.maxRuns ? '/' + s.maxRuns : ''} | next: ${nextRun}`);
+      }
+    }
+  } else {
+    console.error('❌ Failed to list schedules:', result.error.message);
+    process.exit(1);
+  }
+}
+
+async function scheduleGet(service: ScheduleService, scheduleArgs: string[]) {
+  const scheduleId = scheduleArgs[0];
+  if (!scheduleId) {
+    console.error('❌ Usage: claudine schedule get <schedule-id> [--history] [--history-limit N]');
+    process.exit(1);
+  }
+
+  const includeHistory = scheduleArgs.includes('--history');
+  let historyLimit: number | undefined;
+  const hlIdx = scheduleArgs.indexOf('--history-limit');
+  if (hlIdx !== -1 && scheduleArgs[hlIdx + 1]) {
+    historyLimit = parseInt(scheduleArgs[hlIdx + 1]);
+  }
+
+  const result = await service.getSchedule(ScheduleId(scheduleId), includeHistory, historyLimit);
+
+  if (result.ok) {
+    const { schedule, history } = result.value;
+    console.log('📋 Schedule Details:');
+    console.log('   ID:', schedule.id);
+    console.log('   Status:', schedule.status);
+    console.log('   Type:', schedule.scheduleType);
+    if (schedule.cronExpression) console.log('   Cron:', schedule.cronExpression);
+    if (schedule.scheduledAt) console.log('   Scheduled At:', new Date(schedule.scheduledAt).toISOString());
+    console.log('   Timezone:', schedule.timezone);
+    console.log('   Missed Run Policy:', schedule.missedRunPolicy);
+    console.log('   Run Count:', schedule.runCount + (schedule.maxRuns ? `/${schedule.maxRuns}` : ''));
+    if (schedule.lastRunAt) console.log('   Last Run:', new Date(schedule.lastRunAt).toISOString());
+    if (schedule.nextRunAt) console.log('   Next Run:', new Date(schedule.nextRunAt).toISOString());
+    if (schedule.expiresAt) console.log('   Expires:', new Date(schedule.expiresAt).toISOString());
+    if (schedule.afterScheduleId) console.log('   After Schedule:', schedule.afterScheduleId);
+    console.log('   Created:', new Date(schedule.createdAt).toISOString());
+    console.log('   Prompt:', schedule.taskTemplate.prompt.substring(0, 100) + (schedule.taskTemplate.prompt.length > 100 ? '...' : ''));
+
+    if (history && history.length > 0) {
+      console.log(`\n📜 Execution History (${history.length} entries):`);
+      for (const h of history) {
+        const scheduled = new Date(h.scheduledFor).toISOString();
+        const executed = h.executedAt ? new Date(h.executedAt).toISOString() : 'n/a';
+        console.log(`  ${h.status} | scheduled: ${scheduled} | executed: ${executed}${h.taskId ? ' | task: ' + h.taskId : ''}${h.errorMessage ? ' | error: ' + h.errorMessage : ''}`);
+      }
+    }
+  } else {
+    console.error('❌ Failed to get schedule:', result.error.message);
+    process.exit(1);
+  }
+}
+
+async function scheduleCancel(service: ScheduleService, scheduleArgs: string[]) {
+  const scheduleId = scheduleArgs[0];
+  if (!scheduleId) {
+    console.error('❌ Usage: claudine schedule cancel <schedule-id> [reason]');
+    process.exit(1);
+  }
+  const reason = scheduleArgs.slice(1).join(' ') || undefined;
+
+  const result = await service.cancelSchedule(ScheduleId(scheduleId), reason);
+  if (result.ok) {
+    console.log(`✅ Schedule ${scheduleId} cancelled`);
+    if (reason) console.log('📝 Reason:', reason);
+  } else {
+    console.error('❌ Failed to cancel schedule:', result.error.message);
+    process.exit(1);
+  }
+}
+
+async function schedulePause(service: ScheduleService, scheduleArgs: string[]) {
+  const scheduleId = scheduleArgs[0];
+  if (!scheduleId) {
+    console.error('❌ Usage: claudine schedule pause <schedule-id>');
+    process.exit(1);
+  }
+
+  const result = await service.pauseSchedule(ScheduleId(scheduleId));
+  if (result.ok) {
+    console.log(`✅ Schedule ${scheduleId} paused`);
+  } else {
+    console.error('❌ Failed to pause schedule:', result.error.message);
+    process.exit(1);
+  }
+}
+
+async function scheduleResume(service: ScheduleService, scheduleArgs: string[]) {
+  const scheduleId = scheduleArgs[0];
+  if (!scheduleId) {
+    console.error('❌ Usage: claudine schedule resume <schedule-id>');
+    process.exit(1);
+  }
+
+  const result = await service.resumeSchedule(ScheduleId(scheduleId));
+  if (result.ok) {
+    console.log(`✅ Schedule ${scheduleId} resumed`);
+  } else {
+    console.error('❌ Failed to resume schedule:', result.error.message);
+    process.exit(1);
+  }
+}
+
+// ============================================================================
+// PIPELINE COMMAND
+// ============================================================================
+
+/**
+ * Parse delay string like "5m", "30s", "2h" to milliseconds
+ */
+function parseDelay(delayStr: string): number {
+  const match = delayStr.match(/^(\d+)(s|m|h)$/);
+  if (!match) {
+    console.error(`❌ Invalid delay format: ${delayStr}. Use format: Ns, Nm, or Nh (e.g., 5m, 30s, 2h)`);
+    process.exit(1);
+  }
+  const value = parseInt(match[1]);
+  const unit = match[2];
+  switch (unit) {
+    case 's': return value * 1000;
+    case 'm': return value * 60 * 1000;
+    case 'h': return value * 60 * 60 * 1000;
+    default: return value * 1000;
+  }
+}
+
+async function handlePipelineCommand(pipelineArgs: string[]) {
+  if (pipelineArgs.length === 0) {
+    console.error('❌ Usage: claudine pipeline <prompt> [--delay Nm <prompt>]...');
+    console.error('Example: claudine pipeline "setup db" --delay 5m "run migrations" --delay 10m "seed data"');
+    process.exit(1);
+  }
+
+  // Parse pipeline steps: first prompt, then pairs of --delay + prompt
+  const steps: Array<{ prompt: string; delayMs: number }> = [];
+  let currentPrompt: string[] = [];
+  let cumulativeDelay = 0;
+
+  for (let i = 0; i < pipelineArgs.length; i++) {
+    if (pipelineArgs[i] === '--delay') {
+      // Save current prompt as a step
+      if (currentPrompt.length > 0) {
+        steps.push({ prompt: currentPrompt.join(' '), delayMs: cumulativeDelay });
+        currentPrompt = [];
+      }
+      // Parse delay
+      if (!pipelineArgs[i + 1]) {
+        console.error('❌ --delay requires a value (e.g., 5m, 30s, 2h)');
+        process.exit(1);
+      }
+      cumulativeDelay += parseDelay(pipelineArgs[i + 1]);
+      i++; // skip delay value
+    } else {
+      currentPrompt.push(pipelineArgs[i]);
+    }
+  }
+
+  // Add final step
+  if (currentPrompt.length > 0) {
+    steps.push({ prompt: currentPrompt.join(' '), delayMs: cumulativeDelay });
+  }
+
+  if (steps.length === 0) {
+    console.error('❌ No pipeline steps found');
+    process.exit(1);
+  }
+
+  const { scheduleService } = await withServices();
+  const { ScheduleType } = await import('./core/domain.js');
+  const now = Date.now();
+  const createdSchedules: Array<{ id: string; prompt: string; runsAt: string }> = [];
+  let previousScheduleId: string | undefined;
+
+  console.log(`📋 Creating pipeline with ${steps.length} step(s)...\n`);
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    const scheduledAt = new Date(now + step.delayMs).toISOString();
+
+    const result = await scheduleService.createSchedule({
+      prompt: step.prompt,
+      scheduleType: ScheduleType.ONE_TIME,
+      scheduledAt,
+      afterScheduleId: previousScheduleId ? ScheduleId(previousScheduleId) : undefined,
+    });
+
+    if (!result.ok) {
+      console.error(`❌ Failed to create pipeline step ${i + 1}: ${result.error.message}`);
+      process.exit(1);
+    }
+
+    previousScheduleId = result.value.id;
+    createdSchedules.push({
+      id: result.value.id,
+      prompt: step.prompt.substring(0, 50) + (step.prompt.length > 50 ? '...' : ''),
+      runsAt: scheduledAt,
+    });
+  }
+
+  console.log('✅ Pipeline created successfully!\n');
+  console.log('📋 Pipeline steps:');
+  for (let i = 0; i < createdSchedules.length; i++) {
+    const s = createdSchedules[i];
+    const arrow = i < createdSchedules.length - 1 ? ' →' : '';
+    const afterLabel = i > 0 ? ` (after ${createdSchedules[i - 1].id})` : '';
+    console.log(`  ${i + 1}. [${s.id}] "${s.prompt}" at ${s.runsAt}${afterLabel}${arrow}`);
+  }
+
+  process.exit(0);
+}
+
+// ============================================================================
+// RESUME COMMAND
+// ============================================================================
+
+async function handleResumeCommand(taskId: string, additionalContext?: string) {
+  try {
+    const { taskManager } = await withServices();
+
+    console.log('🔄 Resuming task:', taskId);
+    if (additionalContext) {
+      console.log('📝 Additional context:', additionalContext);
+    }
+
+    const result = await taskManager.resume({
+      taskId: TaskId(taskId),
+      additionalContext,
+    });
+
+    if (result.ok) {
+      const newTask = result.value;
+      console.log('✅ Task resumed successfully!');
+      console.log('📋 New Task ID:', newTask.id);
+      console.log('🔍 Status:', newTask.status);
+      if (newTask.retryCount) console.log('🔢 Retry count:', newTask.retryCount);
+      if (newTask.parentTaskId) console.log('🔗 Parent task:', newTask.parentTaskId);
+      process.exit(0);
+    } else {
+      console.error('❌ Failed to resume task:', result.error.message);
       process.exit(1);
     }
   } catch (error) {
@@ -759,6 +1267,27 @@ if (mainCommand === 'mcp') {
     console.error('❌ Usage: claudine worktree <list|cleanup|status>');
     process.exit(1);
   }
+
+} else if (mainCommand === 'schedule') {
+  await handleScheduleCommand(subCommand, args.slice(2));
+
+} else if (mainCommand === 'pipeline') {
+  await handlePipelineCommand(args.slice(1));
+
+} else if (mainCommand === 'resume') {
+  const taskId = args[1];
+  if (!taskId) {
+    console.error('❌ Usage: claudine resume <task-id> [--context "additional instructions"]');
+    process.exit(1);
+  }
+
+  let additionalContext: string | undefined;
+  const contextIndex = args.indexOf('--context');
+  if (contextIndex !== -1 && args[contextIndex + 1]) {
+    additionalContext = args[contextIndex + 1];
+  }
+
+  await handleResumeCommand(taskId, additionalContext);
 
 } else if (mainCommand === 'config') {
   if (subCommand === 'show') {
