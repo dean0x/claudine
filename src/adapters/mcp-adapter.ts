@@ -836,6 +836,39 @@ export class MCPAdapter {
   // ============================================================================
 
   /**
+   * Fetch and validate a schedule exists, optionally checking expected status.
+   * Returns the schedule on success, or an MCP error response on failure.
+   */
+  private async fetchScheduleOrError(
+    scheduleId: string,
+    expectedStatus?: ScheduleStatus
+  ): Promise<{ schedule: Schedule } | MCPToolResponse> {
+    const result = await this.scheduleRepository.findById(ScheduleId(scheduleId));
+    if (!result.ok) {
+      return {
+        content: [{ type: 'text', text: `Failed to get schedule: ${result.error.message}` }],
+        isError: true,
+      };
+    }
+
+    if (!result.value) {
+      return {
+        content: [{ type: 'text', text: `Schedule ${scheduleId} not found` }],
+        isError: true,
+      };
+    }
+
+    if (expectedStatus !== undefined && result.value.status !== expectedStatus) {
+      return {
+        content: [{ type: 'text', text: `Schedule ${scheduleId} is not ${expectedStatus} (status: ${result.value.status})` }],
+        isError: true,
+      };
+    }
+
+    return { schedule: result.value };
+  }
+
+  /**
    * Handle ScheduleTask tool call
    * Creates a new schedule for recurring or one-time task execution
    */
@@ -1060,22 +1093,10 @@ export class MCPAdapter {
 
     const { scheduleId, includeHistory, historyLimit } = parseResult.data;
 
-    const scheduleResult = await this.scheduleRepository.findById(ScheduleId(scheduleId));
-    if (!scheduleResult.ok) {
-      return {
-        content: [{ type: 'text', text: `Failed to get schedule: ${scheduleResult.error.message}` }],
-        isError: true,
-      };
-    }
+    const lookup = await this.fetchScheduleOrError(scheduleId);
+    if (!('schedule' in lookup)) return lookup;
 
-    if (!scheduleResult.value) {
-      return {
-        content: [{ type: 'text', text: `Schedule ${scheduleId} not found` }],
-        isError: true,
-      };
-    }
-
-    const schedule = scheduleResult.value;
+    const schedule = lookup.schedule;
     const response: Record<string, unknown> = {
       success: true,
       schedule: {
@@ -1141,23 +1162,9 @@ export class MCPAdapter {
 
     const { scheduleId, reason } = parseResult.data;
 
-    // Verify schedule exists
-    const scheduleResult = await this.scheduleRepository.findById(ScheduleId(scheduleId));
-    if (!scheduleResult.ok) {
-      return {
-        content: [{ type: 'text', text: `Failed to get schedule: ${scheduleResult.error.message}` }],
-        isError: true,
-      };
-    }
+    const lookup = await this.fetchScheduleOrError(scheduleId);
+    if (!('schedule' in lookup)) return lookup;
 
-    if (!scheduleResult.value) {
-      return {
-        content: [{ type: 'text', text: `Schedule ${scheduleId} not found` }],
-        isError: true,
-      };
-    }
-
-    // Emit cancel event
     await this.eventBus.emit('ScheduleCancelled', {
       scheduleId: ScheduleId(scheduleId),
       reason,
@@ -1190,30 +1197,9 @@ export class MCPAdapter {
 
     const { scheduleId } = parseResult.data;
 
-    // Verify schedule exists and is active
-    const scheduleResult = await this.scheduleRepository.findById(ScheduleId(scheduleId));
-    if (!scheduleResult.ok) {
-      return {
-        content: [{ type: 'text', text: `Failed to get schedule: ${scheduleResult.error.message}` }],
-        isError: true,
-      };
-    }
+    const lookup = await this.fetchScheduleOrError(scheduleId, ScheduleStatus.ACTIVE);
+    if (!('schedule' in lookup)) return lookup;
 
-    if (!scheduleResult.value) {
-      return {
-        content: [{ type: 'text', text: `Schedule ${scheduleId} not found` }],
-        isError: true,
-      };
-    }
-
-    if (scheduleResult.value.status !== ScheduleStatus.ACTIVE) {
-      return {
-        content: [{ type: 'text', text: `Schedule ${scheduleId} is not active (status: ${scheduleResult.value.status})` }],
-        isError: true,
-      };
-    }
-
-    // Emit pause event
     await this.eventBus.emit('SchedulePaused', {
       scheduleId: ScheduleId(scheduleId),
     });
@@ -1244,30 +1230,9 @@ export class MCPAdapter {
 
     const { scheduleId } = parseResult.data;
 
-    // Verify schedule exists and is paused
-    const scheduleResult = await this.scheduleRepository.findById(ScheduleId(scheduleId));
-    if (!scheduleResult.ok) {
-      return {
-        content: [{ type: 'text', text: `Failed to get schedule: ${scheduleResult.error.message}` }],
-        isError: true,
-      };
-    }
+    const lookup = await this.fetchScheduleOrError(scheduleId, ScheduleStatus.PAUSED);
+    if (!('schedule' in lookup)) return lookup;
 
-    if (!scheduleResult.value) {
-      return {
-        content: [{ type: 'text', text: `Schedule ${scheduleId} not found` }],
-        isError: true,
-      };
-    }
-
-    if (scheduleResult.value.status !== ScheduleStatus.PAUSED) {
-      return {
-        content: [{ type: 'text', text: `Schedule ${scheduleId} is not paused (status: ${scheduleResult.value.status})` }],
-        isError: true,
-      };
-    }
-
-    // Emit resume event
     await this.eventBus.emit('ScheduleResumed', {
       scheduleId: ScheduleId(scheduleId),
     });

@@ -370,7 +370,7 @@ export class ScheduleHandler extends BaseEventHandler {
       this.logger.info('Schedule triggered successfully', {
         scheduleId,
         taskId: task.id,
-        runCount: schedule.runCount + 1,
+        runCount: newRunCount,
         nextRunAt: updates.nextRunAt,
         newStatus: updates.status ?? schedule.status
       });
@@ -519,47 +519,29 @@ export class ScheduleHandler extends BaseEventHandler {
       let schedules: readonly Schedule[];
 
       if (scheduleId) {
-        // Single schedule lookup
         const result = await this.scheduleRepo.findById(scheduleId);
         if (!result.ok) {
-          if (correlationId) {
-            (this.eventBus as { respondError?: (id: string, err: Error) => void }).respondError?.(
-              correlationId,
-              result.error
-            );
-          }
+          this.respondWithError(correlationId, result.error);
           return result;
         }
         schedules = result.value ? [result.value] : [];
       } else if (status) {
-        // Filter by status
         const result = await this.scheduleRepo.findByStatus(status);
         if (!result.ok) {
-          if (correlationId) {
-            (this.eventBus as { respondError?: (id: string, err: Error) => void }).respondError?.(
-              correlationId,
-              result.error
-            );
-          }
+          this.respondWithError(correlationId, result.error);
           return result;
         }
         schedules = result.value;
       } else {
-        // All schedules
         const result = await this.scheduleRepo.findAll();
         if (!result.ok) {
-          if (correlationId) {
-            (this.eventBus as { respondError?: (id: string, err: Error) => void }).respondError?.(
-              correlationId,
-              result.error
-            );
-          }
+          this.respondWithError(correlationId, result.error);
           return result;
         }
         schedules = result.value;
       }
 
-      // Respond to request if correlation ID present
+      // Respond to request-reply if correlation ID present
       if (correlationId) {
         (this.eventBus as { respond?: <T>(id: string, value: T) => void }).respond?.(
           correlationId,
@@ -572,6 +554,18 @@ export class ScheduleHandler extends BaseEventHandler {
 
       return ok(undefined);
     });
+  }
+
+  /**
+   * Send error response via request-reply correlation if available
+   */
+  private respondWithError(correlationId: string | undefined, error: Error): void {
+    if (correlationId) {
+      (this.eventBus as { respondError?: (id: string, err: Error) => void }).respondError?.(
+        correlationId,
+        error
+      );
+    }
   }
 
 }
