@@ -41,6 +41,7 @@ const TaskRowSchema = z.object({
   worker_id: z.string().nullable(),
   exit_code: z.number().nullable(),
   dependencies: z.string().nullable(),
+  continue_from: z.string().nullable(),
 });
 
 /**
@@ -73,6 +74,7 @@ interface TaskRow {
   readonly worker_id: string | null;
   readonly exit_code: number | null;
   readonly dependencies: string | null;
+  readonly continue_from: string | null;
 }
 
 export class SQLiteTaskRepository implements TaskRepository {
@@ -101,14 +103,14 @@ export class SQLiteTaskRepository implements TaskRepository {
         auto_commit, push_to_remote, pr_title, pr_body,
         timeout, max_output_buffer,
         created_at, started_at, completed_at, worker_id, exit_code, dependencies,
-        parent_task_id, retry_count, retry_of
+        parent_task_id, retry_count, retry_of, continue_from
       ) VALUES (
         @id, @prompt, @status, @priority, @workingDirectory, @useWorktree,
         @worktreeCleanup, @mergeStrategy, @branchName, @baseBranch,
         @autoCommit, @pushToRemote, @prTitle, @prBody,
         @timeout, @maxOutputBuffer,
         @createdAt, @startedAt, @completedAt, @workerId, @exitCode, @dependencies,
-        @parentTaskId, @retryCount, @retryOf
+        @parentTaskId, @retryCount, @retryOf, @continueFrom
       )
     `);
 
@@ -138,7 +140,8 @@ export class SQLiteTaskRepository implements TaskRepository {
         dependencies = @dependencies,
         parent_task_id = @parentTaskId,
         retry_count = @retryCount,
-        retry_of = @retryOf
+        retry_of = @retryOf,
+        continue_from = @continueFrom
       WHERE id = @id
     `);
 
@@ -202,7 +205,8 @@ export class SQLiteTaskRepository implements TaskRepository {
           dependencies: null, // Dependencies stored in task_dependencies table
           parentTaskId: task.parentTaskId || null,
           retryCount: task.retryCount || null,
-          retryOf: task.retryOf || null
+          retryOf: task.retryOf || null,
+          continueFrom: task.continueFrom || null
         };
 
         this.saveStmt.run(dbTask);
@@ -259,6 +263,7 @@ export class SQLiteTaskRepository implements TaskRepository {
           parentTaskId: updatedTask.parentTaskId || null,
           retryCount: updatedTask.retryCount || null,
           retryOf: updatedTask.retryOf || null,
+          continueFrom: updatedTask.continueFrom || null,
         });
       },
       operationErrorHandler('update task', { taskId })
@@ -390,6 +395,7 @@ export class SQLiteTaskRepository implements TaskRepository {
       parentTaskId: data.parent_task_id ? data.parent_task_id as TaskId : undefined,
       retryCount: data.retry_count || undefined,
       retryOf: data.retry_of ? data.retry_of as TaskId : undefined,
+      continueFrom: data.continue_from ? data.continue_from as TaskId : undefined,
       createdAt: data.created_at,
       startedAt: data.started_at || undefined,
       completedAt: data.completed_at || undefined,

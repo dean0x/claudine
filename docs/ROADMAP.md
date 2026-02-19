@@ -281,17 +281,33 @@ await ScheduleTask({
 - `schedule_executions` table: execution history and audit trail
 - Timer-based execution: Check every minute for due tasks
 
+#### Implementation Note
+
+v0.4.0 shipped the **"fallback" approach** for task resumption: enriched prompts from terminal-state checkpoints (completed/failed/cancelled). This creates a new task with context injected from the previous attempt's output, errors, and git state.
+
+**What was NOT shipped in v0.4.0** (deferred to future versions):
+- Mid-task checkpoints (checkpoints only captured at terminal states, not during execution)
+- Session continuation with live state handoff
+- Conflict detection between resumed tasks
+- Checkpoint overhead measurement/optimization
+
+**"Scheduled tasks can have dependencies"** is deferred to v0.6.0 (Advanced Orchestration). A scheduled task's ID doesn't exist until the schedule fires, so pre-declaring dependencies on "the next run of schedule X" requires workflow definitions — this is fundamentally a workflow orchestration feature, not a scheduling feature. The `pipeline` CLI command provides a pragmatic stopgap for sequential execution.
+
 #### Timeline
 - **Completed**: Both Task Scheduling and Task Resumption implemented in v0.4.0
-- Task Resumption used the "enriched prompt" approach (context injection from checkpoints)
+- Task Resumption: "enriched prompt" approach (context injection from terminal-state checkpoints)
 
 #### Success Criteria
-- [x] Task Resumption: Auto-checkpoints captured on completion/failure
-- [x] Task Resumption: Enriched prompt context injection working
-- [x] Task Resumption: Retry chain tracking via parentTaskId/retryOf
+- [ ] Task Resumption: Resume from checkpoint within 30 seconds — NOT MET (no mid-task checkpoints; new task created with context)
+- [x] Task Resumption: Fallback "retry with context" working — this IS what was built
+- [ ] Task Resumption: Checkpoint overhead < 5% of task runtime — NOT MEASURED
 - [x] Task Scheduling: Tasks execute within 1 minute of scheduled time
 - [x] Task Scheduling: Recurring tasks repeat correctly
-- [ ] Integration: Scheduled tasks can have dependencies
+- [x] Task Scheduling: Missed runs handled per policy (skip/catchup/fail)
+- [x] Task Scheduling: Concurrent execution prevention implemented
+- [ ] Integration: Scheduled tasks can have dependencies — DEFERRED to v0.6.0 (requires workflow definitions)
+
+*Unchecked criteria represent honest gaps, not failures. The implemented features are production-quality.*
 
 ---
 
@@ -453,14 +469,14 @@ tasks:
 - [ ] Failed dependency behavior documented and tested
 
 ### v0.4.0 Success Criteria
-- [x] Task Resumption: Auto-checkpoints captured on completion/failure
-- [x] Task Resumption: Enriched prompt context injection working
-- [x] Task Resumption: Retry chain tracking via parentTaskId/retryOf
+- [ ] Task Resumption: Resume from checkpoint within 30 seconds — NOT MET (no mid-task checkpoints; new task created with context)
+- [x] Task Resumption: Fallback "retry with context" working — this IS what was built
+- [ ] Task Resumption: Checkpoint overhead < 5% of task runtime — NOT MEASURED
 - [x] Task Scheduling: Tasks execute within 1 minute of scheduled time
 - [x] Task Scheduling: Recurring tasks repeat correctly
 - [x] Task Scheduling: Missed runs handled per policy (skip/catchup/fail)
 - [x] Task Scheduling: Concurrent execution prevention implemented
-- [ ] Integration: Scheduled tasks can have dependencies
+- [ ] Integration: Scheduled tasks can have dependencies — DEFERRED to v0.6.0 (requires workflow definitions)
 
 ### v0.5.0 Success Criteria
 - [ ] Support 5+ distributed servers
@@ -483,7 +499,7 @@ tasks:
 - ✅ v0.4.0 Task Resumption **IMPLEMENTED** - auto-checkpoints, enriched prompts, retry chains
 - ✅ v0.3.0 Task Dependencies **RELEASED** and merged to main
 - 📋 Added v0.3.1 Task Dependencies Optimizations (10 GitHub issues created: #10-#19)
-- 🎯 Updated success criteria - all v0.3.0 and v0.4.0 criteria met
+- 🎯 Updated success criteria - v0.3.0 fully met; v0.4.0 partially met (honest assessment)
 - 📊 v0.4.0 metrics: ~10,080 lines added across 42 files, 844+ tests passing
 - 🔀 Reorganized roadmap: v0.4.0 Resumption+Scheduling, v0.5.0 Distributed, v0.6.0 Orchestration, v0.7.0 Monitoring
 

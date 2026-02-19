@@ -3,9 +3,10 @@ import { DependencyHandler } from '../../../../src/services/handlers/dependency-
 import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
 import { SQLiteTaskRepository } from '../../../../src/implementations/task-repository';
 import { SQLiteDependencyRepository } from '../../../../src/implementations/dependency-repository';
+import { SQLiteCheckpointRepository } from '../../../../src/implementations/checkpoint-repository';
 import { Database } from '../../../../src/implementations/database';
 import { TestLogger } from '../../../fixtures/test-doubles';
-import { createTask, TaskId, type Task } from '../../../../src/core/domain';
+import { createTask, TaskId, type Task, type TaskCheckpoint } from '../../../../src/core/domain';
 import { mkdtemp, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -918,5 +919,186 @@ describe('DependencyHandler - Behavioral Tests', () => {
         expect(errorLogs.length).toBeGreaterThan(0);
       });
     });
+  });
+
+  describe('continueFrom enrichment', () => {
+    let checkpointRepo: SQLiteCheckpointRepository;
+    let handlerWithCheckpoint: DependencyHandler;
+    let enrichmentEventBus: InMemoryEventBus;
+    let enrichmentLogger: TestLogger;
+    let enrichmentDb: Database;
+    let enrichmentTempDir: string;
+
+    beforeEach(async () => {
+      enrichmentLogger = new TestLogger();
+      const config = createTestConfiguration();
+      enrichmentEventBus = new InMemoryEventBus(config, enrichmentLogger);
+
+      enrichmentTempDir = await mkdtemp(join(tmpdir(), 'dep-handler-enrich-'));
+      enrichmentDb = new Database(join(enrichmentTempDir, 'test.db'));
+
+      const enrichTaskRepo = new SQLiteTaskRepository(enrichmentDb);
+      const enrichDepRepo = new SQLiteDependencyRepository(enrichmentDb);
+      checkpointRepo = new SQLiteCheckpointRepository(enrichmentDb);
+
+      const handlerResult = await DependencyHandler.create(
+        enrichDepRepo,
+        enrichTaskRepo,
+        enrichmentLogger,
+        enrichmentEventBus,
+        { checkpointLookup: checkpointRepo }
+      );
+      if (!handlerResult.ok) {
+        throw new Error(`Failed to create DependencyHandler: ${handlerResult.error.message}`);
+      }
+      handlerWithCheckpoint = handlerResult.value;
+
+      // Store references for use in tests
+      (this as any).__enrichTaskRepo = enrichTaskRepo;
+      (this as any).__enrichDepRepo = enrichDepRepo;
+    });
+
+    afterEach(async () => {
+      enrichmentEventBus.dispose();
+      enrichmentDb.close();
+      await rm(enrichmentTempDir, { recursive: true, force: true });
+    });
+
+    it('should enrich task prompt with checkpoint context when continueFrom is set', async () => {
+      // Create fresh repos from the enrichment DB
+      const enrichTaskRepo = new SQLiteTaskRepository(enrichmentDb);
+      const enrichDepRepo = new SQLiteDependencyRepository(enrichmentDb);
+
+      // Arrange - Create parent task
+      const parent = createTask({ prompt: 'Set up authentication module' });
+      await enrichTaskRepo.save(parent);
+
+      // Create child task with continueFrom
+      const child = createTask({
+        prompt: 'Continue implementing auth middleware',
+        dependsOn: [parent.id],
+        continueFrom: parent.id,
+      });
+      await enrichTaskRepo.save(child);
+
+      // Create a checkpoint for the parent task
+      const checkpointData: Omit<TaskCheckpoint, 'id'> = {
+        taskId: parent.id,
+        checkpointType: 'completed',
+        outputSummary: 'Build succeeded. All tests passed.',
+        errorSummary: undefined,
+        gitBranch: 'feature/auth',
+        gitCommitSha: 'abc123',
+        gitDirtyFiles: ['src/auth.ts'],
+        createdAt: Date.now(),
+      };
+      await checkpointRepo.save(checkpointData);
+
+      // Register child dependencies
+      await enrichmentEventBus.emit('TaskDelegated', { task: child });
+      await flushEventLoop();
+
+      // Listen for TaskUnblocked
+      let unblockedTask: Task | undefined;
+      enrichmentEventBus.subscribe('TaskUnblocked', async (event) => {
+        unblockedTask = event.task;
+      });
+
+      // Act - Complete parent task (triggers dependency resolution + enrichment)
+      await enrichmentEventBus.emit('TaskCompleted', { taskId: parent.id });
+      await flushEventLoop();
+
+      // Assert - Task should be unblocked with enriched prompt
+      expect(unblockedTask).toBeDefined();
+      if (unblockedTask) {
+        expect(unblockedTask.prompt).toContain('DEPENDENCY CONTEXT:');
+        expect(unblockedTask.prompt).toContain('Set up authentication module');
+        expect(unblockedTask.prompt).toContain('Build succeeded. All tests passed.');
+        expect(unblockedTask.prompt).toContain('YOUR TASK:');
+        expect(unblockedTask.prompt).toContain('Continue implementing auth middleware');
+      }
+
+      // Verify prompt was persisted to DB
+      const fetchedTask = await enrichTaskRepo.findById(child.id);
+      expect(fetchedTask.ok).toBe(true);
+      if (fetchedTask.ok && fetchedTask.value) {
+        expect(fetchedTask.value.prompt).toContain('DEPENDENCY CONTEXT:');
+      }
+    });
+
+    it('should not enrich task prompt when continueFrom is not set', async () => {
+      const enrichTaskRepo = new SQLiteTaskRepository(enrichmentDb);
+
+      // Arrange - Create parent and child without continueFrom
+      const parent = createTask({ prompt: 'parent task' });
+      await enrichTaskRepo.save(parent);
+
+      const child = createTask({
+        prompt: 'child task without continueFrom',
+        dependsOn: [parent.id],
+        // No continueFrom
+      });
+      await enrichTaskRepo.save(child);
+
+      await enrichmentEventBus.emit('TaskDelegated', { task: child });
+      await flushEventLoop();
+
+      let unblockedTask: Task | undefined;
+      enrichmentEventBus.subscribe('TaskUnblocked', async (event) => {
+        unblockedTask = event.task;
+      });
+
+      // Act
+      await enrichmentEventBus.emit('TaskCompleted', { taskId: parent.id });
+      await flushEventLoop();
+
+      // Assert - prompt should be unchanged
+      expect(unblockedTask).toBeDefined();
+      if (unblockedTask) {
+        expect(unblockedTask.prompt).toBe('child task without continueFrom');
+        expect(unblockedTask.prompt).not.toContain('DEPENDENCY CONTEXT:');
+      }
+    });
+
+    it('should proceed without enrichment when checkpoint is not available', async () => {
+      const enrichTaskRepo = new SQLiteTaskRepository(enrichmentDb);
+
+      // Arrange - Create parent and child with continueFrom but NO checkpoint
+      const parent = createTask({ prompt: 'parent task' });
+      await enrichTaskRepo.save(parent);
+
+      const child = createTask({
+        prompt: 'child task with continueFrom',
+        dependsOn: [parent.id],
+        continueFrom: parent.id,
+      });
+      await enrichTaskRepo.save(child);
+
+      await enrichmentEventBus.emit('TaskDelegated', { task: child });
+      await flushEventLoop();
+
+      let unblockedTask: Task | undefined;
+      enrichmentEventBus.subscribe('TaskUnblocked', async (event) => {
+        unblockedTask = event.task;
+      });
+
+      // Act - Complete parent (no checkpoint exists)
+      // The emit awaits the handler chain which includes waitForCheckpoint's 5s timeout
+      await enrichmentEventBus.emit('TaskCompleted', { taskId: parent.id });
+      await flushEventLoop();
+
+      // Assert - task should still be unblocked, but with original prompt
+      expect(unblockedTask).toBeDefined();
+      if (unblockedTask) {
+        expect(unblockedTask.prompt).toBe('child task with continueFrom');
+        expect(unblockedTask.prompt).not.toContain('DEPENDENCY CONTEXT:');
+      }
+
+      // Verify warning was logged
+      const warnLogs = enrichmentLogger.getLogsByLevel('warn');
+      expect(warnLogs.some(log =>
+        log.message.includes('Checkpoint not available for continueFrom enrichment')
+      )).toBe(true);
+    }, 15000); // Extended timeout: handler awaits 5s checkpoint timeout internally
   });
 });

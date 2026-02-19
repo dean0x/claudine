@@ -396,6 +396,27 @@ describe('MCPAdapter - Protocol Compliance', () => {
       expect(call.mergeStrategy).toBe('auto');
     });
 
+    it('should pass continueFrom field to TaskManager when provided', async () => {
+      await simulateDelegateTask(adapter, mockTaskManager, {
+        prompt: VALID_PROMPT,
+        dependsOn: ['task-parent-123'],
+        continueFrom: 'task-parent-123',
+      });
+
+      const call = mockTaskManager.delegateCalls[0];
+      expect(call.continueFrom).toBe('task-parent-123');
+      expect(call.dependsOn).toContain('task-parent-123');
+    });
+
+    it('should not include continueFrom when not provided', async () => {
+      await simulateDelegateTask(adapter, mockTaskManager, {
+        prompt: VALID_PROMPT,
+      });
+
+      const call = mockTaskManager.delegateCalls[0];
+      expect(call.continueFrom).toBeUndefined();
+    });
+
     it('should return formatted success response with task details', async () => {
       const result = await simulateDelegateTask(adapter, mockTaskManager, {
         prompt: VALID_PROMPT,

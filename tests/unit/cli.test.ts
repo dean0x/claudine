@@ -474,6 +474,26 @@ describe('CLI - Command Parsing and Validation', () => {
     });
   });
 
+  describe('Delegate Command - continueFrom Option', () => {
+    it('should pass continueFrom when --continue-from is provided', async () => {
+      await simulateDelegateCommand(mockTaskManager, VALID_PROMPT, {
+        continueFrom: 'task-parent-abc',
+        dependsOn: ['task-parent-abc'],
+      });
+
+      const call = mockTaskManager.delegateCalls[0];
+      expect(call.continueFrom).toBe('task-parent-abc');
+      expect(call.dependsOn).toContain('task-parent-abc');
+    });
+
+    it('should not include continueFrom when --continue-from is not provided', async () => {
+      await simulateDelegateCommand(mockTaskManager, VALID_PROMPT);
+
+      const call = mockTaskManager.delegateCalls[0];
+      expect(call.continueFrom).toBeUndefined();
+    });
+  });
+
   describe('Delegate Command - Worktree Options', () => {
     it('should disable worktree by default for simplicity', async () => {
       await simulateDelegateCommand(mockTaskManager, VALID_PROMPT);
@@ -1195,6 +1215,12 @@ describe('CLI - Help Text Coverage', () => {
     expect(helpText).toContain('--context');
   });
 
+  it('should include --continue-from in help text', () => {
+    const helpText = getHelpText();
+
+    expect(helpText).toContain('--continue-from');
+  });
+
   it('should include scheduling examples', () => {
     const helpText = getHelpText();
 
@@ -1221,6 +1247,7 @@ MCP Server Commands:
 Task Commands:
   delegate <prompt> [options]  Delegate a task to Claude Code
     -p, --priority P0|P1|P2    Task priority
+    --continue-from <task-id>  Continue from a dependency's checkpoint context
   status [task-id]             Get status of task(s)
   logs <task-id> [--tail N]    Get output logs
   cancel <task-id> [reason]    Cancel a running task
@@ -1365,6 +1392,8 @@ async function simulateDelegateCommand(
     baseBranch: options?.baseBranch,
     timeout: options?.timeout || 300000,
     maxOutputBuffer: options?.maxOutputBuffer || 10485760,
+    dependsOn: options?.dependsOn,
+    continueFrom: options?.continueFrom,
   };
 
   return await taskManager.delegate(request);

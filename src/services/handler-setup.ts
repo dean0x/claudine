@@ -271,7 +271,8 @@ export async function setupEventHandlers(
     deps.dependencyRepository,
     deps.taskRepository,
     logger,
-    eventBus
+    eventBus,
+    { checkpointLookup: deps.checkpointRepository }
   );
   if (!dependencyHandlerResult.ok) {
     // Cleanup standard handlers on failure

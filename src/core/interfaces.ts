@@ -500,3 +500,12 @@ export interface CheckpointRepository {
   findAll(taskId: TaskId, limit?: number): Promise<Result<readonly TaskCheckpoint[]>>;
   deleteByTask(taskId: TaskId): Promise<Result<void>>;
 }
+
+/**
+ * Narrow interface for checkpoint lookup
+ * ARCHITECTURE: DependencyHandler depends on this, not full CheckpointRepository
+ * Rationale: Follows Interface Segregation Principle - handlers only see what they need
+ */
+export interface CheckpointLookup {
+  findLatest(taskId: TaskId): Promise<Result<TaskCheckpoint | null>>;
+}

@@ -71,6 +71,7 @@ Task Commands:
     -p, --priority P0|P1|P2    Task priority (P0=critical, P1=high, P2=normal)
     -w, --working-directory D  Working directory for task execution
     --depends-on TASK_IDS      Comma-separated task IDs this task depends on (blocks until complete)
+    --continue-from TASK_ID    Continue from a dependency's checkpoint context (must be in dependsOn)
     --use-worktree             [EXPERIMENTAL] Use git worktree for isolation (opt-in)
     --keep-worktree            Always preserve worktree after completion (requires --use-worktree)
     --delete-worktree          Always cleanup worktree after completion (requires --use-worktree)
@@ -198,6 +199,7 @@ async function delegateTask(prompt: string, options?: {
   priority?: 'P0' | 'P1' | 'P2';
   workingDirectory?: string;
   dependsOn?: readonly string[];
+  continueFrom?: string;
   useWorktree?: boolean;
   worktreeCleanup?: 'auto' | 'keep' | 'delete';
   mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch';
@@ -240,7 +242,11 @@ async function delegateTask(prompt: string, options?: {
       if (options.workingDirectory) console.log('  Working Directory:', options.workingDirectory);
       if (options.dependsOn && options.dependsOn.length > 0) {
         console.log('  Depends On:', options.dependsOn.join(', '));
-        console.log('  ⏳ Task will wait for dependencies to complete before starting');
+        console.log('  Task will wait for dependencies to complete before starting');
+      }
+      if (options.continueFrom) {
+        console.log('  Continue From:', options.continueFrom);
+        console.log('  Task will receive checkpoint context from this dependency');
       }
       if (options.useWorktree) console.log('  Use Worktree:', options.useWorktree);
       if (options.timeout) console.log('  Timeout:', options.timeout, 'ms');
@@ -998,6 +1004,7 @@ if (mainCommand === 'mcp') {
     priority?: 'P0' | 'P1' | 'P2';
     workingDirectory?: string;
     dependsOn?: readonly string[];
+    continueFrom?: string;
     useWorktree?: boolean;
     worktreeCleanup?: 'auto' | 'keep' | 'delete';
     mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch';
@@ -1060,6 +1067,15 @@ if (mainCommand === 'mcp') {
       } else {
         console.error('❌ --depends-on requires comma-separated task IDs');
         console.error('Example: --depends-on task-abc123 or --depends-on task-1,task-2,task-3');
+        process.exit(1);
+      }
+    } else if (arg === '--continue-from') {
+      const next = delegateArgs[i + 1];
+      if (next && !next.startsWith('-')) {
+        options.continueFrom = next;
+        i++;
+      } else {
+        console.error('❌ --continue-from requires a task ID');
         process.exit(1);
       }
     } else if (arg === '--no-worktree') {

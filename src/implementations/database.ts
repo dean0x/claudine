@@ -517,6 +517,13 @@ export class Database {
             ALTER TABLE schedules ADD COLUMN after_schedule_id TEXT
           `);
         }
+      },
+      {
+        version: 6,
+        description: 'Add continue_from column for session continuation through dependency chains',
+        up: (db) => {
+          db.exec(`ALTER TABLE tasks ADD COLUMN continue_from TEXT`);
+        }
       }
     ];
   }

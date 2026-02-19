@@ -104,6 +104,10 @@ export interface Task {
   readonly dependents?: readonly TaskId[];     // Tasks that depend on this task (blocked tasks)
   readonly dependencyState?: 'blocked' | 'ready' | 'none'; // Computed dependency state
 
+  // Session continuation (v0.5.0): Task ID to continue from
+  // When set, DependencyHandler enriches prompt with checkpoint context from this dependency
+  readonly continueFrom?: TaskId;
+
   // Timestamps and results
   readonly createdAt: number;
   readonly updatedAt?: number;
@@ -169,6 +173,11 @@ export interface DelegateRequest {
   // Dependency tracking (Phase 4: Task Dependencies)
   // Array of task IDs this task depends on (must complete before this task can run)
   readonly dependsOn?: readonly TaskId[];
+
+  // Session continuation (v0.5.0): Task ID to continue from
+  // When set, the task's prompt is enriched with checkpoint context from this dependency before running
+  // Must be in dependsOn list (auto-added if missing)
+  readonly continueFrom?: TaskId;
 }
 
 export interface TaskUpdate {
@@ -226,6 +235,7 @@ export const createTask = (request: DelegateRequest): Task => {
     dependsOn: request.dependsOn,
     dependents: undefined, // Populated by DependencyRepository queries
     dependencyState: request.dependsOn && request.dependsOn.length > 0 ? 'blocked' : 'none',
+    continueFrom: request.continueFrom,
 
     // Execution configuration
     timeout: request.timeout,

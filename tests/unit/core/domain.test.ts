@@ -504,5 +504,27 @@ describe('Domain Models - REAL Behavior Tests', () => {
       expect(task.prTitle).toBe('Test PR');
       expect(task.prBody).toBe('This is a test');
     });
+
+    it('should set continueFrom when provided in request', () => {
+      const parentId = TaskId('task-parent-abc');
+      const task = createTask({
+        prompt: 'continue auth work',
+        dependsOn: [parentId],
+        continueFrom: parentId,
+      });
+
+      expect(task.continueFrom).toBe(parentId);
+      expect(task.dependsOn).toEqual([parentId]);
+      expect(task.dependencyState).toBe('blocked');
+    });
+
+    it('should leave continueFrom undefined when not provided', () => {
+      const task = createTask({
+        prompt: 'standalone task',
+      });
+
+      expect(task.continueFrom).toBeUndefined();
+      expect(task.dependencyState).toBe('none');
+    });
   });
 });

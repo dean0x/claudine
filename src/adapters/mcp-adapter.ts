@@ -38,6 +38,8 @@ const DelegateTaskSchema = z.object({
   timeout: z.number().min(1000).max(86400000).optional(), // 1 second to 24 hours
   maxOutputBuffer: z.number().min(1024).max(1073741824).optional(), // 1KB to 1GB
   dependsOn: z.array(z.string()).optional(), // Task IDs this task depends on
+  continueFrom: z.string().regex(/^task-/).optional()
+    .describe('Task ID to continue from — receives checkpoint context from this dependency (must be in dependsOn list)'),
 });
 
 const TaskStatusSchema = z.object({
@@ -292,6 +294,11 @@ export class MCPAdapter {
                       type: 'string',
                       pattern: '^task-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
                     },
+                  },
+                  continueFrom: {
+                    type: 'string',
+                    description: 'Task ID to continue from — receives checkpoint context when that dependency completes (must be in dependsOn list)',
+                    pattern: '^task-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
                   },
                 },
                 required: ['prompt'],
@@ -588,6 +595,7 @@ export class MCPAdapter {
       timeout: data.timeout,
       maxOutputBuffer: data.maxOutputBuffer,
       dependsOn: data.dependsOn ? data.dependsOn.map(TaskId) : undefined,
+      continueFrom: data.continueFrom ? TaskId(data.continueFrom) : undefined,
     };
 
     // Delegate task using our new architecture

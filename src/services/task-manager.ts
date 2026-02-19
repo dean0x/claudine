@@ -61,13 +61,24 @@ export class TaskManagerService implements TaskManager {
 
   async delegate(request: DelegateRequest): Promise<Result<Task>> {
     // Apply configuration defaults to request
-    const requestWithDefaults: DelegateRequest = {
+    let requestWithDefaults: DelegateRequest = {
       ...request,
       timeout: request.timeout ?? this.config.timeout,
       maxOutputBuffer: request.maxOutputBuffer ?? this.config.maxOutputBuffer,
       // Apply worktree default from configuration (default: false)
       useWorktree: request.useWorktree ?? this.config.useWorktreesByDefault,
     };
+
+    // continueFrom validation: ensure continueFrom is in dependsOn (auto-add if missing)
+    if (requestWithDefaults.continueFrom) {
+      const deps = requestWithDefaults.dependsOn ?? [];
+      if (!deps.includes(requestWithDefaults.continueFrom)) {
+        requestWithDefaults = {
+          ...requestWithDefaults,
+          dependsOn: [...deps, requestWithDefaults.continueFrom],
+        };
+      }
+    }
 
     // Create task using pure function with defaults applied
     const task = createTask(requestWithDefaults);
