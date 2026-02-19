@@ -182,6 +182,13 @@ Last Updated: February 2026
 - **Atomic Transactions**: TOCTOU-safe dependency addition with synchronous better-sqlite3 transactions
 - **Composite Indexes**: Optimized queries for dependency lookups and blocked task checks
 
+### Session Continuation (v0.4.0)
+- **`continueFrom` Field**: Dependent tasks can specify a dependency whose checkpoint context is injected into their prompt
+- **Automatic Enrichment**: When the dependency completes, its output summary, git state, and errors are prepended to the dependent task's prompt
+- **Race-Safe**: Subscribe-first pattern with 5-second timeout ensures checkpoint is available before task runs
+- **Validation**: `continueFrom` must reference a task in the `dependsOn` list (auto-added if missing)
+- **Chain Support**: A→B→C where B receives A's context and C receives B's (which includes A's)
+
 ### Event-Driven Integration
 - **TaskDependencyAdded**: Emitted when new dependency relationship created
 - **DependencyResolved**: Emitted when blocking dependency completes
@@ -268,10 +275,17 @@ Last Updated: February 2026
 - **MCP Tool**: `ResumeTask` with optional additional context
 - **CLI**: `claudine resume <task-id> [--context "..."]`
 
+### Session Continuation (`continueFrom`)
+- **Dependency Context Injection**: Dependent tasks receive checkpoint context from a specified dependency
+- **`continueFrom` Field**: Added to `DelegateTask` MCP tool and `--continue-from` CLI flag
+- **Automatic Enrichment**: Output summary, git state, and errors prepended to task prompt
+- **Race-Safe Design**: Subscribe-first pattern ensures checkpoint availability before task execution
+- **Chain Support**: Context flows through A→B→C dependency chains
+
 ### Infrastructure
 - **Schedule Service Extraction**: ~375 lines of business logic extracted from MCP adapter for CLI reuse
 - **CLI Bootstrap Helper**: `withServices()` eliminates repeated bootstrap boilerplate
-- **Database Migrations v3-v5**: `schedules`, `schedule_executions`, `task_checkpoints` tables
+- **Database Migrations v3-v6**: `schedules`, `schedule_executions`, `task_checkpoints` tables, `continue_from` column
 - **FK Cascade Fix**: Separated `save()` from `update()` to prevent cascade data loss
 
 ---

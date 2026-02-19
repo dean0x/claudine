@@ -287,9 +287,10 @@ v0.4.0 shipped the **"fallback" approach** for task resumption: enriched prompts
 
 **What was NOT shipped in v0.4.0** (deferred to future versions):
 - Mid-task checkpoints (checkpoints only captured at terminal states, not during execution)
-- Session continuation with live state handoff
 - Conflict detection between resumed tasks
 - Checkpoint overhead measurement/optimization
+
+**Added post-release**: `continueFrom` enables session continuation through dependency chains — dependent tasks receive checkpoint context (output, git state, errors) from a specified dependency before execution. This is context injection, not live state handoff.
 
 **"Scheduled tasks can have dependencies"** is deferred to v0.6.0 (Advanced Orchestration). A scheduled task's ID doesn't exist until the schedule fires, so pre-declaring dependencies on "the next run of schedule X" requires workflow definitions — this is fundamentally a workflow orchestration feature, not a scheduling feature. The `pipeline` CLI command provides a pragmatic stopgap for sequential execution.
 

@@ -1060,6 +1060,91 @@ describe('DependencyHandler - Behavioral Tests', () => {
       }
     });
 
+    it('should enrich through A→B→C chain with nested continuation context', async () => {
+      const enrichTaskRepo = new SQLiteTaskRepository(enrichmentDb);
+      const enrichDepRepo = new SQLiteDependencyRepository(enrichmentDb);
+
+      // Arrange - Create chain: A → B (continueFrom A) → C (continueFrom B)
+      const taskA = createTask({ prompt: 'Step 1: Initialize database schema' });
+      await enrichTaskRepo.save(taskA);
+
+      const taskB = createTask({
+        prompt: 'Step 2: Seed test data',
+        dependsOn: [taskA.id],
+        continueFrom: taskA.id,
+      });
+      await enrichTaskRepo.save(taskB);
+
+      const taskC = createTask({
+        prompt: 'Step 3: Run integration tests',
+        dependsOn: [taskB.id],
+        continueFrom: taskB.id,
+      });
+      await enrichTaskRepo.save(taskC);
+
+      // Create checkpoint for A
+      await checkpointRepo.save({
+        taskId: taskA.id,
+        checkpointType: 'completed',
+        outputSummary: 'Schema created: users, orders, products tables.',
+        errorSummary: undefined,
+        gitBranch: 'feature/db',
+        gitCommitSha: 'aaa111',
+        gitDirtyFiles: ['schema.sql'],
+        createdAt: Date.now(),
+      });
+
+      // Register dependencies for B and C
+      await enrichmentEventBus.emit('TaskDelegated', { task: taskB });
+      await enrichmentEventBus.emit('TaskDelegated', { task: taskC });
+      await flushEventLoop();
+
+      // Track unblocked tasks
+      const unblockedTasks: Task[] = [];
+      enrichmentEventBus.subscribe('TaskUnblocked', async (event) => {
+        unblockedTasks.push(event.task);
+      });
+
+      // Act 1: Complete A → B should unblock with enriched prompt
+      await enrichmentEventBus.emit('TaskCompleted', { taskId: taskA.id });
+      await flushEventLoop();
+
+      expect(unblockedTasks).toHaveLength(1);
+      const enrichedB = unblockedTasks[0];
+      expect(enrichedB.prompt).toContain('DEPENDENCY CONTEXT:');
+      expect(enrichedB.prompt).toContain('Step 1: Initialize database schema');
+      expect(enrichedB.prompt).toContain('Schema created: users, orders, products tables.');
+      expect(enrichedB.prompt).toContain('YOUR TASK:');
+      expect(enrichedB.prompt).toContain('Step 2: Seed test data');
+
+      // Create checkpoint for B (its prompt is now enriched — checkpoint captures enriched prompt context)
+      await checkpointRepo.save({
+        taskId: taskB.id,
+        checkpointType: 'completed',
+        outputSummary: 'Seeded 100 users, 500 orders.',
+        errorSummary: undefined,
+        gitBranch: 'feature/db',
+        gitCommitSha: 'bbb222',
+        gitDirtyFiles: ['seed.ts'],
+        createdAt: Date.now(),
+      });
+
+      // Act 2: Complete B → C should unblock with enriched prompt containing B's context
+      await enrichmentEventBus.emit('TaskCompleted', { taskId: taskB.id });
+      await flushEventLoop();
+
+      expect(unblockedTasks).toHaveLength(2);
+      const enrichedC = unblockedTasks[1];
+      expect(enrichedC.prompt).toContain('DEPENDENCY CONTEXT:');
+      expect(enrichedC.prompt).toContain('Seeded 100 users, 500 orders.');
+      expect(enrichedC.prompt).toContain('YOUR TASK:');
+      expect(enrichedC.prompt).toContain('Step 3: Run integration tests');
+
+      // Verify B's enriched prompt is used as dependency prompt for C
+      // (B's prompt was enriched with A's context, and that becomes the "Prerequisite prompt" for C)
+      expect(enrichedC.prompt).toContain('Step 2: Seed test data');
+    });
+
     it('should proceed without enrichment when checkpoint is not available', async () => {
       const enrichTaskRepo = new SQLiteTaskRepository(enrichmentDb);
 

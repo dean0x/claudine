@@ -606,6 +606,19 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       }
     });
 
+    it('should reject continueFrom referencing a nonexistent task', async () => {
+      const result = await taskManager.delegate({
+        prompt: 'Task with bad continueFrom',
+        priority: Priority.P2,
+        continueFrom: 'task-nonexistent' as TaskId,
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('continueFrom task not found');
+      }
+    });
+
     it('should not duplicate continueFrom in dependsOn when already present', async () => {
       const taskAResult = await taskManager.delegate({
         prompt: 'Task A - parent',

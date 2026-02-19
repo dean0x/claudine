@@ -134,6 +134,22 @@ const commit = await DelegateTask({
 });
 ```
 
+**Session continuation** (pass output context through dependency chains):
+
+```typescript
+// Build task runs first
+const build = await DelegateTask({ prompt: "npm run build" });
+
+// Test task receives build's output/git state in its prompt
+const test = await DelegateTask({
+  prompt: "npm test",
+  dependsOn: [build.taskId],
+  continueFrom: build.taskId
+});
+```
+
+When `continueFrom` is set, the dependent task's prompt is automatically enriched with the dependency's checkpoint context (output summary, git state, errors) before execution.
+
 See **[Task Dependencies Documentation](./docs/TASK-DEPENDENCIES.md)** for advanced patterns (diamond dependencies, error handling, failure propagation).
 
 ### Task Scheduling

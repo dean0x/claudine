@@ -69,13 +69,28 @@ export class TaskManagerService implements TaskManager {
       useWorktree: request.useWorktree ?? this.config.useWorktreesByDefault,
     };
 
-    // continueFrom validation: ensure continueFrom is in dependsOn (auto-add if missing)
+    // continueFrom validation: verify task exists and ensure it's in dependsOn
     if (requestWithDefaults.continueFrom) {
+      const continueFromId = requestWithDefaults.continueFrom;
+
+      // Validate referenced task exists
+      const lookupResult = await this.eventBus.request<TaskStatusQueryEvent, Task | null | readonly Task[]>(
+        'TaskStatusQuery',
+        { taskId: continueFromId }
+      );
+      if (!lookupResult.ok || lookupResult.value === null) {
+        return err(new ClaudineError(
+          ErrorCode.TASK_NOT_FOUND,
+          `continueFrom task not found: ${continueFromId}`
+        ));
+      }
+
+      // Auto-add to dependsOn if missing
       const deps = requestWithDefaults.dependsOn ?? [];
-      if (!deps.includes(requestWithDefaults.continueFrom)) {
+      if (!deps.includes(continueFromId)) {
         requestWithDefaults = {
           ...requestWithDefaults,
-          dependsOn: [...deps, requestWithDefaults.continueFrom],
+          dependsOn: [...deps, continueFromId],
         };
       }
     }
