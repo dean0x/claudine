@@ -1,6 +1,6 @@
-# Claudine v0.3.x - Current Features
+# Claudine Features
 
-This document lists all features that are **currently implemented and working** in Claudine v0.3.x.
+This document lists all features that are **currently implemented and working** in Claudine.
 
 Last Updated: February 2026
 
@@ -118,11 +118,26 @@ Last Updated: February 2026
 - `claudine mcp config`: Show MCP configuration examples
 - `claudine help`: Show help and usage
 
-### Direct Task Commands (New in v0.2.1)
+### Direct Task Commands (v0.2.1+)
 - `claudine delegate <prompt>`: Delegate task directly to background Claude instance
 - `claudine status [task-id]`: Check status of all tasks or specific task
 - `claudine logs <task-id>`: Retrieve task output and logs
 - `claudine cancel <task-id> [reason]`: Cancel running task with optional reason
+
+### Schedule Commands (v0.4.0+)
+- `claudine schedule create <prompt> [options]`: Create a cron or one-time scheduled task
+- `claudine schedule list [--status <status>]`: List schedules with optional status filter
+- `claudine schedule get <id> [--history]`: Get schedule details and execution history
+- `claudine schedule pause <id>`: Pause an active schedule
+- `claudine schedule resume <id>`: Resume a paused schedule
+- `claudine schedule cancel <id> [reason]`: Cancel a schedule with optional reason
+
+### Pipeline Commands (v0.4.0+)
+- `claudine pipeline <prompt> [--delay Nm <prompt>]...`: Create chained one-time schedules with delays
+
+### Task Resumption Commands (v0.4.0+)
+- `claudine resume <task-id>`: Resume a failed/completed task from its checkpoint
+- `claudine resume <task-id> --context "..."`: Resume with additional instructions
 
 ### Configuration Examples
 - **NPM Package**: Global installation support
@@ -203,6 +218,27 @@ Last Updated: February 2026
 - **ScheduleResumed**: Emitted when a schedule is resumed
 - **ScheduleExecuted**: Emitted when a scheduled task is triggered
 
+## ✅ Task Resumption (v0.4.0)
+
+### Auto-Checkpoints
+- **Automatic Capture**: Checkpoints created on task completion or failure (via `CheckpointHandler`)
+- **Git State**: Branch name, commit SHA, and dirty file list recorded at checkpoint time
+- **Output Summary**: Last 50 lines of stdout/stderr preserved for context injection
+- **Database Persistence**: `task_checkpoints` table (migration v5) with full audit data
+
+### Resume Workflow
+- **Enriched Prompts**: Resumed tasks receive full checkpoint context (previous output, git state, error info)
+- **Additional Context**: Provide extra instructions when resuming to guide the retry
+- **Retry Chains**: Track resume lineage via `parentTaskId` and `retryOf` fields on the new task
+- **Terminal State Requirement**: Only tasks in completed, failed, or cancelled states can be resumed
+
+### MCP Tool
+- **ResumeTask**: Resume a terminal task with optional `additionalContext` string (max 4000 chars)
+
+### Event-Driven Integration
+- **TaskCompleted / TaskFailed**: Triggers automatic checkpoint capture via `CheckpointHandler`
+- **CheckpointRepository**: SQLite persistence with prepared statements and Zod boundary validation
+
 ## ❌ NOT Implemented (Despite Some Documentation Claims)
 - **Distributed Processing**: Single-server only
 - **Web UI**: No dashboard interface
@@ -214,6 +250,32 @@ Last Updated: February 2026
 
 ---
 
+## 🆕 What's New in v0.4.0
+
+### Task Scheduling
+- **Cron & One-Time Schedules**: Standard 5-field cron expressions and ISO 8601 one-time scheduling
+- **Timezone Support**: IANA timezone identifiers with DST awareness
+- **Missed Run Policies**: `skip`, `catchup`, or `fail` for overdue triggers
+- **Lifecycle Management**: Pause, resume, cancel schedules with full execution history
+- **Concurrent Execution Prevention**: Lock-based protection against overlapping runs
+- **6 MCP Tools**: `ScheduleTask`, `ListSchedules`, `GetSchedule`, `CancelSchedule`, `PauseSchedule`, `ResumeSchedule`
+- **CLI + Pipeline**: Full CLI parity including `pipeline` command for chained one-time schedules
+
+### Task Resumption
+- **Auto-Checkpoints**: Captured on task completion/failure with git state and output summary
+- **Enriched Prompts**: Resumed tasks receive full context from previous attempt
+- **Retry Chains**: Track resume lineage via `parentTaskId` and `retryOf` fields
+- **MCP Tool**: `ResumeTask` with optional additional context
+- **CLI**: `claudine resume <task-id> [--context "..."]`
+
+### Infrastructure
+- **Schedule Service Extraction**: ~375 lines of business logic extracted from MCP adapter for CLI reuse
+- **CLI Bootstrap Helper**: `withServices()` eliminates repeated bootstrap boilerplate
+- **Database Migrations v3-v5**: `schedules`, `schedule_executions`, `task_checkpoints` tables
+- **FK Cascade Fix**: Separated `save()` from `update()` to prevent cascade data loss
+
+---
+
 ## 🆕 What's New in v0.2.1
 
 ### Event-Driven Architecture
@@ -222,7 +284,7 @@ Last Updated: February 2026
 - **Event Handlers**: Specialized handlers for different concerns (persistence, queue, workers, output)
 - **Zero Direct State**: TaskManager is stateless, handlers manage all state via events
 
-### Direct CLI Commands  
+### Direct CLI Commands
 - **Task Management**: Direct CLI interface without MCP connection required
 - **Real-time Testing**: Instant task delegation and status checking
 - **Better DX**: No need to reconnect MCP server for testing
@@ -234,4 +296,4 @@ Last Updated: February 2026
 
 ---
 
-**Note**: This document reflects the actual implemented features as of v0.3.x. For planned features, see [ROADMAP.md](./ROADMAP.md).
+**Note**: This document reflects the actual implemented features. For planned features, see [ROADMAP.md](./ROADMAP.md).
