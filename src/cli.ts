@@ -847,7 +847,8 @@ async function handlePipelineCommand(pipelineArgs: string[]) {
 
   const { scheduleService } = await withServices();
   const { ScheduleType } = await import('./core/domain.js');
-  const now = Date.now();
+  // Add 2-second buffer so "now" doesn't become "past" during validation
+  const now = Date.now() + 2000;
   const createdSchedules: Array<{ id: string; prompt: string; runsAt: string }> = [];
   let previousScheduleId: string | undefined;
 

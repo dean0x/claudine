@@ -13,6 +13,35 @@ The task dependency system is built on these core components:
 3. **DependencyHandler** - Event handler that manages dependency lifecycle
 4. **QueueHandler** - Modified to be dependency-aware (blocks tasks with unresolved dependencies)
 
+### Session Continuation (`continueFrom`)
+
+Tasks can use the `continueFrom` field to receive checkpoint context from a completed dependency. When set, the dependent task's prompt is automatically enriched with the dependency's output summary, git state, and error information before execution.
+
+```typescript
+// Build task runs first
+const build = await taskManager.delegate({
+  prompt: 'npm run build',
+  priority: Priority.P1
+});
+
+// Test task receives build's checkpoint context in its prompt
+const test = await taskManager.delegate({
+  prompt: 'npm test',
+  dependsOn: [build.value.id],
+  continueFrom: build.value.id
+});
+```
+
+**Key behaviors:**
+- `continueFrom` must reference a task in the `dependsOn` list (auto-added if missing)
+- Uses subscribe-first pattern with 5-second timeout for race-safe checkpoint retrieval
+- Supports chains: A→B→C where B receives A's context, and C receives B's (which includes A's)
+
+**CLI:**
+```bash
+claudine delegate "npm test" --depends-on task-abc123 --continue-from task-abc123
+```
+
 ### Dependency-Aware Queueing
 
 **Key Principle**: Tasks are only enqueued when all dependencies are resolved.

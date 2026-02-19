@@ -75,6 +75,7 @@ Once configured, use these tools in Claude Code:
 | **TaskStatus** | Get real-time task status | `TaskStatus({ taskId })` |
 | **TaskLogs** | Stream or retrieve execution logs | `TaskLogs({ taskId })` |
 | **CancelTask** | Cancel tasks with resource cleanup | `CancelTask({ taskId, reason })` |
+| **RetryTask** | Retry a failed or completed task | `RetryTask({ taskId })` |
 | **ScheduleTask** | Schedule recurring or one-time tasks | `ScheduleTask({ prompt: "...", scheduleType: "cron", cronExpression: "0 2 * * *" })` |
 | **ListSchedules** | List schedules with optional status filter | `ListSchedules({ status: "active" })` |
 | **GetSchedule** | Get schedule details and execution history | `GetSchedule({ scheduleId })` |

@@ -46,7 +46,7 @@ claudine pipeline "set up DB" --delay 5m "run migrations" --delay 10m "seed data
 - `ScheduleHandler`: Event-driven lifecycle management (create, trigger, cancel, pause, resume)
 - `ScheduleExecutor`: Tick-based engine with configurable intervals, concurrent execution prevention, graceful shutdown
 - `ScheduleRepository`: SQLite persistence with prepared statements and Zod boundary validation
-- Database migrations v3-v4: `schedules` and `schedule_executions` tables with proper FK constraints
+- Database migrations v4-v6: `schedules`, `schedule_executions`, `task_checkpoints` tables, `continue_from` column
 
 ### Task Resumption
 
@@ -74,6 +74,31 @@ claudine resume <task-id> --context "Try a different approach this time"
 - `CheckpointRepository`: SQLite persistence for `task_checkpoints` table (migration v5)
 - `git-state.ts`: Utility to capture git branch, SHA, and dirty files via child_process
 - `TaskManagerService.resume()`: Fetches checkpoint, constructs enriched prompt, creates new task
+
+### Session Continuation (`continueFrom`)
+
+Pass checkpoint context through dependency chains so dependent tasks automatically receive output, git state, and errors from their predecessors.
+
+**Key Capabilities:**
+- **`continueFrom` field**: Specify a dependency whose checkpoint context is injected into the dependent task's prompt
+- **Automatic enrichment**: Output summary, git state, and errors prepended to prompt before execution
+- **Race-safe**: Subscribe-first pattern with 5-second timeout ensures checkpoint availability
+- **Validation**: `continueFrom` must reference a task in `dependsOn` (auto-added if missing)
+- **Chain support**: A→B→C where B receives A's context, C receives B's (which includes A's)
+
+**MCP:**
+```typescript
+await DelegateTask({
+  prompt: "npm test",
+  dependsOn: [buildTaskId],
+  continueFrom: buildTaskId
+});
+```
+
+**CLI:**
+```bash
+claudine delegate "npm test" --depends-on task-abc --continue-from task-abc
+```
 
 ---
 
@@ -104,9 +129,9 @@ Extracted ~375 lines of schedule business logic from MCP adapter into `ScheduleM
 Added `withServices()` helper that eliminates 15-line bootstrap boilerplate repeated across every CLI command. Returns typed service references with no `as any` casts.
 
 ### Database Migrations
-- **v3**: `schedules` table (schedule definitions, cron config, timezone, missed run policy)
-- **v4**: `schedule_executions` table (execution history, FK to schedules and tasks)
-- **v5**: `task_checkpoints` table (auto-checkpoints with git state, output summary)
+- **v4**: `schedules` and `schedule_executions` tables (cron config, timezone, missed run policy, execution history)
+- **v5**: `task_checkpoints` table (auto-checkpoints with git state, output summary) and `after_schedule_id` column
+- **v6**: `continue_from` column on tasks table (session continuation through dependency chains)
 
 ---
 
@@ -174,7 +199,7 @@ No special upgrade steps required. Simply update to 0.4.0:
 npm install -g claudine@0.4.0
 ```
 
-Existing databases will automatically migrate through v3-v5 schemas on first startup.
+Existing databases will automatically migrate through v4-v6 schemas on first startup.
 
 ---
 

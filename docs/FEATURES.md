@@ -11,6 +11,7 @@ Last Updated: February 2026
 - **TaskStatus**: Check status of running/completed tasks
 - **TaskLogs**: Retrieve stdout/stderr output from tasks (with tail option)
 - **CancelTask**: Cancel running tasks with optional reason
+- **RetryTask**: Retry a failed or completed task (creates new task with same prompt)
 
 ### Task Management
 - **Priority Levels**: P0 (Critical), P1 (High), P2 (Normal)
