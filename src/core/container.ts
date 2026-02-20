@@ -16,6 +16,7 @@ type Service = { factory: Factory<any>; singleton: boolean; instance?: any };
 interface DisposableService {
   emit?(event: string, data: unknown): Promise<void>;
   stopMonitoring?(): void;
+  stop?(): unknown;
   killAll?(): Promise<void>;
   close?(): void;
   dispose?(): void;
@@ -216,6 +217,15 @@ export class Container {
       const resourceMonitor = resourceMonitorResult.value as DisposableService;
       if (resourceMonitor.stopMonitoring) {
         resourceMonitor.stopMonitoring();
+      }
+    }
+
+    // Stop ScheduleExecutor before killing workers - prevents timer firing against closed resources
+    const scheduleExecutorResult = this.get('scheduleExecutor');
+    if (scheduleExecutorResult.ok) {
+      const scheduleExecutor = scheduleExecutorResult.value as DisposableService;
+      if (scheduleExecutor.stop) {
+        scheduleExecutor.stop();
       }
     }
 

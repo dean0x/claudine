@@ -163,4 +163,68 @@ describe('SQLiteTaskRepository', () => {
       expect(result.value).toBe(3);
     });
   });
+
+  describe('continueFrom field', () => {
+    it('should save and retrieve task with continueFrom', async () => {
+      const task = createTestTask({
+        id: 'task-with-continue',
+        continueFrom: 'task-parent-123',
+      });
+      await repo.save(task);
+
+      const result = await repo.findById('task-with-continue' as any);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).not.toBeNull();
+      expect(result.value!.continueFrom).toBe('task-parent-123');
+    });
+
+    it('should save and retrieve task without continueFrom as undefined', async () => {
+      const task = createTestTask({
+        id: 'task-no-continue',
+      });
+      await repo.save(task);
+
+      const result = await repo.findById('task-no-continue' as any);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).not.toBeNull();
+      expect(result.value!.continueFrom).toBeUndefined();
+    });
+
+    it('should update continueFrom via update()', async () => {
+      const task = createTestTask({
+        id: 'task-update-continue',
+      });
+      await repo.save(task);
+
+      // Update with continueFrom
+      const updateResult = await repo.update('task-update-continue' as any, {
+        continueFrom: 'task-dep-456' as any,
+      });
+      expect(updateResult.ok).toBe(true);
+
+      const result = await repo.findById('task-update-continue' as any);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value!.continueFrom).toBe('task-dep-456');
+    });
+
+    it('should apply migration v6 correctly (column exists)', async () => {
+      // The Database constructor applies all migrations automatically
+      // Verify the column exists by saving/retrieving a task with continueFrom
+      const task = createTestTask({
+        id: 'task-migration-test',
+        continueFrom: 'task-parent-migration',
+      });
+      const saveResult = await repo.save(task);
+      expect(saveResult.ok).toBe(true);
+
+      const findResult = await repo.findById('task-migration-test' as any);
+      expect(findResult.ok).toBe(true);
+      if (findResult.ok && findResult.value) {
+        expect(findResult.value.continueFrom).toBe('task-parent-migration');
+      }
+    });
+  });
 });

@@ -564,4 +564,87 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       expect(isBlockedAfterB.value).toBe(false);
     });
   });
+
+  describe('continueFrom auto-add to dependsOn', () => {
+    it('should auto-add continueFrom to dependsOn when not already present', async () => {
+      // Create Task A (no dependencies)
+      const taskAResult = await taskManager.delegate({
+        prompt: 'Task A - parent',
+        priority: Priority.P2,
+      });
+      expect(taskAResult.ok).toBe(true);
+      if (!taskAResult.ok) return;
+      const taskA = taskAResult.value;
+
+      await flushEventLoop();
+
+      // Create Task B with continueFrom but WITHOUT including taskA in dependsOn
+      const taskBResult = await taskManager.delegate({
+        prompt: 'Task B - continues from A',
+        priority: Priority.P2,
+        continueFrom: taskA.id,
+        // Note: dependsOn NOT specified
+      });
+
+      expect(taskBResult.ok).toBe(true);
+      if (!taskBResult.ok) return;
+      const taskB = taskBResult.value;
+
+      // The continueFrom should have been auto-added to dependsOn
+      expect(taskB.dependsOn).toBeDefined();
+      expect(taskB.dependsOn).toContain(taskA.id);
+      expect(taskB.continueFrom).toBe(taskA.id);
+      expect(taskB.dependencyState).toBe('blocked');
+
+      await flushEventLoop();
+
+      // Verify dependency was actually registered in the dependency repository
+      const isBlocked = await dependencyRepo.isBlocked(taskB.id);
+      expect(isBlocked.ok).toBe(true);
+      if (isBlocked.ok) {
+        expect(isBlocked.value).toBe(true);
+      }
+    });
+
+    it('should reject continueFrom referencing a nonexistent task', async () => {
+      const result = await taskManager.delegate({
+        prompt: 'Task with bad continueFrom',
+        priority: Priority.P2,
+        continueFrom: 'task-nonexistent' as TaskId,
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('continueFrom task not found');
+      }
+    });
+
+    it('should not duplicate continueFrom in dependsOn when already present', async () => {
+      const taskAResult = await taskManager.delegate({
+        prompt: 'Task A - parent',
+        priority: Priority.P2,
+      });
+      expect(taskAResult.ok).toBe(true);
+      if (!taskAResult.ok) return;
+      const taskA = taskAResult.value;
+
+      await flushEventLoop();
+
+      // Create Task B with continueFrom AND taskA already in dependsOn
+      const taskBResult = await taskManager.delegate({
+        prompt: 'Task B - continues from A',
+        priority: Priority.P2,
+        dependsOn: [taskA.id],
+        continueFrom: taskA.id,
+      });
+
+      expect(taskBResult.ok).toBe(true);
+      if (!taskBResult.ok) return;
+      const taskB = taskBResult.value;
+
+      // Should not duplicate
+      expect(taskB.dependsOn).toEqual([taskA.id]);
+      expect(taskB.continueFrom).toBe(taskA.id);
+    });
+  });
 });

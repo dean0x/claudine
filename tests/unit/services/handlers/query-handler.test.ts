@@ -120,11 +120,11 @@ describe('QueryHandler - Behavioral Tests', () => {
       // Save and update statuses (domain enforces QUEUED on creation)
       await repository.save(task1);
       await repository.save(task2);
-      await repository.save({ ...task2, status: 'running' as const });
+      await repository.update(task2.id, { status: 'running' as const });
       await repository.save(task3);
-      await repository.save({ ...task3, status: 'completed' as const });
+      await repository.update(task3.id, { status: 'completed' as const });
       await repository.save(task4);
-      await repository.save({ ...task4, status: 'failed' as const });
+      await repository.update(task4.id, { status: 'failed' as const });
       await repository.save(task5);
 
       // Act - Query all tasks

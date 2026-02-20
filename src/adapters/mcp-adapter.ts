@@ -5,10 +5,20 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { z } from 'zod';
-import { TaskManager, Logger } from '../core/interfaces.js';
-import { DelegateRequest, Priority, TaskId } from '../core/domain.js';
+import { TaskManager, Logger, ScheduleService } from '../core/interfaces.js';
+import {
+  DelegateRequest,
+  ResumeTaskRequest,
+  Priority,
+  TaskId,
+  ScheduleId,
+  ScheduleStatus,
+  ScheduleType,
+  ScheduleCreateRequest,
+} from '../core/domain.js';
 import { match } from '../core/result.js';
 import { validatePath } from '../utils/validation.js';
+import { toMissedRunPolicy } from '../services/schedule-manager.js';
 import pkg from '../../package.json' with { type: 'json' };
 
 // Zod schemas for MCP protocol validation
@@ -28,6 +38,8 @@ const DelegateTaskSchema = z.object({
   timeout: z.number().min(1000).max(86400000).optional(), // 1 second to 24 hours
   maxOutputBuffer: z.number().min(1024).max(1073741824).optional(), // 1KB to 1GB
   dependsOn: z.array(z.string()).optional(), // Task IDs this task depends on
+  continueFrom: z.string().regex(/^task-/).optional()
+    .describe('Task ID to continue from — receives checkpoint context from this dependency (must be in dependsOn list)'),
 });
 
 const TaskStatusSchema = z.object({
@@ -48,12 +60,64 @@ const RetryTaskSchema = z.object({
   taskId: z.string(),
 });
 
+const ResumeTaskSchema = z.object({
+  taskId: z.string().describe('Task ID to resume (must be in terminal state)'),
+  additionalContext: z.string().max(4000).optional().describe('Additional instructions for the resumed task'),
+});
+
+// Schedule-related Zod schemas (v0.4.0 Task Scheduling)
+const ScheduleTaskSchema = z.object({
+  prompt: z.string().min(1).max(4000).describe('Task prompt to execute'),
+  scheduleType: z.enum(['cron', 'one_time']).describe('Schedule type'),
+  cronExpression: z.string().optional().describe('Cron expression (5-field) for recurring schedules'),
+  scheduledAt: z.string().optional().describe('ISO 8601 datetime for one-time schedules'),
+  timezone: z.string().optional().default('UTC').describe('IANA timezone'),
+  missedRunPolicy: z.enum(['skip', 'catchup', 'fail']).optional().default('skip'),
+  priority: z.enum(['P0', 'P1', 'P2']).optional(),
+  workingDirectory: z.string().optional(),
+  maxRuns: z.number().min(1).optional().describe('Maximum number of runs for cron schedules'),
+  expiresAt: z.string().optional().describe('ISO 8601 datetime when schedule expires'),
+  afterSchedule: z.string().optional().describe('Schedule ID to chain after (new tasks depend on this schedule\'s latest task)'),
+});
+
+const ListSchedulesSchema = z.object({
+  status: z.enum(['active', 'paused', 'completed', 'cancelled', 'expired']).optional(),
+  limit: z.number().min(1).max(100).optional().default(50),
+  offset: z.number().min(0).optional().default(0),
+});
+
+const CancelScheduleSchema = z.object({
+  scheduleId: z.string().describe('Schedule ID to cancel'),
+  reason: z.string().optional().describe('Reason for cancellation'),
+});
+
+const GetScheduleSchema = z.object({
+  scheduleId: z.string().describe('Schedule ID'),
+  includeHistory: z.boolean().optional().default(false),
+  historyLimit: z.number().min(1).max(100).optional().default(10),
+});
+
+const PauseScheduleSchema = z.object({
+  scheduleId: z.string().describe('Schedule ID to pause'),
+});
+
+const ResumeScheduleSchema = z.object({
+  scheduleId: z.string().describe('Schedule ID to resume'),
+});
+
+/** Standard MCP tool response shape */
+interface MCPToolResponse {
+  content: { type: string; text: string }[];
+  isError?: boolean;
+}
+
 export class MCPAdapter {
   private server: Server;
 
   constructor(
     private readonly taskManager: TaskManager,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    private readonly scheduleService: ScheduleService
   ) {
     this.server = new Server(
       {
@@ -107,6 +171,21 @@ export class MCPAdapter {
             return await this.handleCancelTask(args);
           case 'RetryTask':
             return await this.handleRetryTask(args);
+          case 'ResumeTask':
+            return await this.handleResumeTask(args);
+          // Schedule tools (v0.4.0 Task Scheduling)
+          case 'ScheduleTask':
+            return await this.handleScheduleTask(args);
+          case 'ListSchedules':
+            return await this.handleListSchedules(args);
+          case 'GetSchedule':
+            return await this.handleGetSchedule(args);
+          case 'CancelSchedule':
+            return await this.handleCancelSchedule(args);
+          case 'PauseSchedule':
+            return await this.handlePauseSchedule(args);
+          case 'ResumeSchedule':
+            return await this.handleResumeSchedule(args);
           default:
             // ARCHITECTURE: Return error response instead of throwing
             return {
@@ -155,8 +234,8 @@ export class MCPAdapter {
                   },
                   useWorktree: {
                     type: 'boolean',
-                    description: 'Create a git worktree for isolated execution',
-                    default: true,
+                    description: 'Create a git worktree for isolated execution (opt-in)',
+                    default: false,
                   },
                   worktreeCleanup: {
                     type: 'string',
@@ -215,6 +294,11 @@ export class MCPAdapter {
                       type: 'string',
                       pattern: '^task-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
                     },
+                  },
+                  continueFrom: {
+                    type: 'string',
+                    description: 'Task ID to continue from — receives checkpoint context when that dependency completes (must be in dependsOn list)',
+                    pattern: '^task-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
                   },
                 },
                 required: ['prompt'],
@@ -291,6 +375,167 @@ export class MCPAdapter {
                 required: ['taskId'],
               },
             },
+            {
+              name: 'ResumeTask',
+              description: 'Resume a failed/completed task with enriched context from its checkpoint (smart retry with previous output, errors, and git state)',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  taskId: {
+                    type: 'string',
+                    description: 'Task ID to resume (must be in terminal state: completed, failed, or cancelled)',
+                    pattern: '^task-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+                  },
+                  additionalContext: {
+                    type: 'string',
+                    description: 'Additional instructions or context for the resumed task',
+                    maxLength: 4000,
+                  },
+                },
+                required: ['taskId'],
+              },
+            },
+            // Schedule tools (v0.4.0 Task Scheduling)
+            {
+              name: 'ScheduleTask',
+              description: 'Schedule a task for future or recurring execution using cron expressions or one-time timestamps',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  prompt: {
+                    type: 'string',
+                    description: 'Task prompt to execute',
+                  },
+                  scheduleType: {
+                    type: 'string',
+                    enum: ['cron', 'one_time'],
+                    description: 'cron for recurring, one_time for single execution',
+                  },
+                  cronExpression: {
+                    type: 'string',
+                    description: 'Cron expression (5-field: minute hour day month weekday)',
+                  },
+                  scheduledAt: {
+                    type: 'string',
+                    description: 'ISO 8601 datetime for one-time schedules',
+                  },
+                  timezone: {
+                    type: 'string',
+                    description: 'IANA timezone (default: UTC)',
+                  },
+                  missedRunPolicy: {
+                    type: 'string',
+                    enum: ['skip', 'catchup', 'fail'],
+                    description: 'How to handle missed runs',
+                  },
+                  priority: {
+                    type: 'string',
+                    enum: ['P0', 'P1', 'P2'],
+                  },
+                  workingDirectory: {
+                    type: 'string',
+                  },
+                  maxRuns: {
+                    type: 'number',
+                    description: 'Maximum runs for cron schedules',
+                  },
+                  expiresAt: {
+                    type: 'string',
+                    description: 'ISO 8601 expiration datetime',
+                  },
+                  afterSchedule: {
+                    type: 'string',
+                    description: 'Schedule ID to chain after (new tasks depend on this schedule\'s latest task)',
+                  },
+                },
+                required: ['prompt', 'scheduleType'],
+              },
+            },
+            {
+              name: 'ListSchedules',
+              description: 'List all schedules with optional status filter',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  status: {
+                    type: 'string',
+                    enum: ['active', 'paused', 'completed', 'cancelled', 'expired'],
+                  },
+                  limit: {
+                    type: 'number',
+                    description: 'Max results (default 50)',
+                  },
+                  offset: {
+                    type: 'number',
+                    description: 'Pagination offset',
+                  },
+                },
+              },
+            },
+            {
+              name: 'GetSchedule',
+              description: 'Get details of a specific schedule including execution history',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  scheduleId: {
+                    type: 'string',
+                    description: 'Schedule ID',
+                  },
+                  includeHistory: {
+                    type: 'boolean',
+                    description: 'Include execution history',
+                  },
+                  historyLimit: {
+                    type: 'number',
+                    description: 'Max history entries',
+                  },
+                },
+                required: ['scheduleId'],
+              },
+            },
+            {
+              name: 'CancelSchedule',
+              description: 'Cancel an active schedule',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  scheduleId: {
+                    type: 'string',
+                  },
+                  reason: {
+                    type: 'string',
+                  },
+                },
+                required: ['scheduleId'],
+              },
+            },
+            {
+              name: 'PauseSchedule',
+              description: 'Pause a schedule (can be resumed later)',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  scheduleId: {
+                    type: 'string',
+                  },
+                },
+                required: ['scheduleId'],
+              },
+            },
+            {
+              name: 'ResumeSchedule',
+              description: 'Resume a paused schedule',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  scheduleId: {
+                    type: 'string',
+                  },
+                },
+                required: ['scheduleId'],
+              },
+            },
           ],
         };
       }
@@ -350,6 +595,7 @@ export class MCPAdapter {
       timeout: data.timeout,
       maxOutputBuffer: data.maxOutputBuffer,
       dependsOn: data.dependsOn ? data.dependsOn.map(TaskId) : undefined,
+      continueFrom: data.continueFrom ? TaskId(data.continueFrom) : undefined,
     };
 
     // Delegate task using our new architecture
@@ -602,6 +848,327 @@ export class MCPAdapter {
             }),
           },
         ],
+        isError: true,
+      }),
+    });
+  }
+
+  private async handleResumeTask(args: unknown): Promise<MCPToolResponse> {
+    const parseResult = ResumeTaskSchema.safeParse(args);
+
+    if (!parseResult.success) {
+      return {
+        content: [{ type: 'text', text: `Validation error: ${parseResult.error.message}` }],
+        isError: true,
+      };
+    }
+
+    const { taskId, additionalContext } = parseResult.data;
+
+    const request: ResumeTaskRequest = {
+      taskId: TaskId(taskId),
+      additionalContext,
+    };
+
+    const result = await this.taskManager.resume(request);
+
+    return match(result, {
+      ok: (newTask) => ({
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            message: `Task ${taskId} resumed successfully`,
+            newTaskId: newTask.id,
+            retryCount: newTask.retryCount || 1,
+            parentTaskId: newTask.parentTaskId,
+          }, null, 2),
+        }],
+      }),
+      err: (error) => ({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
+        isError: true,
+      }),
+    });
+  }
+
+  // ============================================================================
+  // SCHEDULE HANDLERS (v0.4.0 Task Scheduling)
+  // Thin wrappers: Zod parse -> service call -> format MCP response
+  // ============================================================================
+
+  /**
+   * Handle ScheduleTask tool call
+   * Creates a new schedule for recurring or one-time task execution
+   */
+  private async handleScheduleTask(args: unknown): Promise<MCPToolResponse> {
+    const parseResult = ScheduleTaskSchema.safeParse(args);
+    if (!parseResult.success) {
+      return {
+        content: [{ type: 'text', text: `Validation error: ${parseResult.error.message}` }],
+        isError: true,
+      };
+    }
+    const data = parseResult.data;
+
+    const request: ScheduleCreateRequest = {
+      prompt: data.prompt,
+      scheduleType: data.scheduleType === 'cron' ? ScheduleType.CRON : ScheduleType.ONE_TIME,
+      cronExpression: data.cronExpression,
+      scheduledAt: data.scheduledAt,
+      timezone: data.timezone,
+      missedRunPolicy: toMissedRunPolicy(data.missedRunPolicy),
+      priority: data.priority as Priority | undefined,
+      workingDirectory: data.workingDirectory,
+      maxRuns: data.maxRuns,
+      expiresAt: data.expiresAt,
+      afterScheduleId: data.afterSchedule ? ScheduleId(data.afterSchedule) : undefined,
+    };
+
+    const result = await this.scheduleService.createSchedule(request);
+
+    return match(result, {
+      ok: (schedule) => ({
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            scheduleId: schedule.id,
+            scheduleType: schedule.scheduleType,
+            nextRunAt: schedule.nextRunAt ? new Date(schedule.nextRunAt).toISOString() : null,
+            timezone: schedule.timezone,
+            status: schedule.status,
+          }, null, 2),
+        }],
+      }),
+      err: (error) => ({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
+        isError: true,
+      }),
+    });
+  }
+
+  /**
+   * Handle ListSchedules tool call
+   * Lists schedules with optional status filter and pagination
+   */
+  private async handleListSchedules(args: unknown): Promise<MCPToolResponse> {
+    const parseResult = ListSchedulesSchema.safeParse(args);
+    if (!parseResult.success) {
+      return {
+        content: [{ type: 'text', text: `Validation error: ${parseResult.error.message}` }],
+        isError: true,
+      };
+    }
+
+    const { status, limit, offset } = parseResult.data;
+
+    const result = await this.scheduleService.listSchedules(
+      status as ScheduleStatus | undefined,
+      limit,
+      offset
+    );
+
+    return match(result, {
+      ok: (schedules) => {
+        const simplifiedSchedules = schedules.map(s => ({
+          id: s.id,
+          status: s.status,
+          scheduleType: s.scheduleType,
+          cronExpression: s.cronExpression,
+          nextRunAt: s.nextRunAt ? new Date(s.nextRunAt).toISOString() : null,
+          runCount: s.runCount,
+          maxRuns: s.maxRuns,
+        }));
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              schedules: simplifiedSchedules,
+              count: simplifiedSchedules.length,
+            }, null, 2),
+          }],
+        };
+      },
+      err: (error) => ({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
+        isError: true,
+      }),
+    });
+  }
+
+  /**
+   * Handle GetSchedule tool call
+   * Gets details of a specific schedule with optional execution history
+   */
+  private async handleGetSchedule(args: unknown): Promise<MCPToolResponse> {
+    const parseResult = GetScheduleSchema.safeParse(args);
+    if (!parseResult.success) {
+      return {
+        content: [{ type: 'text', text: `Validation error: ${parseResult.error.message}` }],
+        isError: true,
+      };
+    }
+
+    const { scheduleId, includeHistory, historyLimit } = parseResult.data;
+
+    const result = await this.scheduleService.getSchedule(
+      ScheduleId(scheduleId),
+      includeHistory,
+      historyLimit
+    );
+
+    return match(result, {
+      ok: ({ schedule, history }) => {
+        const response: Record<string, unknown> = {
+          success: true,
+          schedule: {
+            id: schedule.id,
+            status: schedule.status,
+            scheduleType: schedule.scheduleType,
+            cronExpression: schedule.cronExpression,
+            scheduledAt: schedule.scheduledAt ? new Date(schedule.scheduledAt).toISOString() : null,
+            timezone: schedule.timezone,
+            missedRunPolicy: schedule.missedRunPolicy,
+            maxRuns: schedule.maxRuns,
+            runCount: schedule.runCount,
+            lastRunAt: schedule.lastRunAt ? new Date(schedule.lastRunAt).toISOString() : null,
+            nextRunAt: schedule.nextRunAt ? new Date(schedule.nextRunAt).toISOString() : null,
+            expiresAt: schedule.expiresAt ? new Date(schedule.expiresAt).toISOString() : null,
+            createdAt: new Date(schedule.createdAt).toISOString(),
+            updatedAt: new Date(schedule.updatedAt).toISOString(),
+            taskTemplate: {
+              prompt: schedule.taskTemplate.prompt.substring(0, 100) + (schedule.taskTemplate.prompt.length > 100 ? '...' : ''),
+              priority: schedule.taskTemplate.priority,
+              workingDirectory: schedule.taskTemplate.workingDirectory,
+            },
+          },
+        };
+
+        if (history) {
+          response.history = history.map(h => ({
+            scheduledFor: new Date(h.scheduledFor).toISOString(),
+            executedAt: h.executedAt ? new Date(h.executedAt).toISOString() : null,
+            status: h.status,
+            taskId: h.taskId,
+            errorMessage: h.errorMessage,
+          }));
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify(response, null, 2),
+          }],
+        };
+      },
+      err: (error) => ({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
+        isError: true,
+      }),
+    });
+  }
+
+  /**
+   * Handle CancelSchedule tool call
+   * Cancels an active schedule
+   */
+  private async handleCancelSchedule(args: unknown): Promise<MCPToolResponse> {
+    const parseResult = CancelScheduleSchema.safeParse(args);
+    if (!parseResult.success) {
+      return {
+        content: [{ type: 'text', text: `Validation error: ${parseResult.error.message}` }],
+        isError: true,
+      };
+    }
+
+    const { scheduleId, reason } = parseResult.data;
+
+    const result = await this.scheduleService.cancelSchedule(ScheduleId(scheduleId), reason);
+
+    return match(result, {
+      ok: () => ({
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            message: `Schedule ${scheduleId} cancelled`,
+            reason,
+          }, null, 2),
+        }],
+      }),
+      err: (error) => ({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
+        isError: true,
+      }),
+    });
+  }
+
+  /**
+   * Handle PauseSchedule tool call
+   * Pauses an active schedule (can be resumed later)
+   */
+  private async handlePauseSchedule(args: unknown): Promise<MCPToolResponse> {
+    const parseResult = PauseScheduleSchema.safeParse(args);
+    if (!parseResult.success) {
+      return {
+        content: [{ type: 'text', text: `Validation error: ${parseResult.error.message}` }],
+        isError: true,
+      };
+    }
+
+    const { scheduleId } = parseResult.data;
+
+    const result = await this.scheduleService.pauseSchedule(ScheduleId(scheduleId));
+
+    return match(result, {
+      ok: () => ({
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            message: `Schedule ${scheduleId} paused`,
+          }, null, 2),
+        }],
+      }),
+      err: (error) => ({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
+        isError: true,
+      }),
+    });
+  }
+
+  /**
+   * Handle ResumeSchedule tool call
+   * Resumes a paused schedule
+   */
+  private async handleResumeSchedule(args: unknown): Promise<MCPToolResponse> {
+    const parseResult = ResumeScheduleSchema.safeParse(args);
+    if (!parseResult.success) {
+      return {
+        content: [{ type: 'text', text: `Validation error: ${parseResult.error.message}` }],
+        isError: true,
+      };
+    }
+
+    const { scheduleId } = parseResult.data;
+
+    const result = await this.scheduleService.resumeSchedule(ScheduleId(scheduleId));
+
+    return match(result, {
+      ok: () => ({
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            message: `Schedule ${scheduleId} resumed`,
+          }, null, 2),
+        }],
+      }),
+      err: (error) => ({
+        content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
         isError: true,
       }),
     });

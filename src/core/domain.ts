@@ -7,9 +7,11 @@ import { ClaudineError } from './errors.js';
 
 export type TaskId = string & { readonly __brand: 'TaskId' };
 export type WorkerId = string & { readonly __brand: 'WorkerId' };
+export type ScheduleId = string & { readonly __brand: 'ScheduleId' };
 
 export const TaskId = (id: string): TaskId => id as TaskId;
 export const WorkerId = (id: string): WorkerId => id as WorkerId;
+export const ScheduleId = (id: string): ScheduleId => id as ScheduleId;
 
 export enum Priority {
   P0 = 'P0', // Critical
@@ -23,6 +25,38 @@ export enum TaskStatus {
   COMPLETED = 'completed',
   FAILED = 'failed',
   CANCELLED = 'cancelled',
+}
+
+/**
+ * Schedule status values
+ * ARCHITECTURE: Tracks lifecycle of scheduled task triggers
+ */
+export enum ScheduleStatus {
+  ACTIVE = 'active',       // Schedule is active and will trigger at next scheduled time
+  PAUSED = 'paused',       // Schedule is temporarily paused (can be resumed)
+  COMPLETED = 'completed', // Schedule has completed (maxRuns reached or one-time schedule executed)
+  CANCELLED = 'cancelled', // Schedule was manually cancelled
+  EXPIRED = 'expired',     // Schedule has passed its expiration time
+}
+
+/**
+ * Schedule type discriminator
+ * ARCHITECTURE: Determines how next run time is calculated
+ */
+export enum ScheduleType {
+  CRON = 'cron',           // Recurring schedule using cron expression (5-field standard)
+  ONE_TIME = 'one_time',   // Single execution at specified timestamp
+}
+
+/**
+ * Policy for handling missed schedule runs
+ * ARCHITECTURE: Determines behavior when scheduled time passes without execution
+ * Common scenarios: server downtime, high load, maintenance windows
+ */
+export enum MissedRunPolicy {
+  SKIP = 'skip',           // Skip missed runs, continue with next scheduled time (default)
+  CATCHUP = 'catchup',     // Execute missed runs immediately (one by one)
+  FAIL = 'fail',           // Mark schedule as failed if run is missed
 }
 
 export interface Task {
@@ -69,6 +103,10 @@ export interface Task {
   readonly dependsOn?: readonly TaskId[];      // Tasks this task depends on (blocking tasks)
   readonly dependents?: readonly TaskId[];     // Tasks that depend on this task (blocked tasks)
   readonly dependencyState?: 'blocked' | 'ready' | 'none'; // Computed dependency state
+
+  // Session continuation (v0.5.0): Task ID to continue from
+  // When set, DependencyHandler enriches prompt with checkpoint context from this dependency
+  readonly continueFrom?: TaskId;
 
   // Timestamps and results
   readonly createdAt: number;
@@ -135,6 +173,11 @@ export interface DelegateRequest {
   // Dependency tracking (Phase 4: Task Dependencies)
   // Array of task IDs this task depends on (must complete before this task can run)
   readonly dependsOn?: readonly TaskId[];
+
+  // Session continuation (v0.5.0): Task ID to continue from
+  // When set, the task's prompt is enriched with checkpoint context from this dependency before running
+  // Must be in dependsOn list (auto-added if missing)
+  readonly continueFrom?: TaskId;
 }
 
 export interface TaskUpdate {
@@ -192,6 +235,7 @@ export const createTask = (request: DelegateRequest): Task => {
     dependsOn: request.dependsOn,
     dependents: undefined, // Populated by DependencyRepository queries
     dependencyState: request.dependsOn && request.dependsOn.length > 0 ? 'blocked' : 'none',
+    continueFrom: request.continueFrom,
 
     // Execution configuration
     timeout: request.timeout,
@@ -222,3 +266,153 @@ export const comparePriority = (a: Priority, b: Priority): number => {
   const order = { [Priority.P0]: 0, [Priority.P1]: 1, [Priority.P2]: 2 };
   return order[a] - order[b];
 };
+
+/**
+ * Schedule interface - defines recurring or one-time task execution
+ * ARCHITECTURE: All fields readonly for immutability
+ * Pattern: Factory function createSchedule() for construction
+ */
+export interface Schedule {
+  readonly id: ScheduleId;
+  readonly taskTemplate: DelegateRequest;  // What to run when schedule triggers
+  readonly scheduleType: ScheduleType;
+  readonly cronExpression?: string;        // For CRON type: standard 5-field expression (minute hour day month weekday)
+  readonly scheduledAt?: number;           // For ONE_TIME type: epoch milliseconds
+  readonly timezone: string;               // IANA timezone identifier (e.g., 'America/New_York'), default 'UTC'
+  readonly missedRunPolicy: MissedRunPolicy;
+  readonly status: ScheduleStatus;
+  readonly maxRuns?: number;               // Optional limit for CRON schedules (undefined = unlimited)
+  readonly runCount: number;               // Number of times schedule has triggered
+  readonly lastRunAt?: number;             // Timestamp of last execution (epoch ms)
+  readonly nextRunAt?: number;             // Computed next execution time (epoch ms)
+  readonly expiresAt?: number;             // Optional expiration time (epoch ms)
+  readonly afterScheduleId?: ScheduleId;  // Chain: new tasks depend on this schedule's latest task
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+/**
+ * Request type for creating schedules
+ * ARCHITECTURE: Subset of Schedule fields that caller provides
+ */
+export interface ScheduleRequest {
+  readonly taskTemplate: DelegateRequest;
+  readonly scheduleType: ScheduleType;
+  readonly cronExpression?: string;        // Required for CRON type
+  readonly scheduledAt?: number;           // Required for ONE_TIME type
+  readonly timezone?: string;              // Default: 'UTC'
+  readonly missedRunPolicy?: MissedRunPolicy; // Default: SKIP
+  readonly maxRuns?: number;               // Optional limit for CRON
+  readonly expiresAt?: number;             // Optional expiration
+  readonly afterScheduleId?: ScheduleId;   // Chain: block until after-schedule's latest task completes
+}
+
+/**
+ * Update type for modifying schedules
+ * ARCHITECTURE: Only fields that can be modified after creation
+ */
+export interface ScheduleUpdate {
+  readonly status?: ScheduleStatus;
+  readonly cronExpression?: string;
+  readonly scheduledAt?: number;
+  readonly timezone?: string;
+  readonly missedRunPolicy?: MissedRunPolicy;
+  readonly maxRuns?: number;
+  readonly runCount?: number;
+  readonly lastRunAt?: number;
+  readonly nextRunAt?: number;
+  readonly expiresAt?: number;
+  readonly afterScheduleId?: ScheduleId;
+}
+
+/**
+ * Create a new schedule
+ * ARCHITECTURE: Factory function returns frozen immutable object
+ * Note: nextRunAt must be computed by caller (requires cron parsing logic)
+ */
+export const createSchedule = (request: ScheduleRequest): Schedule => {
+  const now = Date.now();
+  return Object.freeze({
+    id: ScheduleId(`schedule-${crypto.randomUUID()}`),
+    taskTemplate: request.taskTemplate,
+    scheduleType: request.scheduleType,
+    cronExpression: request.cronExpression,
+    scheduledAt: request.scheduledAt,
+    timezone: request.timezone ?? 'UTC',
+    missedRunPolicy: request.missedRunPolicy ?? MissedRunPolicy.SKIP,
+    status: ScheduleStatus.ACTIVE,
+    maxRuns: request.maxRuns,
+    runCount: 0,
+    lastRunAt: undefined,
+    nextRunAt: request.scheduleType === ScheduleType.ONE_TIME ? request.scheduledAt : undefined,
+    expiresAt: request.expiresAt,
+    afterScheduleId: request.afterScheduleId,
+    createdAt: now,
+    updatedAt: now,
+  });
+};
+
+/**
+ * Immutable update helper for schedules
+ * ARCHITECTURE: Returns new frozen object, never mutates input
+ */
+export const updateSchedule = (schedule: Schedule, update: ScheduleUpdate): Schedule => {
+  return Object.freeze({
+    ...schedule,
+    ...update,
+    updatedAt: Date.now(),
+  });
+};
+
+/**
+ * Check if schedule is in active state (can trigger)
+ * ARCHITECTURE: Pure function for status checking
+ */
+export const isScheduleActive = (schedule: Schedule): boolean => {
+  return schedule.status === ScheduleStatus.ACTIVE;
+};
+
+/**
+ * Request type for creating schedules via ScheduleService
+ * ARCHITECTURE: Flat structure for CLI/service consumption (not event-oriented)
+ */
+export interface ScheduleCreateRequest {
+  readonly prompt: string;
+  readonly scheduleType: ScheduleType;
+  readonly cronExpression?: string;
+  readonly scheduledAt?: string;        // ISO 8601 string (parsed by service)
+  readonly timezone?: string;           // IANA timezone, default 'UTC'
+  readonly missedRunPolicy?: MissedRunPolicy;
+  readonly priority?: Priority;
+  readonly workingDirectory?: string;
+  readonly maxRuns?: number;
+  readonly expiresAt?: string;          // ISO 8601 string (parsed by service)
+  readonly afterScheduleId?: ScheduleId; // Chain: block until after-schedule's latest task completes
+}
+
+/**
+ * Task checkpoint - snapshot of task state at completion/failure
+ * ARCHITECTURE: Captures enough context to create enriched retry prompts
+ * Pattern: Immutable record, created by CheckpointHandler on task terminal events
+ */
+export interface TaskCheckpoint {
+  readonly id: number;
+  readonly taskId: TaskId;
+  readonly checkpointType: 'completed' | 'failed' | 'cancelled';
+  readonly outputSummary?: string;      // Last N lines of stdout
+  readonly errorSummary?: string;       // Last N lines of stderr or error message
+  readonly gitBranch?: string;
+  readonly gitCommitSha?: string;
+  readonly gitDirtyFiles?: readonly string[];
+  readonly contextNote?: string;        // User-provided context on resume
+  readonly createdAt: number;
+}
+
+/**
+ * Request type for resuming a failed/completed task with enriched context
+ * ARCHITECTURE: "Smart retry" - captures checkpoint + additional context to create better retry
+ */
+export interface ResumeTaskRequest {
+  readonly taskId: TaskId;
+  readonly additionalContext?: string;   // User-provided instructions for retry
+}

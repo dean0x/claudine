@@ -41,6 +41,7 @@ const TaskRowSchema = z.object({
   worker_id: z.string().nullable(),
   exit_code: z.number().nullable(),
   dependencies: z.string().nullable(),
+  continue_from: z.string().nullable(),
 });
 
 /**
@@ -73,11 +74,13 @@ interface TaskRow {
   readonly worker_id: string | null;
   readonly exit_code: number | null;
   readonly dependencies: string | null;
+  readonly continue_from: string | null;
 }
 
 export class SQLiteTaskRepository implements TaskRepository {
   private readonly db: SQLite.Database;
   private readonly saveStmt: SQLite.Statement;
+  private readonly updateStmt: SQLite.Statement;
   private readonly findByIdStmt: SQLite.Statement;
   private readonly findAllUnboundedStmt: SQLite.Statement;
   private readonly findByStatusStmt: SQLite.Statement;
@@ -94,21 +97,52 @@ export class SQLiteTaskRepository implements TaskRepository {
     
     // Prepare statements for better performance
     this.saveStmt = this.db.prepare(`
-      INSERT OR REPLACE INTO tasks (
+      INSERT OR IGNORE INTO tasks (
         id, prompt, status, priority, working_directory, use_worktree,
         worktree_cleanup, merge_strategy, branch_name, base_branch,
         auto_commit, push_to_remote, pr_title, pr_body,
         timeout, max_output_buffer,
         created_at, started_at, completed_at, worker_id, exit_code, dependencies,
-        parent_task_id, retry_count, retry_of
+        parent_task_id, retry_count, retry_of, continue_from
       ) VALUES (
         @id, @prompt, @status, @priority, @workingDirectory, @useWorktree,
         @worktreeCleanup, @mergeStrategy, @branchName, @baseBranch,
         @autoCommit, @pushToRemote, @prTitle, @prBody,
         @timeout, @maxOutputBuffer,
         @createdAt, @startedAt, @completedAt, @workerId, @exitCode, @dependencies,
-        @parentTaskId, @retryCount, @retryOf
+        @parentTaskId, @retryCount, @retryOf, @continueFrom
       )
+    `);
+
+    // UPDATE preserves the row (unlike INSERT OR REPLACE which deletes + inserts,
+    // triggering ON DELETE CASCADE/SET NULL on child tables like schedule_executions, task_checkpoints)
+    this.updateStmt = this.db.prepare(`
+      UPDATE tasks SET
+        prompt = @prompt,
+        status = @status,
+        priority = @priority,
+        working_directory = @workingDirectory,
+        use_worktree = @useWorktree,
+        worktree_cleanup = @worktreeCleanup,
+        merge_strategy = @mergeStrategy,
+        branch_name = @branchName,
+        base_branch = @baseBranch,
+        auto_commit = @autoCommit,
+        push_to_remote = @pushToRemote,
+        pr_title = @prTitle,
+        pr_body = @prBody,
+        timeout = @timeout,
+        max_output_buffer = @maxOutputBuffer,
+        started_at = @startedAt,
+        completed_at = @completedAt,
+        worker_id = @workerId,
+        exit_code = @exitCode,
+        dependencies = @dependencies,
+        parent_task_id = @parentTaskId,
+        retry_count = @retryCount,
+        retry_of = @retryOf,
+        continue_from = @continueFrom
+      WHERE id = @id
     `);
 
     this.findByIdStmt = this.db.prepare(`
@@ -171,7 +205,8 @@ export class SQLiteTaskRepository implements TaskRepository {
           dependencies: null, // Dependencies stored in task_dependencies table
           parentTaskId: task.parentTaskId || null,
           retryCount: task.retryCount || null,
-          retryOf: task.retryOf || null
+          retryOf: task.retryOf || null,
+          continueFrom: task.continueFrom || null
         };
 
         this.saveStmt.run(dbTask);
@@ -183,7 +218,7 @@ export class SQLiteTaskRepository implements TaskRepository {
   async update(taskId: TaskId, update: Partial<Task>): Promise<Result<void>> {
     // First get the existing task
     const existingResult = await this.findById(taskId);
-    
+
     if (!existingResult.ok) {
       return existingResult;
     }
@@ -197,9 +232,42 @@ export class SQLiteTaskRepository implements TaskRepository {
 
     // Merge updates with existing task
     const updatedTask = { ...existingResult.value, ...update };
-    
-    // Save the updated task
-    return this.save(updatedTask);
+
+    // Use UPDATE (not INSERT OR REPLACE) to preserve child rows
+    // INSERT OR REPLACE deletes the old row first, triggering ON DELETE CASCADE/SET NULL
+    // on child tables like schedule_executions and task_checkpoints
+    return tryCatchAsync(
+      async () => {
+        this.updateStmt.run({
+          id: updatedTask.id,
+          prompt: updatedTask.prompt,
+          status: updatedTask.status,
+          priority: updatedTask.priority,
+          workingDirectory: updatedTask.workingDirectory || null,
+          useWorktree: updatedTask.useWorktree ? 1 : 0,
+          worktreeCleanup: updatedTask.worktreeCleanup || 'auto',
+          mergeStrategy: updatedTask.mergeStrategy || 'pr',
+          branchName: updatedTask.branchName || null,
+          baseBranch: updatedTask.baseBranch || null,
+          autoCommit: updatedTask.autoCommit ? 1 : 0,
+          pushToRemote: updatedTask.pushToRemote ? 1 : 0,
+          prTitle: updatedTask.prTitle || null,
+          prBody: updatedTask.prBody || null,
+          timeout: updatedTask.timeout || null,
+          maxOutputBuffer: updatedTask.maxOutputBuffer || null,
+          startedAt: updatedTask.startedAt || null,
+          completedAt: updatedTask.completedAt || null,
+          workerId: updatedTask.workerId || null,
+          exitCode: updatedTask.exitCode ?? null,
+          dependencies: null,
+          parentTaskId: updatedTask.parentTaskId || null,
+          retryCount: updatedTask.retryCount || null,
+          retryOf: updatedTask.retryOf || null,
+          continueFrom: updatedTask.continueFrom || null,
+        });
+      },
+      operationErrorHandler('update task', { taskId })
+    );
   }
 
   async findById(taskId: TaskId): Promise<Result<Task | null>> {
@@ -327,6 +395,7 @@ export class SQLiteTaskRepository implements TaskRepository {
       parentTaskId: data.parent_task_id ? data.parent_task_id as TaskId : undefined,
       retryCount: data.retry_count || undefined,
       retryOf: data.retry_of ? data.retry_of as TaskId : undefined,
+      continueFrom: data.continue_from ? data.continue_from as TaskId : undefined,
       createdAt: data.created_at,
       startedAt: data.started_at || undefined,
       completedAt: data.completed_at || undefined,

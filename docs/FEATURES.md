@@ -1,8 +1,8 @@
-# Claudine v0.3.x - Current Features
+# Claudine Features
 
-This document lists all features that are **currently implemented and working** in Claudine v0.3.x.
+This document lists all features that are **currently implemented and working** in Claudine.
 
-Last Updated: November 2025
+Last Updated: February 2026
 
 ## ✅ Core Task Delegation
 
@@ -11,6 +11,7 @@ Last Updated: November 2025
 - **TaskStatus**: Check status of running/completed tasks
 - **TaskLogs**: Retrieve stdout/stderr output from tasks (with tail option)
 - **CancelTask**: Cancel running tasks with optional reason
+- **RetryTask**: Retry a failed or completed task (creates new task with same prompt)
 
 ### Task Management
 - **Priority Levels**: P0 (Critical), P1 (High), P2 (Normal)
@@ -118,11 +119,26 @@ Last Updated: November 2025
 - `claudine mcp config`: Show MCP configuration examples
 - `claudine help`: Show help and usage
 
-### Direct Task Commands (New in v0.2.1)
+### Direct Task Commands (v0.2.1+)
 - `claudine delegate <prompt>`: Delegate task directly to background Claude instance
 - `claudine status [task-id]`: Check status of all tasks or specific task
 - `claudine logs <task-id>`: Retrieve task output and logs
 - `claudine cancel <task-id> [reason]`: Cancel running task with optional reason
+
+### Schedule Commands (v0.4.0+)
+- `claudine schedule create <prompt> [options]`: Create a cron or one-time scheduled task
+- `claudine schedule list [--status <status>]`: List schedules with optional status filter
+- `claudine schedule get <id> [--history]`: Get schedule details and execution history
+- `claudine schedule pause <id>`: Pause an active schedule
+- `claudine schedule resume <id>`: Resume a paused schedule
+- `claudine schedule cancel <id> [reason]`: Cancel a schedule with optional reason
+
+### Pipeline Commands (v0.4.0+)
+- `claudine pipeline <prompt> [--delay Nm <prompt>]...`: Create chained one-time schedules with delays
+
+### Task Resumption Commands (v0.4.0+)
+- `claudine resume <task-id>`: Resume a failed/completed task from its checkpoint
+- `claudine resume <task-id> --context "..."`: Resume with additional instructions
 
 ### Configuration Examples
 - **NPM Package**: Global installation support
@@ -167,20 +183,111 @@ Last Updated: November 2025
 - **Atomic Transactions**: TOCTOU-safe dependency addition with synchronous better-sqlite3 transactions
 - **Composite Indexes**: Optimized queries for dependency lookups and blocked task checks
 
+### Session Continuation (v0.4.0)
+- **`continueFrom` Field**: Dependent tasks can specify a dependency whose checkpoint context is injected into their prompt
+- **Automatic Enrichment**: When the dependency completes, its output summary, git state, and errors are prepended to the dependent task's prompt
+- **Race-Safe**: Subscribe-first pattern with 5-second timeout ensures checkpoint is available before task runs
+- **Validation**: `continueFrom` must reference a task in the `dependsOn` list (auto-added if missing)
+- **Chain Support**: A→B→C where B receives A's context and C receives B's (which includes A's)
+
 ### Event-Driven Integration
 - **TaskDependencyAdded**: Emitted when new dependency relationship created
 - **DependencyResolved**: Emitted when blocking dependency completes
 - **TaskUnblocked**: Emitted when all dependencies resolved, triggers automatic queuing
 
+## ✅ Task Scheduling (v0.4.0)
+
+### MCP Tools
+- **ScheduleTask**: Create recurring (cron) or one-time scheduled tasks
+- **ListSchedules**: List all schedules with optional status filter and pagination
+- **GetSchedule**: Get schedule details including execution history
+- **CancelSchedule**: Cancel an active schedule with optional reason
+- **PauseSchedule**: Pause an active schedule (can be resumed later)
+- **ResumeSchedule**: Resume a paused schedule
+
+### Schedule Types
+- **CRON**: Standard 5-field cron expressions for recurring task execution
+- **ONE_TIME**: ISO 8601 datetime for single future execution
+
+### Configuration
+- **Timezone Support**: IANA timezone identifiers (e.g., `America/New_York`) with DST awareness
+- **Missed Run Policies**: `skip` (ignore missed runs), `catchup` (execute missed runs), `fail` (mark as failed)
+- **Max Runs**: Optional limit on number of executions for cron schedules
+- **Expiration**: Optional ISO 8601 expiry datetime for schedules
+
+### Concurrent Execution Prevention
+- **Lock-Based Protection**: Prevents overlapping executions of the same schedule
+- **Execution Tracking**: Full history of schedule executions with status and timing
+
+### Event-Driven Integration
+- **ScheduleCreated**: Emitted when a new schedule is created
+- **ScheduleCancelled**: Emitted when a schedule is cancelled
+- **SchedulePaused**: Emitted when a schedule is paused
+- **ScheduleResumed**: Emitted when a schedule is resumed
+- **ScheduleExecuted**: Emitted when a scheduled task is triggered
+
+## ✅ Task Resumption (v0.4.0)
+
+### Auto-Checkpoints
+- **Automatic Capture**: Checkpoints created on task completion or failure (via `CheckpointHandler`)
+- **Git State**: Branch name, commit SHA, and dirty file list recorded at checkpoint time
+- **Output Summary**: Last 50 lines of stdout/stderr preserved for context injection
+- **Database Persistence**: `task_checkpoints` table (migration v5) with full audit data
+
+### Resume Workflow
+- **Enriched Prompts**: Resumed tasks receive full checkpoint context (previous output, git state, error info)
+- **Additional Context**: Provide extra instructions when resuming to guide the retry
+- **Retry Chains**: Track resume lineage via `parentTaskId` and `retryOf` fields on the new task
+- **Terminal State Requirement**: Only tasks in completed, failed, or cancelled states can be resumed
+
+### MCP Tool
+- **ResumeTask**: Resume a terminal task with optional `additionalContext` string (max 4000 chars)
+
+### Event-Driven Integration
+- **TaskCompleted / TaskFailed**: Triggers automatic checkpoint capture via `CheckpointHandler`
+- **CheckpointRepository**: SQLite persistence with prepared statements and Zod boundary validation
+
 ## ❌ NOT Implemented (Despite Some Documentation Claims)
 - **Distributed Processing**: Single-server only
 - **Web UI**: No dashboard interface
 - **Task Templates**: No preset task configurations
-- **Scheduled Tasks**: No cron-like scheduling
 - **Multi-User Support**: Single-user focused
 - **REST API**: MCP protocol only
 
 ---
+
+---
+
+## 🆕 What's New in v0.4.0
+
+### Task Scheduling
+- **Cron & One-Time Schedules**: Standard 5-field cron expressions and ISO 8601 one-time scheduling
+- **Timezone Support**: IANA timezone identifiers with DST awareness
+- **Missed Run Policies**: `skip`, `catchup`, or `fail` for overdue triggers
+- **Lifecycle Management**: Pause, resume, cancel schedules with full execution history
+- **Concurrent Execution Prevention**: Lock-based protection against overlapping runs
+- **6 MCP Tools**: `ScheduleTask`, `ListSchedules`, `GetSchedule`, `CancelSchedule`, `PauseSchedule`, `ResumeSchedule`
+- **CLI + Pipeline**: Full CLI parity including `pipeline` command for chained one-time schedules
+
+### Task Resumption
+- **Auto-Checkpoints**: Captured on task completion/failure with git state and output summary
+- **Enriched Prompts**: Resumed tasks receive full context from previous attempt
+- **Retry Chains**: Track resume lineage via `parentTaskId` and `retryOf` fields
+- **MCP Tool**: `ResumeTask` with optional additional context
+- **CLI**: `claudine resume <task-id> [--context "..."]`
+
+### Session Continuation (`continueFrom`)
+- **Dependency Context Injection**: Dependent tasks receive checkpoint context from a specified dependency
+- **`continueFrom` Field**: Added to `DelegateTask` MCP tool and `--continue-from` CLI flag
+- **Automatic Enrichment**: Output summary, git state, and errors prepended to task prompt
+- **Race-Safe Design**: Subscribe-first pattern ensures checkpoint availability before task execution
+- **Chain Support**: Context flows through A→B→C dependency chains
+
+### Infrastructure
+- **Schedule Service Extraction**: ~375 lines of business logic extracted from MCP adapter for CLI reuse
+- **CLI Bootstrap Helper**: `withServices()` eliminates repeated bootstrap boilerplate
+- **Database Migrations v3-v6**: `schedules`, `schedule_executions`, `task_checkpoints` tables, `continue_from` column
+- **FK Cascade Fix**: Separated `save()` from `update()` to prevent cascade data loss
 
 ---
 
@@ -192,7 +299,7 @@ Last Updated: November 2025
 - **Event Handlers**: Specialized handlers for different concerns (persistence, queue, workers, output)
 - **Zero Direct State**: TaskManager is stateless, handlers manage all state via events
 
-### Direct CLI Commands  
+### Direct CLI Commands
 - **Task Management**: Direct CLI interface without MCP connection required
 - **Real-time Testing**: Instant task delegation and status checking
 - **Better DX**: No need to reconnect MCP server for testing
@@ -204,4 +311,4 @@ Last Updated: November 2025
 
 ---
 
-**Note**: This document reflects the actual implemented features as of v0.3.x. For planned features, see [ROADMAP.md](./ROADMAP.md).
+**Note**: This document reflects the actual implemented features. For planned features, see [ROADMAP.md](./ROADMAP.md).

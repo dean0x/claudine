@@ -5,21 +5,23 @@
  * Rationale: Ensures dependency integrity, prevents deadlocks, enables parallel task execution
  */
 
-import { DependencyRepository, Logger, TaskRepository } from '../../core/interfaces.js';
+import { DependencyRepository, Logger, TaskRepository, CheckpointLookup } from '../../core/interfaces.js';
 import { Result, ok, err } from '../../core/result.js';
 import { BaseEventHandler } from '../../core/events/handlers.js';
 import { EventBus } from '../../core/events/event-bus.js';
-import { TaskId } from '../../core/domain.js';
+import { TaskId, type TaskCheckpoint } from '../../core/domain.js';
 import {
   TaskDelegatedEvent,
   TaskCompletedEvent,
   TaskFailedEvent,
   TaskCancelledEvent,
   TaskTimeoutEvent,
-  TaskDeletedEvent
+  TaskDeletedEvent,
+  CheckpointCreatedEvent
 } from '../../core/events/events.js';
 import { DependencyGraph } from '../../core/dependency-graph.js';
 import { ClaudineError, ErrorCode } from '../../core/errors.js';
+import { buildContinuationPrompt } from '../../utils/continuation-prompt.js';
 
 // SECURITY: Maximum allowed depth for dependency chains (DoS prevention)
 // Configurable via DependencyHandler.create() options
@@ -32,12 +34,15 @@ export const DEFAULT_MAX_DEPENDENCY_CHAIN_DEPTH = 100;
 export interface DependencyHandlerOptions {
   /** Maximum allowed depth for dependency chains (DoS prevention). Default: 100 */
   readonly maxChainDepth?: number;
+  /** Checkpoint lookup for continueFrom enrichment. Optional - enrichment skipped if absent. */
+  readonly checkpointLookup?: CheckpointLookup;
 }
 
 export class DependencyHandler extends BaseEventHandler {
   private eventBus: EventBus;
   private graph: DependencyGraph;
   private readonly maxChainDepth: number;
+  private readonly checkpointLookup?: CheckpointLookup;
 
   /**
    * Private constructor - use DependencyHandler.create() instead
@@ -49,12 +54,14 @@ export class DependencyHandler extends BaseEventHandler {
     logger: Logger,
     eventBus: EventBus,
     graph: DependencyGraph,
-    maxChainDepth: number
+    maxChainDepth: number,
+    checkpointLookup?: CheckpointLookup
   ) {
     super(logger, 'DependencyHandler');
     this.eventBus = eventBus;
     this.graph = graph;
     this.maxChainDepth = maxChainDepth;
+    this.checkpointLookup = checkpointLookup;
   }
 
   /**
@@ -77,6 +84,7 @@ export class DependencyHandler extends BaseEventHandler {
     options?: DependencyHandlerOptions
   ): Promise<Result<DependencyHandler>> {
     const maxChainDepth = options?.maxChainDepth ?? DEFAULT_MAX_DEPENDENCY_CHAIN_DEPTH;
+    const checkpointLookup = options?.checkpointLookup;
     const handlerLogger = logger.child ? logger.child({ module: 'DependencyHandler' }) : logger;
 
     // PERFORMANCE: Initialize graph eagerly (one-time O(N) cost)
@@ -106,7 +114,8 @@ export class DependencyHandler extends BaseEventHandler {
       handlerLogger,
       eventBus,
       graph,
-      maxChainDepth
+      maxChainDepth,
+      checkpointLookup
     );
 
     // Subscribe to events
@@ -428,6 +437,72 @@ export class DependencyHandler extends BaseEventHandler {
   }
 
   /**
+   * Wait for a checkpoint to be created for a task
+   * Uses subscribe-first pattern to avoid lost-event window:
+   * 1. Subscribe to CheckpointCreated event FIRST
+   * 2. Then check DB (checkpoint may already exist)
+   * 3. Race subscription against timeout
+   *
+   * ARCHITECTURE: Both DependencyHandler and CheckpointHandler subscribe to TaskCompleted.
+   * EventBus runs them via Promise.all, so checkpoint creation may happen in parallel.
+   * This method handles the race condition gracefully.
+   */
+  private async waitForCheckpoint(
+    taskId: TaskId,
+    timeoutMs: number = 5000
+  ): Promise<TaskCheckpoint | null> {
+    let settled = false;
+    let resolvePromise: (checkpoint: TaskCheckpoint | null) => void;
+    const waitPromise = new Promise<TaskCheckpoint | null>((resolve) => {
+      resolvePromise = resolve;
+    });
+
+    // 1. Subscribe to CheckpointCreated FIRST (avoids lost-event window)
+    const subscribeResult = this.eventBus.subscribe<CheckpointCreatedEvent>(
+      'CheckpointCreated',
+      async (event: CheckpointCreatedEvent) => {
+        if (event.taskId === taskId && !settled) {
+          settled = true;
+          resolvePromise(event.checkpoint);
+        }
+      }
+    );
+
+    // Track subscription ID for cleanup
+    const subscriptionId = subscribeResult.ok ? subscribeResult.value : null;
+
+    // 2. Check DB (checkpoint may already exist)
+    const existingResult = await this.checkpointLookup!.findLatest(taskId);
+    if (existingResult.ok && existingResult.value && !settled) {
+      settled = true;
+      // Cleanup subscription
+      if (subscriptionId) {
+        this.eventBus.unsubscribe(subscriptionId);
+      }
+      return existingResult.value;
+    }
+
+    // 3. Wait with timeout
+    const timeoutPromise = new Promise<TaskCheckpoint | null>((resolve) => {
+      setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          resolve(null);
+        }
+      }, timeoutMs);
+    });
+
+    const result = await Promise.race([waitPromise, timeoutPromise]);
+
+    // Cleanup subscription
+    if (subscriptionId) {
+      this.eventBus.unsubscribe(subscriptionId);
+    }
+
+    return result;
+  }
+
+  /**
    * Resolve dependencies and check if dependent tasks are now unblocked
    * PERFORMANCE: Uses batch resolution (single UPDATE) instead of N+1 queries
    * @param completedTaskId Task that just completed/failed/cancelled
@@ -529,9 +604,50 @@ export class DependencyHandler extends BaseEventHandler {
           continue;
         }
 
+        let task = taskResult.value;
+
+        // continueFrom enrichment: inject dependency context into task prompt
+        if (task.continueFrom && this.checkpointLookup) {
+          const checkpoint = await this.waitForCheckpoint(task.continueFrom, 5000);
+
+          if (checkpoint) {
+            // Fetch the dependency task to get its original prompt
+            const depTaskResult = await this.taskRepo.findById(task.continueFrom);
+            const dependencyPrompt = depTaskResult.ok && depTaskResult.value
+              ? depTaskResult.value.prompt
+              : '(dependency prompt unavailable)';
+
+            const enrichedPrompt = buildContinuationPrompt(task, checkpoint, dependencyPrompt);
+
+            // Update task prompt in DB
+            const updateResult = await this.taskRepo.update(dep.taskId, { prompt: enrichedPrompt });
+            if (updateResult.ok) {
+              // Re-fetch to get updated task
+              const refreshResult = await this.taskRepo.findById(dep.taskId);
+              if (refreshResult.ok && refreshResult.value) {
+                task = refreshResult.value;
+              }
+              this.logger.info('Task prompt enriched with dependency context', {
+                taskId: dep.taskId,
+                continueFrom: task.continueFrom,
+              });
+            } else {
+              this.logger.warn('Failed to update task prompt with dependency context', {
+                taskId: dep.taskId,
+                error: updateResult.error.message,
+              });
+            }
+          } else {
+            this.logger.warn('Checkpoint not available for continueFrom enrichment, proceeding without', {
+              taskId: dep.taskId,
+              continueFrom: task.continueFrom,
+            });
+          }
+        }
+
         await this.eventBus.emit('TaskUnblocked', {
           taskId: dep.taskId,
-          task: taskResult.value
+          task,
         });
       }
     }

@@ -80,6 +80,13 @@ async function main() {
         autoscaler.stop();
       }
 
+      // Stop schedule executor before killing workers
+      const scheduleExecutorResult = container?.get('scheduleExecutor');
+      if (scheduleExecutorResult?.ok) {
+        const executor = scheduleExecutorResult.value as { stop(): unknown };
+        executor.stop();
+      }
+
       // Kill all workers
       const workerPoolResult = container?.get('workerPool');
       if (workerPoolResult?.ok) {

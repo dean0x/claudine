@@ -4,7 +4,7 @@
  */
 
 import { Result } from './result.js';
-import { Task, TaskId, Worker, WorkerId, SystemResources, TaskOutput, DelegateRequest } from './domain.js';
+import { Task, TaskId, Worker, WorkerId, SystemResources, TaskOutput, DelegateRequest, Schedule, ScheduleId, ScheduleStatus, ScheduleCreateRequest, TaskCheckpoint, ResumeTaskRequest } from './domain.js';
 import { ChildProcess } from 'child_process';
 import { ClaudineEvent, EventHandler, BaseEvent } from './events/events.js';
 
@@ -217,6 +217,103 @@ export interface DependencyRepository {
 }
 
 /**
+ * Schedule execution history record
+ * ARCHITECTURE: Tracks individual executions of a schedule for audit/debugging
+ * Pattern: Immutable record of each trigger attempt and outcome
+ */
+export interface ScheduleExecution {
+  readonly id: number;
+  readonly scheduleId: ScheduleId;
+  readonly taskId?: TaskId;               // ID of created task (if execution succeeded in creating one)
+  readonly scheduledFor: number;          // Epoch ms - when execution was scheduled to run
+  readonly executedAt?: number;           // Epoch ms - when execution actually started
+  readonly status: 'pending' | 'triggered' | 'completed' | 'failed' | 'missed' | 'skipped';
+  readonly errorMessage?: string;         // Error details if status is 'failed' or 'missed'
+  readonly createdAt: number;
+}
+
+/**
+ * Schedule persistence and query interface
+ * ARCHITECTURE: Pure Result pattern, no exceptions
+ * Pattern: Repository pattern for schedule management
+ * Rationale: Enables schedule CRUD, status tracking, due schedule queries
+ */
+export interface ScheduleRepository {
+  /**
+   * Save a new schedule
+   */
+  save(schedule: Schedule): Promise<Result<void>>;
+
+  /**
+   * Update an existing schedule
+   */
+  update(id: ScheduleId, update: Partial<Schedule>): Promise<Result<void>>;
+
+  /**
+   * Find schedule by ID
+   */
+  findById(id: ScheduleId): Promise<Result<Schedule | null>>;
+
+  /**
+   * Find schedules with optional pagination
+   *
+   * All implementations MUST use DEFAULT_LIMIT = 100 when limit is not specified.
+   * This ensures consistent behavior across implementations.
+   *
+   * @param limit Maximum results to return (default: 100, max recommended: 1000)
+   * @param offset Skip first N results (default: 0)
+   * @returns Paginated schedule list ordered by created_at DESC
+   */
+  findAll(limit?: number, offset?: number): Promise<Result<readonly Schedule[]>>;
+
+  /**
+   * Find schedules by status with optional pagination
+   *
+   * All implementations MUST use DEFAULT_LIMIT = 100 when limit is not specified.
+   * This ensures consistent behavior across implementations.
+   *
+   * @param status Schedule status to filter by
+   * @param limit Maximum results to return (default: 100, max recommended: 1000)
+   * @param offset Skip first N results (default: 0)
+   * @returns Paginated schedule list matching status, ordered by created_at DESC
+   */
+  findByStatus(status: ScheduleStatus, limit?: number, offset?: number): Promise<Result<readonly Schedule[]>>;
+
+  /**
+   * Find schedules that are due to execute (nextRunAt <= beforeTime)
+   * ARCHITECTURE: Critical for scheduler tick - finds schedules ready to trigger
+   * @param beforeTime Epoch ms - find schedules with nextRunAt before this time
+   * @returns Schedules due for execution ordered by nextRunAt ASC
+   */
+  findDue(beforeTime: number): Promise<Result<readonly Schedule[]>>;
+
+  /**
+   * Delete a schedule
+   */
+  delete(id: ScheduleId): Promise<Result<void>>;
+
+  /**
+   * Count total schedules
+   */
+  count(): Promise<Result<number>>;
+
+  /**
+   * Record a schedule execution attempt
+   * @param execution Execution record without ID (ID auto-generated)
+   * @returns Created execution record with ID
+   */
+  recordExecution(execution: Omit<ScheduleExecution, 'id'>): Promise<Result<ScheduleExecution>>;
+
+  /**
+   * Get execution history for a schedule
+   * @param scheduleId Schedule to get history for
+   * @param limit Maximum records to return (default: 100)
+   * @returns Execution history ordered by scheduledFor DESC
+   */
+  getExecutionHistory(scheduleId: ScheduleId, limit?: number): Promise<Result<readonly ScheduleExecution[]>>;
+}
+
+/**
  * Structured logging
  */
 export interface Logger {
@@ -269,6 +366,7 @@ export interface TaskManager {
   getLogs(taskId: TaskId, tail?: number): Promise<Result<TaskOutput>>;
   cancel(taskId: TaskId, reason?: string): Promise<Result<void>>;
   retry(taskId: TaskId): Promise<Result<Task>>;
+  resume(request: ResumeTaskRequest): Promise<Result<Task>>;
 
   // Worktree management methods (event-driven)
   listWorktrees(includeStale?: boolean, olderThanDays?: number): Promise<Result<readonly WorktreeStatus[]>>;
@@ -375,4 +473,39 @@ export interface WorktreeCleanupResult {
     ageInDays: number;
   }>;
   warnings?: string[];
+}
+
+/**
+ * Schedule management service
+ * ARCHITECTURE: Extracted from MCP adapter for CLI reuse
+ * Pattern: Service layer with DI, Result types, event emission
+ */
+export interface ScheduleService {
+  createSchedule(request: ScheduleCreateRequest): Promise<Result<Schedule>>;
+  listSchedules(status?: ScheduleStatus, limit?: number, offset?: number): Promise<Result<readonly Schedule[]>>;
+  getSchedule(scheduleId: ScheduleId, includeHistory?: boolean, historyLimit?: number): Promise<Result<{ schedule: Schedule; history?: readonly ScheduleExecution[] }>>;
+  cancelSchedule(scheduleId: ScheduleId, reason?: string): Promise<Result<void>>;
+  pauseSchedule(scheduleId: ScheduleId): Promise<Result<void>>;
+  resumeSchedule(scheduleId: ScheduleId): Promise<Result<void>>;
+}
+
+/**
+ * Checkpoint persistence for task resumption
+ * ARCHITECTURE: Stores task state snapshots for "smart retry" enrichment
+ * Pattern: Repository pattern following ScheduleRepository conventions
+ */
+export interface CheckpointRepository {
+  save(checkpoint: Omit<TaskCheckpoint, 'id'>): Promise<Result<TaskCheckpoint>>;
+  findLatest(taskId: TaskId): Promise<Result<TaskCheckpoint | null>>;
+  findAll(taskId: TaskId, limit?: number): Promise<Result<readonly TaskCheckpoint[]>>;
+  deleteByTask(taskId: TaskId): Promise<Result<void>>;
+}
+
+/**
+ * Narrow interface for checkpoint lookup
+ * ARCHITECTURE: DependencyHandler depends on this, not full CheckpointRepository
+ * Rationale: Follows Interface Segregation Principle - handlers only see what they need
+ */
+export interface CheckpointLookup {
+  findLatest(taskId: TaskId): Promise<Result<TaskCheckpoint | null>>;
 }

@@ -17,7 +17,9 @@ import {
   DependencyRepository,
   WorkerPool,
   ResourceMonitor,
-  WorktreeManager
+  WorktreeManager,
+  ScheduleRepository,
+  CheckpointRepository
 } from '../core/interfaces.js';
 import { Configuration } from '../core/configuration.js';
 
@@ -29,6 +31,8 @@ import { WorkerHandler } from './handlers/worker-handler.js';
 import { OutputHandler } from './handlers/output-handler.js';
 import { WorktreeHandler } from './handlers/worktree-handler.js';
 import { DependencyHandler } from './handlers/dependency-handler.js';
+import { ScheduleHandler } from './handlers/schedule-handler.js';
+import { CheckpointHandler } from './handlers/checkpoint-handler.js';
 
 /**
  * Dependencies required for handler setup
@@ -45,6 +49,8 @@ export interface HandlerDependencies {
   readonly workerPool: WorkerPool;
   readonly resourceMonitor: ResourceMonitor;
   readonly worktreeManager: WorktreeManager;
+  readonly scheduleRepository: ScheduleRepository;
+  readonly checkpointRepository: CheckpointRepository;
 }
 
 /**
@@ -54,6 +60,10 @@ export interface HandlerSetupResult {
   readonly registry: EventHandlerRegistry;
   /** DependencyHandler uses factory pattern, returned separately for unified lifecycle */
   readonly dependencyHandler: DependencyHandler;
+  /** ScheduleHandler uses factory pattern, returned separately for unified lifecycle */
+  readonly scheduleHandler: ScheduleHandler;
+  /** CheckpointHandler uses factory pattern, returned separately for unified lifecycle */
+  readonly checkpointHandler: CheckpointHandler;
 }
 
 /**
@@ -97,7 +107,7 @@ function getDependency<T>(
 export function extractHandlerDependencies(
   container: Container
 ): Result<HandlerDependencies> {
-  // Extract all 10 dependencies - fail fast on any missing
+  // Extract all 11 dependencies - fail fast on any missing
   const configResult = getDependency<Configuration>(container, 'config');
   if (!configResult.ok) return configResult;
 
@@ -128,6 +138,12 @@ export function extractHandlerDependencies(
   const worktreeManagerResult = getDependency<WorktreeManager>(container, 'worktreeManager');
   if (!worktreeManagerResult.ok) return worktreeManagerResult;
 
+  const scheduleRepositoryResult = getDependency<ScheduleRepository>(container, 'scheduleRepository');
+  if (!scheduleRepositoryResult.ok) return scheduleRepositoryResult;
+
+  const checkpointRepositoryResult = getDependency<CheckpointRepository>(container, 'checkpointRepository');
+  if (!checkpointRepositoryResult.ok) return checkpointRepositoryResult;
+
   return ok({
     config: configResult.value,
     logger: loggerResult.value,
@@ -138,22 +154,25 @@ export function extractHandlerDependencies(
     dependencyRepository: dependencyRepositoryResult.value,
     workerPool: workerPoolResult.value,
     resourceMonitor: resourceMonitorResult.value,
-    worktreeManager: worktreeManagerResult.value
+    worktreeManager: worktreeManagerResult.value,
+    scheduleRepository: scheduleRepositoryResult.value,
+    checkpointRepository: checkpointRepositoryResult.value
   });
 }
 
 /**
  * Create and setup all event handlers
  *
- * Initializes 7 handlers: 6 standard handlers via EventHandlerRegistry and
- * DependencyHandler via factory pattern. On any failure, performs cleanup
- * of already-initialized handlers before returning error.
+ * Initializes 8 handlers: 6 standard handlers via EventHandlerRegistry,
+ * DependencyHandler and ScheduleHandler via factory pattern. On any failure,
+ * performs cleanup of already-initialized handlers before returning error.
  *
  * ARCHITECTURE: Standard handlers use setup(eventBus) pattern via registry.
- * DependencyHandler uses factory pattern (create()) for async graph initialization.
+ * DependencyHandler and ScheduleHandler use factory pattern (create()) for
+ * async initialization with proper event subscription.
  *
  * @param deps - All dependencies needed for handler creation
- * @returns Result containing registry and dependencyHandler for lifecycle management
+ * @returns Result containing registry, dependencyHandler, and scheduleHandler for lifecycle management
  * @throws Never - Returns errors in Result type instead of throwing
  *
  * @example
@@ -162,9 +181,10 @@ export function extractHandlerDependencies(
  * if (!setupResult.ok) {
  *   return setupResult; // Cleanup already performed
  * }
- * const { registry, dependencyHandler } = setupResult.value;
+ * const { registry, dependencyHandler, scheduleHandler } = setupResult.value;
  * container.registerValue('handlerRegistry', registry);
  * container.registerValue('dependencyHandler', dependencyHandler);
+ * container.registerValue('scheduleHandler', scheduleHandler);
  * ```
  */
 export async function setupEventHandlers(
@@ -251,7 +271,8 @@ export async function setupEventHandlers(
     deps.dependencyRepository,
     deps.taskRepository,
     logger,
-    eventBus
+    eventBus,
+    { checkpointLookup: deps.checkpointRepository }
   );
   if (!dependencyHandlerResult.ok) {
     // Cleanup standard handlers on failure
@@ -265,10 +286,52 @@ export async function setupEventHandlers(
 
   const dependencyHandler = dependencyHandlerResult.value;
 
+  // 8. Schedule Handler - uses factory pattern for async event subscription
+  // ARCHITECTURE: Factory pattern ensures handler is fully initialized before use
+  // Cannot use registry because create() does its own event subscription
+  const scheduleHandlerResult = await ScheduleHandler.create(
+    deps.scheduleRepository,
+    deps.taskRepository,
+    eventBus,
+    childLogger('ScheduleHandler')
+  );
+  if (!scheduleHandlerResult.ok) {
+    // Cleanup previous handlers on failure
+    await registry.shutdown();
+    return err(new ClaudineError(
+      ErrorCode.SYSTEM_ERROR,
+      `Failed to create ScheduleHandler: ${scheduleHandlerResult.error.message}`,
+      { error: scheduleHandlerResult.error }
+    ));
+  }
+
+  const scheduleHandler = scheduleHandlerResult.value;
+
+  // 9. Checkpoint Handler - auto-creates checkpoints on task terminal events
+  // ARCHITECTURE: Factory pattern ensures handler is fully initialized before use
+  const checkpointHandlerResult = await CheckpointHandler.create(
+    deps.checkpointRepository,
+    deps.outputCapture,
+    deps.taskRepository,
+    eventBus,
+    childLogger('CheckpointHandler')
+  );
+  if (!checkpointHandlerResult.ok) {
+    // Cleanup previous handlers on failure
+    await registry.shutdown();
+    return err(new ClaudineError(
+      ErrorCode.SYSTEM_ERROR,
+      `Failed to create CheckpointHandler: ${checkpointHandlerResult.error.message}`,
+      { error: checkpointHandlerResult.error }
+    ));
+  }
+
+  const checkpointHandler = checkpointHandlerResult.value;
+
   setupLogger.info('Event handlers initialized successfully', {
     standardHandlers: standardHandlers.length,
-    totalHandlers: standardHandlers.length + 1 // +1 for DependencyHandler
+    totalHandlers: standardHandlers.length + 3 // +3 for DependencyHandler, ScheduleHandler, CheckpointHandler
   });
 
-  return ok({ registry, dependencyHandler });
+  return ok({ registry, dependencyHandler, scheduleHandler, checkpointHandler });
 }

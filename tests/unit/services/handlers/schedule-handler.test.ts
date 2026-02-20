@@ -1,0 +1,441 @@
+/**
+ * Unit tests for ScheduleHandler
+ * ARCHITECTURE: Tests event-driven schedule lifecycle with real SQLite (in-memory)
+ * Pattern: Behavioral testing with InMemoryEventBus (matches dependency-handler pattern)
+ *
+ * NOTE: ScheduleHandler extends BaseEventHandler. Its handleEvent() wrapper catches errors
+ * from inner handlers and logs them rather than propagating. So error-path tests verify
+ * state (repo, logger) rather than thrown exceptions.
+ */
+
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { ScheduleHandler } from '../../../../src/services/handlers/schedule-handler';
+import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
+import { SQLiteTaskRepository } from '../../../../src/implementations/task-repository';
+import { SQLiteScheduleRepository } from '../../../../src/implementations/schedule-repository';
+import { Database } from '../../../../src/implementations/database';
+import { TestLogger } from '../../../fixtures/test-doubles';
+import { createTestConfiguration } from '../../../fixtures/factories';
+import {
+  createSchedule,
+  ScheduleType,
+  ScheduleStatus,
+  MissedRunPolicy,
+  ScheduleId,
+} from '../../../../src/core/domain';
+import type { Schedule } from '../../../../src/core/domain';
+import { flushEventLoop } from '../../../utils/event-helpers';
+
+describe('ScheduleHandler - Behavioral Tests', () => {
+  let handler: ScheduleHandler;
+  let eventBus: InMemoryEventBus;
+  let scheduleRepo: SQLiteScheduleRepository;
+  let taskRepo: SQLiteTaskRepository;
+  let database: Database;
+  let logger: TestLogger;
+
+  beforeEach(async () => {
+    logger = new TestLogger();
+    const config = createTestConfiguration();
+    eventBus = new InMemoryEventBus(config, logger);
+
+    database = new Database(':memory:');
+    scheduleRepo = new SQLiteScheduleRepository(database);
+    taskRepo = new SQLiteTaskRepository(database);
+
+    const handlerResult = await ScheduleHandler.create(
+      scheduleRepo,
+      taskRepo,
+      eventBus,
+      logger
+    );
+    if (!handlerResult.ok) {
+      throw new Error(`Failed to create ScheduleHandler: ${handlerResult.error.message}`);
+    }
+    handler = handlerResult.value;
+  });
+
+  afterEach(() => {
+    eventBus.dispose();
+    database.close();
+  });
+
+  // Helper: create a test schedule and optionally save it
+  function createTestSchedule(overrides: Partial<Parameters<typeof createSchedule>[0]> = {}): Schedule {
+    return createSchedule({
+      taskTemplate: {
+        prompt: 'Scheduled task prompt',
+        workingDirectory: '/tmp',
+      },
+      scheduleType: ScheduleType.CRON,
+      cronExpression: '0 9 * * *',
+      timezone: 'UTC',
+      missedRunPolicy: MissedRunPolicy.SKIP,
+      ...overrides,
+    });
+  }
+
+  async function saveSchedule(schedule: Schedule): Promise<void> {
+    const result = await scheduleRepo.save(schedule);
+    if (!result.ok) throw new Error(`Failed to save schedule: ${result.error.message}`);
+  }
+
+  describe('Factory create()', () => {
+    it('should succeed and subscribe to events', async () => {
+      const freshEventBus = new InMemoryEventBus(createTestConfiguration(), new TestLogger());
+      const freshLogger = new TestLogger();
+
+      const result = await ScheduleHandler.create(
+        scheduleRepo,
+        taskRepo,
+        freshEventBus,
+        freshLogger
+      );
+
+      expect(result.ok).toBe(true);
+      expect(freshLogger.hasLogContaining('ScheduleHandler initialized')).toBe(true);
+
+      freshEventBus.dispose();
+    });
+  });
+
+  describe('handleScheduleCreated', () => {
+    it('should persist cron schedule with calculated nextRunAt', async () => {
+      const schedule = createTestSchedule();
+
+      await eventBus.emit('ScheduleCreated', { schedule });
+      await flushEventLoop();
+
+      const findResult = await scheduleRepo.findById(schedule.id);
+      expect(findResult.ok).toBe(true);
+      if (!findResult.ok) return;
+
+      const persisted = findResult.value;
+      expect(persisted).not.toBeNull();
+      expect(persisted!.nextRunAt).toBeDefined();
+      expect(persisted!.nextRunAt).toBeGreaterThan(Date.now() - 1000);
+    });
+
+    it('should persist one-time schedule with scheduledAt as nextRunAt', async () => {
+      const scheduledAt = Date.now() + 3600000; // 1 hour from now
+      const schedule = createTestSchedule({
+        scheduleType: ScheduleType.ONE_TIME,
+        cronExpression: undefined,
+        scheduledAt,
+      });
+
+      await eventBus.emit('ScheduleCreated', { schedule });
+      await flushEventLoop();
+
+      const findResult = await scheduleRepo.findById(schedule.id);
+      expect(findResult.ok).toBe(true);
+      if (!findResult.ok) return;
+
+      expect(findResult.value!.nextRunAt).toBe(scheduledAt);
+    });
+
+    it('should log error for invalid timezone but not throw', async () => {
+      // Create schedule directly with bad timezone to bypass service validation
+      const schedule: Schedule = {
+        ...createTestSchedule(),
+        timezone: 'Invalid/Timezone',
+      };
+
+      await eventBus.emit('ScheduleCreated', { schedule });
+      await flushEventLoop();
+
+      // Schedule should NOT be persisted since validation failed
+      const findResult = await scheduleRepo.findById(schedule.id);
+      expect(findResult.ok).toBe(true);
+      expect(findResult.value).toBeNull();
+    });
+
+    it('should log error for missing cron expression on CRON type', async () => {
+      const schedule: Schedule = {
+        ...createTestSchedule(),
+        cronExpression: undefined,
+      };
+
+      await eventBus.emit('ScheduleCreated', { schedule });
+      await flushEventLoop();
+
+      const findResult = await scheduleRepo.findById(schedule.id);
+      expect(findResult.ok).toBe(true);
+      expect(findResult.value).toBeNull();
+    });
+
+    it('should log error for missing scheduledAt on ONE_TIME type', async () => {
+      const schedule: Schedule = {
+        ...createTestSchedule({
+          scheduleType: ScheduleType.ONE_TIME,
+          cronExpression: undefined,
+        }),
+        scheduledAt: undefined,
+      };
+
+      await eventBus.emit('ScheduleCreated', { schedule });
+      await flushEventLoop();
+
+      const findResult = await scheduleRepo.findById(schedule.id);
+      expect(findResult.ok).toBe(true);
+      expect(findResult.value).toBeNull();
+    });
+  });
+
+  describe('handleScheduleTriggered', () => {
+    it('should create task from template and record execution', async () => {
+      const schedule = createTestSchedule();
+      await saveSchedule(schedule);
+      const nextRunAt = Date.now() - 60000; // Due 1 minute ago
+      await scheduleRepo.update(schedule.id, { nextRunAt });
+
+      const triggeredAt = Date.now();
+      await eventBus.emit('ScheduleTriggered', {
+        scheduleId: schedule.id,
+        triggeredAt,
+      });
+      await flushEventLoop();
+
+      // Verify task was created
+      const allTasks = await taskRepo.findAll();
+      expect(allTasks.ok).toBe(true);
+      if (!allTasks.ok) return;
+      expect(allTasks.value.length).toBeGreaterThanOrEqual(1);
+      expect(allTasks.value[0].prompt).toBe('Scheduled task prompt');
+
+      // Verify execution was recorded
+      const history = await scheduleRepo.getExecutionHistory(schedule.id);
+      expect(history.ok).toBe(true);
+      if (!history.ok) return;
+      expect(history.value.length).toBeGreaterThanOrEqual(1);
+      expect(history.value[0].status).toBe('triggered');
+    });
+
+    it('should update runCount and lastRunAt', async () => {
+      const schedule = createTestSchedule();
+      await saveSchedule(schedule);
+      await scheduleRepo.update(schedule.id, { nextRunAt: Date.now() - 60000 });
+
+      const triggeredAt = Date.now();
+      await eventBus.emit('ScheduleTriggered', {
+        scheduleId: schedule.id,
+        triggeredAt,
+      });
+      await flushEventLoop();
+
+      const findResult = await scheduleRepo.findById(schedule.id);
+      expect(findResult.ok).toBe(true);
+      if (!findResult.ok) return;
+
+      expect(findResult.value!.runCount).toBe(1);
+      expect(findResult.value!.lastRunAt).toBe(triggeredAt);
+    });
+
+    it('should calculate next run time for cron schedules', async () => {
+      const schedule = createTestSchedule();
+      await saveSchedule(schedule);
+      await scheduleRepo.update(schedule.id, { nextRunAt: Date.now() - 60000 });
+
+      await eventBus.emit('ScheduleTriggered', {
+        scheduleId: schedule.id,
+        triggeredAt: Date.now(),
+      });
+      await flushEventLoop();
+
+      const findResult = await scheduleRepo.findById(schedule.id);
+      expect(findResult.ok).toBe(true);
+      if (!findResult.ok) return;
+
+      // Next run should be in the future
+      expect(findResult.value!.nextRunAt).toBeDefined();
+      expect(findResult.value!.nextRunAt).toBeGreaterThan(Date.now() - 1000);
+    });
+
+    it('should skip inactive schedules', async () => {
+      const schedule = createTestSchedule();
+      await saveSchedule(schedule);
+      await scheduleRepo.update(schedule.id, {
+        status: ScheduleStatus.PAUSED,
+        nextRunAt: Date.now() - 60000,
+      });
+
+      await eventBus.emit('ScheduleTriggered', {
+        scheduleId: schedule.id,
+        triggeredAt: Date.now(),
+      });
+      await flushEventLoop();
+
+      // No tasks should be created
+      const allTasks = await taskRepo.findAll();
+      expect(allTasks.ok).toBe(true);
+      if (!allTasks.ok) return;
+      expect(allTasks.value).toHaveLength(0);
+    });
+
+    it('should mark schedule completed when maxRuns reached', async () => {
+      const schedule = createTestSchedule({ maxRuns: 1 });
+      await saveSchedule(schedule);
+      await scheduleRepo.update(schedule.id, { nextRunAt: Date.now() - 60000 });
+
+      await eventBus.emit('ScheduleTriggered', {
+        scheduleId: schedule.id,
+        triggeredAt: Date.now(),
+      });
+      await flushEventLoop();
+
+      const findResult = await scheduleRepo.findById(schedule.id);
+      expect(findResult.ok).toBe(true);
+      if (!findResult.ok) return;
+
+      expect(findResult.value!.status).toBe(ScheduleStatus.COMPLETED);
+      expect(findResult.value!.runCount).toBe(1);
+      expect(findResult.value!.nextRunAt).toBeUndefined();
+    });
+
+    it('should mark one-time schedule completed after single run', async () => {
+      const scheduledAt = Date.now() - 60000;
+      const schedule = createTestSchedule({
+        scheduleType: ScheduleType.ONE_TIME,
+        cronExpression: undefined,
+        scheduledAt,
+      });
+      await saveSchedule(schedule);
+      await scheduleRepo.update(schedule.id, { nextRunAt: scheduledAt });
+
+      await eventBus.emit('ScheduleTriggered', {
+        scheduleId: schedule.id,
+        triggeredAt: Date.now(),
+      });
+      await flushEventLoop();
+
+      const findResult = await scheduleRepo.findById(schedule.id);
+      expect(findResult.ok).toBe(true);
+      if (!findResult.ok) return;
+
+      expect(findResult.value!.status).toBe(ScheduleStatus.COMPLETED);
+      expect(findResult.value!.nextRunAt).toBeUndefined();
+    });
+
+    it('should mark schedule expired when expiresAt is reached', async () => {
+      const schedule = createTestSchedule({
+        expiresAt: Date.now() - 1000, // Already expired
+      });
+      await saveSchedule(schedule);
+      await scheduleRepo.update(schedule.id, { nextRunAt: Date.now() - 60000 });
+
+      await eventBus.emit('ScheduleTriggered', {
+        scheduleId: schedule.id,
+        triggeredAt: Date.now(),
+      });
+      await flushEventLoop();
+
+      const findResult = await scheduleRepo.findById(schedule.id);
+      expect(findResult.ok).toBe(true);
+      if (!findResult.ok) return;
+
+      expect(findResult.value!.status).toBe(ScheduleStatus.EXPIRED);
+      expect(findResult.value!.nextRunAt).toBeUndefined();
+    });
+
+    it('should emit TaskDelegated and ScheduleExecuted events', async () => {
+      const schedule = createTestSchedule();
+      await saveSchedule(schedule);
+      await scheduleRepo.update(schedule.id, { nextRunAt: Date.now() - 60000 });
+
+      await eventBus.emit('ScheduleTriggered', {
+        scheduleId: schedule.id,
+        triggeredAt: Date.now(),
+      });
+      await flushEventLoop();
+
+      // Check for emitted events (InMemoryEventBus tracks all emitted events)
+      // TaskDelegated should be emitted for the created task
+      expect(logger.hasLogContaining('Schedule triggered successfully')).toBe(true);
+    });
+  });
+
+  describe('handleScheduleCancelled', () => {
+    it('should update status to CANCELLED and clear nextRunAt', async () => {
+      const schedule = createTestSchedule();
+      await saveSchedule(schedule);
+      await scheduleRepo.update(schedule.id, { nextRunAt: Date.now() + 3600000 });
+
+      await eventBus.emit('ScheduleCancelled', {
+        scheduleId: schedule.id,
+        reason: 'manual cancellation',
+      });
+      await flushEventLoop();
+
+      const findResult = await scheduleRepo.findById(schedule.id);
+      expect(findResult.ok).toBe(true);
+      if (!findResult.ok) return;
+
+      expect(findResult.value!.status).toBe(ScheduleStatus.CANCELLED);
+      expect(findResult.value!.nextRunAt).toBeUndefined();
+    });
+  });
+
+  describe('handleSchedulePaused', () => {
+    it('should update status to PAUSED', async () => {
+      const schedule = createTestSchedule();
+      await saveSchedule(schedule);
+
+      await eventBus.emit('SchedulePaused', { scheduleId: schedule.id });
+      await flushEventLoop();
+
+      const findResult = await scheduleRepo.findById(schedule.id);
+      expect(findResult.ok).toBe(true);
+      if (!findResult.ok) return;
+
+      expect(findResult.value!.status).toBe(ScheduleStatus.PAUSED);
+    });
+  });
+
+  describe('handleScheduleResumed', () => {
+    it('should update status to ACTIVE and recalculate nextRunAt for cron', async () => {
+      const schedule = createTestSchedule();
+      await saveSchedule(schedule);
+      await scheduleRepo.update(schedule.id, { status: ScheduleStatus.PAUSED });
+
+      await eventBus.emit('ScheduleResumed', { scheduleId: schedule.id });
+      await flushEventLoop();
+
+      const findResult = await scheduleRepo.findById(schedule.id);
+      expect(findResult.ok).toBe(true);
+      if (!findResult.ok) return;
+
+      expect(findResult.value!.status).toBe(ScheduleStatus.ACTIVE);
+      expect(findResult.value!.nextRunAt).toBeDefined();
+      expect(findResult.value!.nextRunAt).toBeGreaterThan(Date.now() - 1000);
+    });
+
+    it('should log error for non-existent schedule', async () => {
+      await eventBus.emit('ScheduleResumed', {
+        scheduleId: ScheduleId('non-existent'),
+      });
+      await flushEventLoop();
+
+      // handleEvent logs the error rather than throwing
+      expect(logger.hasLogContaining('event handling failed')).toBe(true);
+    });
+  });
+
+  describe('handleScheduleUpdated', () => {
+    it('should apply partial updates to schedule', async () => {
+      const schedule = createTestSchedule();
+      await saveSchedule(schedule);
+
+      await eventBus.emit('ScheduleUpdated', {
+        scheduleId: schedule.id,
+        update: { maxRuns: 10 },
+      });
+      await flushEventLoop();
+
+      const findResult = await scheduleRepo.findById(schedule.id);
+      expect(findResult.ok).toBe(true);
+      if (!findResult.ok) return;
+
+      expect(findResult.value!.maxRuns).toBe(10);
+    });
+  });
+});

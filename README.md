@@ -20,6 +20,8 @@
 - **Intelligent Resource Management**: Monitors CPU and memory in real-time, spawning workers when resources are available
 - **Task Persistence & Recovery**: SQLite storage with automatic crash recovery
 - **Task Dependencies**: DAG-based dependency resolution with cycle detection
+- **Task Scheduling**: Cron and one-time scheduling with timezone support and missed run policies
+- **Task Resumption**: Resume failed/completed tasks with enriched context from automatic checkpoints
 
 See **[FEATURES.md](./docs/FEATURES.md)** for complete feature list.
 
@@ -73,6 +75,14 @@ Once configured, use these tools in Claude Code:
 | **TaskStatus** | Get real-time task status | `TaskStatus({ taskId })` |
 | **TaskLogs** | Stream or retrieve execution logs | `TaskLogs({ taskId })` |
 | **CancelTask** | Cancel tasks with resource cleanup | `CancelTask({ taskId, reason })` |
+| **RetryTask** | Retry a failed or completed task | `RetryTask({ taskId })` |
+| **ScheduleTask** | Schedule recurring or one-time tasks | `ScheduleTask({ prompt: "...", scheduleType: "cron", cronExpression: "0 2 * * *" })` |
+| **ListSchedules** | List schedules with optional status filter | `ListSchedules({ status: "active" })` |
+| **GetSchedule** | Get schedule details and execution history | `GetSchedule({ scheduleId })` |
+| **CancelSchedule** | Cancel an active schedule | `CancelSchedule({ scheduleId, reason })` |
+| **PauseSchedule** | Pause a schedule (resumable) | `PauseSchedule({ scheduleId })` |
+| **ResumeSchedule** | Resume a paused schedule | `ResumeSchedule({ scheduleId })` |
+| **ResumeTask** | Resume a failed/completed task with checkpoint context | `ResumeTask({ taskId, additionalContext? })` |
 
 ### CLI Commands
 
@@ -83,6 +93,14 @@ Once configured, use these tools in Claude Code:
 | `claudine status [task-id]` | Check task status (all tasks if no ID) |
 | `claudine logs <task-id>` | View task output |
 | `claudine cancel <task-id>` | Cancel running task |
+| `claudine schedule create <prompt>` | Create a cron or one-time schedule |
+| `claudine schedule list` | List schedules with optional status filter |
+| `claudine schedule get <id>` | Get schedule details and execution history |
+| `claudine schedule pause <id>` | Pause an active schedule |
+| `claudine schedule resume <id>` | Resume a paused schedule |
+| `claudine schedule cancel <id>` | Cancel a schedule |
+| `claudine pipeline <prompt> ...` | Create chained one-time schedules with delays |
+| `claudine resume <task-id>` | Resume a task from its checkpoint |
 | `claudine help` | Show help |
 
 ### Task Dependencies
@@ -117,7 +135,69 @@ const commit = await DelegateTask({
 });
 ```
 
+**Session continuation** (pass output context through dependency chains):
+
+```typescript
+// Build task runs first
+const build = await DelegateTask({ prompt: "npm run build" });
+
+// Test task receives build's output/git state in its prompt
+const test = await DelegateTask({
+  prompt: "npm test",
+  dependsOn: [build.taskId],
+  continueFrom: build.taskId
+});
+```
+
+When `continueFrom` is set, the dependent task's prompt is automatically enriched with the dependency's checkpoint context (output summary, git state, errors) before execution.
+
 See **[Task Dependencies Documentation](./docs/TASK-DEPENDENCIES.md)** for advanced patterns (diamond dependencies, error handling, failure propagation).
+
+### Task Scheduling
+
+Schedule tasks for future or recurring execution:
+
+```typescript
+// Recurring: daily backup at 2am EST
+await ScheduleTask({
+  prompt: "Backup database to S3",
+  scheduleType: "cron",
+  cronExpression: "0 2 * * *",
+  timezone: "America/New_York",
+  missedRunPolicy: "catchup"
+});
+
+// One-time: deploy tomorrow at 8am UTC
+await ScheduleTask({
+  prompt: "Deploy to production",
+  scheduleType: "one_time",
+  scheduledAt: "2026-02-19T08:00:00Z"
+});
+```
+
+**Schedule types**: `cron` (5-field expressions) and `one_time` (ISO 8601 datetime). **Missed run policies**: `skip`, `catchup`, `fail`. Supports IANA timezones and concurrent execution prevention.
+
+### Task Resumption
+
+Resume failed or completed tasks with enriched context from automatic checkpoints:
+
+```bash
+# Resume a failed task
+claudine resume task-abc123
+
+# Resume with additional instructions
+claudine resume task-abc123 --context "Try a different approach this time"
+```
+
+```typescript
+// Via MCP
+await ResumeTask({
+  taskId: "task-abc123",
+  additionalContext: "Focus on the database migration step"
+});
+```
+
+Checkpoints are captured automatically on task completion/failure, preserving git state (branch, SHA, dirty files) and the last 50 lines of output. Resumed tasks receive the full checkpoint context in their prompt and track lineage via `parentTaskId` and `retryOf` fields.
 
 ## Architecture
 
@@ -168,18 +248,26 @@ npm run dev        # Development mode with auto-reload
 npm run build      # Build TypeScript
 npm start          # Run built server
 npm run typecheck  # Type checking
-npm test           # Run tests
 npm run clean      # Clean build artifacts
 ```
 
 ### Testing
 
+Tests are grouped to prevent memory exhaustion. `npm test` is blocked as a safety measure.
+
 ```bash
-npm test                    # Run all tests (safe, sequential)
-npm run test:coverage       # Run with coverage
-npm run test:unit           # Unit tests only
-npm run test:integration    # Integration tests only
-npm run validate            # Validate entire setup
+# Grouped tests (fast, safe to run individually)
+npm run test:core           # Core domain logic (~3s)
+npm run test:handlers       # Service handlers (~3s)
+npm run test:repositories   # Data layer (~2s)
+npm run test:adapters       # MCP adapter (~2s)
+npm run test:implementations # Other implementations (~2s)
+npm run test:cli            # CLI tests (~2s)
+npm run test:integration    # Integration tests
+
+# Full suite (local terminal / CI only)
+npm run test:all            # All tests
+npm run test:coverage       # With coverage
 ```
 
 ### Project Structure
@@ -207,8 +295,9 @@ claudine/
 - [x] v0.2.1 - Event-driven architecture and CLI
 - [x] v0.2.3 - Stability improvements
 - [x] v0.3.0 - Task dependency resolution
-- [ ] v0.3.1 - Dependency performance optimizations
-- [ ] v0.4.0 - Task resumption and scheduling
+- [x] v0.3.2 - Settling workers and spawn burst protection
+- [x] v0.3.3 - Test infrastructure and memory management
+- [x] v0.4.0 - Task scheduling and task resumption
 - [ ] v0.5.0 - Distributed multi-server processing
 
 See **[ROADMAP.md](./docs/ROADMAP.md)** for detailed plans and timelines.
