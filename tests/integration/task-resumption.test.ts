@@ -22,7 +22,7 @@ import { EventBus } from '../../src/core/events/event-bus.js';
 import { Database } from '../../src/implementations/database.js';
 import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
 import { TestResourceMonitor } from '../../src/implementations/resource-monitor.js';
-import { flushEventLoop } from '../utils/event-helpers.js';
+import { flushEventLoop, waitForEvent } from '../utils/event-helpers.js';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -94,6 +94,9 @@ describe('Integration: Task Resumption - End-to-End Flow', () => {
    * NoOpProcessSpawner emits exit code 0 immediately, so task goes queued -> running -> completed
    */
   async function delegateAndWaitForCompletion(prompt: string): Promise<Task> {
+    // Set up completion listener before delegating to capture the async exit
+    const completedPromise = waitForEvent(eventBus, 'TaskCompleted');
+
     const result = await taskManager.delegate({
       prompt,
       priority: Priority.P2,
@@ -102,15 +105,11 @@ describe('Integration: Task Resumption - End-to-End Flow', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(`Delegate failed: ${result.error.message}`);
 
-    const task = result.value;
-
-    // Wait for the NoOpProcessSpawner to trigger completion
-    await flushEventLoop();
-    // Give extra time for the worker pool to process the exit event
-    await new Promise(resolve => setTimeout(resolve, 200));
+    // Wait for NoOpProcessSpawner's setImmediate exit → TaskCompleted
+    await completedPromise;
     await flushEventLoop();
 
-    return task;
+    return result.value;
   }
 
   describe('Checkpoint Auto-Creation on Task Completion', () => {
@@ -121,10 +120,10 @@ describe('Integration: Task Resumption - End-to-End Flow', () => {
         checkpointEvents.push(event);
       });
 
+      // Set up checkpoint listener before the action that triggers it
+      const checkpointPromise = waitForEvent(eventBus, 'CheckpointCreated');
       const task = await delegateAndWaitForCompletion('Checkpoint completion test');
-
-      // Allow time for checkpoint handler to process
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await checkpointPromise;
       await flushEventLoop();
 
       // Verify checkpoint was created
@@ -147,6 +146,8 @@ describe('Integration: Task Resumption - End-to-End Flow', () => {
 
       // The task auto-completed via NoOpProcessSpawner, but we can still test
       // the failure checkpoint path by emitting TaskFailed for a new task
+      // Wait for auto-completion from NoOpProcessSpawner before emitting manual failure
+      const autoCompletePromise = waitForEvent(eventBus, 'TaskCompleted');
       const failTask = await taskManager.delegate({
         prompt: 'Failure checkpoint test',
         priority: Priority.P2,
@@ -155,18 +156,18 @@ describe('Integration: Task Resumption - End-to-End Flow', () => {
       expect(failTask.ok).toBe(true);
       if (!failTask.ok) return;
 
-      // Wait for persistence
+      await autoCompletePromise;
       await flushEventLoop();
-      await new Promise(resolve => setTimeout(resolve, 100));
-      await flushEventLoop();
+
+      // Set up checkpoint listener before manually emitting failure
+      const failCheckpointPromise = waitForEvent(eventBus, 'CheckpointCreated');
 
       // Manually emit TaskFailed event (since NoOpProcessSpawner always exits 0)
       await eventBus.emit('TaskFailed', {
         taskId: failTask.value.id,
         error: { message: 'Simulated test failure', code: 'TEST_ERROR' } as any,
       });
-      await flushEventLoop();
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await failCheckpointPromise;
       await flushEventLoop();
 
       // Verify failure checkpoint was created
@@ -206,12 +207,7 @@ describe('Integration: Task Resumption - End-to-End Flow', () => {
       expect(saveResult.ok).toBe(true);
       if (!saveResult.ok) return;
 
-      // Step 3: Ensure original task is in a terminal state in the repository
-      // NoOpProcessSpawner should have completed it, but verify
-      await new Promise(resolve => setTimeout(resolve, 200));
-      await flushEventLoop();
-
-      // Step 4: Resume the task
+      // Step 3: Resume the task (delegateAndWaitForCompletion already ensured terminal state)
       const resumeResult = await taskManager.resume({
         taskId: originalTask.id,
         additionalContext: 'Please also run the seed script after migration',
@@ -245,10 +241,6 @@ describe('Integration: Task Resumption - End-to-End Flow', () => {
       // Delete any auto-created checkpoints to test the fallback path
       await checkpointRepo.deleteByTask(originalTask.id);
 
-      // Wait for task to be in terminal state
-      await new Promise(resolve => setTimeout(resolve, 200));
-      await flushEventLoop();
-
       const resumeResult = await taskManager.resume({
         taskId: originalTask.id,
       });
@@ -270,9 +262,6 @@ describe('Integration: Task Resumption - End-to-End Flow', () => {
 
     it('should include additional context in enriched prompt', async () => {
       const originalTask = await delegateAndWaitForCompletion('Task with additional context');
-
-      await new Promise(resolve => setTimeout(resolve, 200));
-      await flushEventLoop();
 
       const resumeResult = await taskManager.resume({
         taskId: originalTask.id,
@@ -333,10 +322,8 @@ describe('Integration: Task Resumption - End-to-End Flow', () => {
       // Step 1: Create and complete original task
       const originalTask = await delegateAndWaitForCompletion('Root task in chain');
 
-      await new Promise(resolve => setTimeout(resolve, 200));
-      await flushEventLoop();
-
-      // Step 2: First resume
+      // Step 2: First resume — set up completion listener before triggering
+      const resumeCompletedPromise = waitForEvent(eventBus, 'TaskCompleted');
       const resume1Result = await taskManager.resume({
         taskId: originalTask.id,
       });
@@ -350,7 +337,7 @@ describe('Integration: Task Resumption - End-to-End Flow', () => {
       expect(firstResume.retryOf).toBe(originalTask.id);
 
       // Wait for first resume task to complete via NoOpProcessSpawner
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await resumeCompletedPromise;
       await flushEventLoop();
 
       // Step 3: Second resume (resume the resume)
@@ -373,9 +360,6 @@ describe('Integration: Task Resumption - End-to-End Flow', () => {
 
     it('should emit TaskResumed event with correct metadata', async () => {
       const originalTask = await delegateAndWaitForCompletion('Event emission test');
-
-      await new Promise(resolve => setTimeout(resolve, 200));
-      await flushEventLoop();
 
       // Track TaskResumed events
       let resumedEvent: { originalTaskId: TaskId; newTaskId: TaskId; checkpointUsed: boolean } | null = null;

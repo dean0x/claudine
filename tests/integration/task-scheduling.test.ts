@@ -26,7 +26,7 @@ import { Database } from '../../src/implementations/database.js';
 import { ScheduleExecutor } from '../../src/services/schedule-executor.js';
 import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
 import { TestResourceMonitor } from '../../src/implementations/resource-monitor.js';
-import { flushEventLoop } from '../utils/event-helpers.js';
+import { flushEventLoop, waitForEvent } from '../utils/event-helpers.js';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -263,12 +263,12 @@ describe('Integration: Task Scheduling - End-to-End Flow', () => {
       const executor = executorCreateResult.value;
 
       try {
+        // Set up event listener before triggering to capture the async chain
+        const executedPromise = waitForEvent(eventBus, 'ScheduleExecuted');
+
         // Trigger a tick manually
         await executor.triggerTick();
-        await flushEventLoop();
-
-        // Allow time for event propagation
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await executedPromise;
         await flushEventLoop();
 
         // Verify TaskDelegated was emitted
@@ -322,9 +322,9 @@ describe('Integration: Task Scheduling - End-to-End Flow', () => {
       const executor = executorCreateResult.value;
 
       try {
+        const executedPromise = waitForEvent(eventBus, 'ScheduleExecuted');
         await executor.triggerTick();
-        await flushEventLoop();
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await executedPromise;
         await flushEventLoop();
 
         // Verify execution was recorded
@@ -535,9 +535,9 @@ describe('Integration: Task Scheduling - End-to-End Flow', () => {
       const executor = executorCreateResult.value;
 
       try {
+        const executedPromise = waitForEvent(eventBus, 'ScheduleExecuted');
         await executor.triggerTick();
-        await flushEventLoop();
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await executedPromise;
         await flushEventLoop();
 
         // Get schedule with history
@@ -594,9 +594,9 @@ describe('Integration: Task Scheduling - End-to-End Flow', () => {
       const executor = executorCreateResult.value;
 
       try {
+        const executedPromise = waitForEvent(eventBus, 'ScheduleExecuted');
         await executor.triggerTick();
-        await flushEventLoop();
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await executedPromise;
         await flushEventLoop();
 
         // Verify schedule is marked as completed

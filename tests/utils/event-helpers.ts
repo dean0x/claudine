@@ -3,7 +3,19 @@
  * Replaces setTimeout with deterministic event-driven patterns
  */
 
-import type { EventBus } from '../../src/core/interfaces';
+/**
+ * Minimal interface for event bus operations used in test helpers.
+ * Avoids importing the full EventBus type (which has optional convenience methods).
+ * Both InMemoryEventBus and TestEventBus satisfy this contract at runtime.
+ */
+interface TestableEventBus {
+  on(event: string, handler: (data: any) => void): string | void;
+  once(event: string, handler: (data: any) => void): void;
+  removeListener(event: string, handler: (data: any) => void): void;
+  emit(event: string, data: any): void;
+}
+
+type EventBus = TestableEventBus;
 
 /**
  * Wait for a specific event to be emitted
