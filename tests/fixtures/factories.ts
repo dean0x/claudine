@@ -87,7 +87,7 @@ export class TaskFactory {
     return this;
   }
 
-  withError(error: any): this {
+  withError(error: unknown): this {
     this.overrides.error = error;
     return this;
   }
@@ -343,7 +343,7 @@ export class ConfigFactory {
  */
 export class EventFactory {
   private eventType: string = 'TestEvent';
-  private payload: any = {};
+  private payload: Record<string, unknown> = {};
   private timestamp: number = Date.now();
 
   withType(type: string): this {
@@ -351,7 +351,7 @@ export class EventFactory {
     return this;
   }
 
-  withPayload(payload: any): this {
+  withPayload(payload: Record<string, unknown>): this {
     this.payload = payload;
     return this;
   }
@@ -373,7 +373,7 @@ export class EventFactory {
     return this;
   }
 
-  taskFailed(taskId: TaskId, error: any): this {
+  taskFailed(taskId: TaskId, error: unknown): this {
     this.eventType = 'TaskFailed';
     this.payload = { taskId, error };
     return this;
@@ -385,7 +385,7 @@ export class EventFactory {
     return this;
   }
 
-  build(): { type: string; payload: any; timestamp: number } {
+  build(): { type: string; payload: Record<string, unknown>; timestamp: number } {
     return {
       type: this.eventType,
       payload: this.payload,

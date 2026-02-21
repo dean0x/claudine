@@ -46,7 +46,7 @@ export class EventSpy {
     existing.push(handler);
     this.handlers.set(eventType, existing);
 
-    eventBus.subscribe(eventType as any, handler);
+    eventBus.subscribe(eventType as ClaudineEvent['type'], handler);
   }
 
   /**
@@ -158,7 +158,7 @@ export class EventSpy {
 
     for (const [eventType, handlers] of this.handlers.entries()) {
       for (const handler of handlers) {
-        eventBus.unsubscribe(eventType as any, handler);
+        eventBus.unsubscribe(eventType as string, handler);
       }
     }
     this.handlers.clear();

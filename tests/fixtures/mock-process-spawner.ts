@@ -32,7 +32,7 @@ export class MockProcessSpawner implements ProcessSpawner {
     setTimeout(() => mockProcess.execute(), 10);
 
     return ok({
-      process: mockProcess as any,
+      process: mockProcess as unknown as ChildProcess,
       pid: mockProcess.pid,
     });
   }
@@ -143,8 +143,8 @@ class MockChildProcess extends EventEmitter {
     this.executionDelay = executionDelay;
 
     // Make stdout and stderr look like streams
-    (this.stdout as any).pipe = () => this.stdout;
-    (this.stderr as any).pipe = () => this.stderr;
+    (this.stdout as unknown as Record<string, unknown>).pipe = () => this.stdout;
+    (this.stderr as unknown as Record<string, unknown>).pipe = () => this.stderr;
   }
 
   execute(): void {

@@ -33,7 +33,7 @@ export async function waitFor(
  * @param eventName Name of the event to wait for
  * @param timeout Maximum time to wait
  */
-export function waitForEvent<T = any>(eventEmitter: any, eventName: string, timeout = 5000): Promise<T> {
+export function waitForEvent<T = unknown>(eventEmitter: { once: (event: string, handler: (data: T) => void) => void; removeListener: (event: string, handler: (data: T) => void) => void }, eventName: string, timeout = 5000): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       cleanup();

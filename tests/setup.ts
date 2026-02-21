@@ -89,7 +89,7 @@ if (shouldWrapTimers) {
   global.clearTimeout = ((timeoutId: NodeJS.Timeout) => {
     activeResources.timeouts.delete(timeoutId);
     return originalClearTimeout(timeoutId);
-  }) as any;
+  }) as typeof clearTimeout;
 } else {
   global.clearTimeout = originalClearTimeout;
 }
@@ -101,7 +101,7 @@ if (shouldWrapTimers) {
   global.clearInterval = ((intervalId: NodeJS.Timeout) => {
     activeResources.intervals.delete(intervalId);
     return originalClearInterval(intervalId);
-  }) as any;
+  }) as typeof clearInterval;
 } else {
   global.clearInterval = originalClearInterval;
 }

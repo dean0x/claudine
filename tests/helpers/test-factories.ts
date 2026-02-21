@@ -15,6 +15,7 @@ import type {
   TaskRepository,
   WorkerPool,
 } from '../../src/core/interfaces';
+import type { Result } from '../../src/core/result';
 import { ok } from '../../src/core/result';
 
 // Test Constants
@@ -166,19 +167,21 @@ export const MockFactory = {
       canSpawnWorker: vi.fn().mockResolvedValue(ok(canSpawn)),
       incrementWorkerCount: vi.fn(),
       decrementWorkerCount: vi.fn(),
-      getCpuUsage: vi.fn().mockReturnValue(50),
-      getMemoryUsage: vi.fn().mockReturnValue(2000000000),
-    } as any;
+      getResources: vi.fn().mockResolvedValue(ok({ cpuUsage: 50, availableMemory: 2000000000, totalMemory: 8000000000, loadAverage: [1.0, 1.0, 1.0], workerCount: 0 })),
+      getThresholds: vi.fn().mockReturnValue({ maxCpuPercent: 80, minMemoryBytes: 1000000000 }),
+      recordSpawn: vi.fn(),
+    } as ResourceMonitor;
   },
 
   logger: (): Logger => {
-    return {
+    const logger: Logger = {
       info: vi.fn(),
       error: vi.fn(),
       debug: vi.fn(),
       warn: vi.fn(),
       child: vi.fn().mockReturnThis(),
-    } as any;
+    };
+    return logger;
   },
 
   outputCapture: (): OutputCapture => {
@@ -193,9 +196,7 @@ export const MockFactory = {
         }),
       ),
       clear: vi.fn().mockReturnValue(ok(undefined)),
-      configureTask: vi.fn().mockReturnValue(ok(undefined)),
-      cleanup: vi.fn().mockReturnValue(ok(undefined)),
-    } as any;
+    } as OutputCapture;
   },
 
   taskQueue: (): TaskQueue => {
@@ -213,17 +214,14 @@ export const MockFactory = {
 
   workerPool: (): WorkerPool => {
     return {
-      spawn: vi.fn().mockResolvedValue(ok({ id: TEST_CONSTANTS.TEST_WORKER_ID } as any)),
+      spawn: vi.fn().mockResolvedValue(ok({ id: TEST_CONSTANTS.TEST_WORKER_ID } as unknown)),
       kill: vi.fn().mockResolvedValue(ok(undefined)),
       killAll: vi.fn().mockResolvedValue(ok(undefined)),
       getWorker: vi.fn().mockReturnValue(ok(null)),
       getWorkers: vi.fn().mockReturnValue(ok([])),
       getWorkerCount: vi.fn().mockReturnValue(0),
       getWorkerForTask: vi.fn().mockReturnValue(ok(null)),
-      setTaskCompleteHandler: vi.fn(),
-      setTaskTimeoutHandler: vi.fn(),
-      hasTimer: vi.fn().mockReturnValue(false),
-    } as any;
+    } as WorkerPool;
   },
 
   taskRepository: (): TaskRepository => {
@@ -260,7 +258,7 @@ export const TestDataFactory = {
     return 'b'.repeat(size);
   },
 
-  jsonData: (data: Record<string, any> = { test: 'data' }): string => {
+  jsonData: (data: Record<string, unknown> = { test: 'data' }): string => {
     return JSON.stringify(data);
   },
 
@@ -277,30 +275,31 @@ export const ErrorFactory = {
 
   networkError: (): Error => {
     const error = new Error('Network request failed');
-    (error as any).code = 'ENOTFOUND';
+    (error as unknown as Record<string, unknown>).code = 'ENOTFOUND';
     return error;
   },
 
   timeoutError: (): Error => {
     const error = new Error('Operation timed out');
-    (error as any).code = 'ETIMEDOUT';
+    (error as unknown as Record<string, unknown>).code = 'ETIMEDOUT';
     return error;
   },
 };
 
 // Assertion Helpers
 export const AssertionHelpers = {
-  expectSuccessResult: <T>(result: any): T => {
+  expectSuccessResult: <T>(result: Result<T, Error>): T => {
     expect(result.ok).toBe(true);
-    return result.value;
+    return (result as { ok: true; value: T }).value;
   },
 
-  expectErrorResult: (result: any, expectedMessage?: string): any => {
+  expectErrorResult: (result: Result<unknown, Error>, expectedMessage?: string): Error => {
     expect(result.ok).toBe(false);
+    const error = (result as { ok: false; error: Error }).error;
     if (expectedMessage) {
-      expect(result.error.message).toContain(expectedMessage);
+      expect(error.message).toContain(expectedMessage);
     }
-    return result.error;
+    return error;
   },
 
   expectTaskWithStatus: (task: Task, status: TaskStatus): void => {
@@ -316,35 +315,35 @@ export const AssertionHelpers = {
     }
   },
 
-  expectMockCalledWithTask: (mockFn: any, expectedTask: Partial<Task>): void => {
+  expectMockCalledWithTask: (mockFn: ReturnType<typeof vi.fn>, expectedTask: Partial<Task>): void => {
     expect(mockFn).toHaveBeenCalledWith(expect.objectContaining(expectedTask));
   },
 };
 
 // Enhanced Mock Verification Helpers
 export const MockVerification = {
-  expectCalledOnce: (mockFn: any): void => {
+  expectCalledOnce: (mockFn: ReturnType<typeof vi.fn>): void => {
     expect(mockFn).toHaveBeenCalledTimes(1);
   },
 
-  expectCalledWith: (mockFn: any, ...expectedArgs: any[]): void => {
+  expectCalledWith: (mockFn: ReturnType<typeof vi.fn>, ...expectedArgs: unknown[]): void => {
     expect(mockFn).toHaveBeenCalledWith(...expectedArgs);
   },
 
-  expectCalledOnceWith: (mockFn: any, ...expectedArgs: any[]): void => {
+  expectCalledOnceWith: (mockFn: ReturnType<typeof vi.fn>, ...expectedArgs: unknown[]): void => {
     expect(mockFn).toHaveBeenCalledTimes(1);
     expect(mockFn).toHaveBeenCalledWith(...expectedArgs);
   },
 
-  expectLastCalledWith: (mockFn: any, ...expectedArgs: any[]): void => {
+  expectLastCalledWith: (mockFn: ReturnType<typeof vi.fn>, ...expectedArgs: unknown[]): void => {
     expect(mockFn).toHaveBeenLastCalledWith(...expectedArgs);
   },
 
-  expectNthCalledWith: (mockFn: any, nthCall: number, ...expectedArgs: any[]): void => {
+  expectNthCalledWith: (mockFn: ReturnType<typeof vi.fn>, nthCall: number, ...expectedArgs: unknown[]): void => {
     expect(mockFn).toHaveBeenNthCalledWith(nthCall, ...expectedArgs);
   },
 
-  expectCallOrder: (mockFn1: any, mockFn2: any): void => {
+  expectCallOrder: (mockFn1: ReturnType<typeof vi.fn>, mockFn2: ReturnType<typeof vi.fn>): void => {
     const fn1CallTime = mockFn1.mock.invocationCallOrder?.[0];
     const fn2CallTime = mockFn2.mock.invocationCallOrder?.[0];
 
@@ -373,7 +372,7 @@ export const MockVerification = {
     expect(mockWorkerPool.kill).toHaveBeenCalledWith(workerId);
   },
 
-  expectOutputCaptureConfigured: (mockOutput: OutputCapture, taskId: TaskId, config: any): void => {
+  expectOutputCaptureConfigured: (mockOutput: OutputCapture, taskId: TaskId, config: Record<string, unknown>): void => {
     expect(mockOutput.configureTask).toHaveBeenCalledWith(taskId, config);
   },
 

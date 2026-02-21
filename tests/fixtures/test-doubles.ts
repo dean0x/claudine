@@ -26,15 +26,15 @@ import { err, ok } from '../../src/core/result';
  * TestEventBus - EventBus with event tracking capabilities
  */
 export class TestEventBus implements EventBus {
-  private handlers = new Map<string, Set<(event: any) => Promise<void>>>();
-  private requestHandlers = new Map<string, (event: any) => Promise<Result<any, Error>>>();
-  private emittedEvents: Array<{ type: string; payload: any; timestamp: number }> = [];
+  private handlers = new Map<string, Set<(event: unknown) => Promise<void>>>();
+  private requestHandlers = new Map<string, (event: unknown) => Promise<Result<unknown, Error>>>();
+  private emittedEvents: Array<{ type: string; payload: unknown; timestamp: number }> = [];
   private subscriptionCount = 0;
   private failingEventTypes = new Set<string>();
   // Track subscription ID -> handler for unsubscribe
-  private subscriptionToHandler = new Map<string, { eventType: string; handler: (event: any) => Promise<void> }>();
+  private subscriptionToHandler = new Map<string, { eventType: string; handler: (event: unknown) => Promise<void> }>();
   // Track original handler -> subscription ID for removeListener compatibility
-  private handlerToSubscription = new Map<(data: any) => void, string>();
+  private handlerToSubscription = new Map<(data: unknown) => void, string>();
 
   async emit<T>(eventType: string, payload: T): Promise<Result<void, Error>> {
     this.emittedEvents.push({
@@ -82,16 +82,16 @@ export class TestEventBus implements EventBus {
       this.handlers.set(eventType, new Set());
     }
 
-    this.handlers.get(eventType)!.add(handler as any);
+    this.handlers.get(eventType)!.add(handler as (event: unknown) => Promise<void>);
     this.subscriptionCount++;
 
     const subscriptionId = `sub-${this.subscriptionCount}`;
     // Track subscription for proper unsubscribe
-    this.subscriptionToHandler.set(subscriptionId, { eventType, handler: handler as any });
+    this.subscriptionToHandler.set(subscriptionId, { eventType, handler: handler as (event: unknown) => Promise<void> });
     return ok(subscriptionId);
   }
 
-  subscribeAll(handler: (event: any) => Promise<void>): Result<string, Error> {
+  subscribeAll(handler: (event: unknown) => Promise<void>): Result<string, Error> {
     return this.subscribe('*', handler);
   }
 
@@ -134,7 +134,7 @@ export class TestEventBus implements EventBus {
     eventType: string,
     handler: (event: TRequest) => Promise<Result<TResponse, Error>>,
   ): Result<string, Error> {
-    this.requestHandlers.set(eventType, handler as any);
+    this.requestHandlers.set(eventType, handler as (event: unknown) => Promise<Result<unknown, Error>>);
     return ok(`req-handler-${eventType}`);
   }
 
@@ -146,11 +146,11 @@ export class TestEventBus implements EventBus {
   }
 
   // Test-specific methods
-  getAllEmittedEvents(): Array<{ type: string; payload: any; timestamp: number }> {
+  getAllEmittedEvents(): Array<{ type: string; payload: unknown; timestamp: number }> {
     return [...this.emittedEvents];
   }
 
-  hasEmitted(eventType: string, payload?: any): boolean {
+  hasEmitted(eventType: string, payload?: unknown): boolean {
     return this.emittedEvents.some((e) => {
       if (e.type !== eventType) return false;
       if (payload === undefined) return true;
@@ -166,8 +166,8 @@ export class TestEventBus implements EventBus {
     this.emittedEvents = [];
   }
 
-  on(eventType: string, handler: (data: any) => void): () => void {
-    const asyncHandler = async (event: any) => {
+  on(eventType: string, handler: (data: unknown) => void): () => void {
+    const asyncHandler = async (event: unknown) => {
       handler(event);
     };
     this.subscribe(eventType, asyncHandler);
@@ -183,11 +183,11 @@ export class TestEventBus implements EventBus {
     return this.handlers.has(eventType) && this.handlers.get(eventType)!.size > 0;
   }
 
-  getEmittedEvents(eventType: string): any[] {
+  getEmittedEvents(eventType: string): unknown[] {
     return this.emittedEvents.filter((e) => e.type === eventType).map((e) => e.payload);
   }
 
-  getRequestedEvents(eventType: string): any[] {
+  getRequestedEvents(eventType: string): unknown[] {
     // Track requested events (simplified for testing)
     return this.emittedEvents.filter((e) => e.type === `request:${eventType}`).map((e) => e.payload);
   }
@@ -198,7 +198,7 @@ export class TestEventBus implements EventBus {
    * Wait for a specific event to be emitted
    * Checks already-emitted events first, then waits for new ones
    */
-  async waitFor<T = any>(
+  async waitFor<T = unknown>(
     eventType: string,
     options: { timeout?: number; filter?: (payload: T) => boolean } = {},
   ): Promise<T> {
@@ -215,7 +215,7 @@ export class TestEventBus implements EventBus {
     return new Promise((resolve, reject) => {
       let subscriptionId: string | undefined;
 
-      const handler = async (event: any) => {
+      const handler = async (event: unknown) => {
         if (filter(event)) {
           clearTimeout(timer);
           if (subscriptionId) {
@@ -254,10 +254,10 @@ export class TestEventBus implements EventBus {
    * Subscribe to a single event occurrence (Node EventEmitter style)
    * Handler auto-unsubscribes after first invocation
    */
-  once(eventType: string, handler: (data: any) => void): void {
+  once(eventType: string, handler: (data: unknown) => void): void {
     let subscriptionId: string | undefined;
 
-    const wrappedHandler = async (event: any) => {
+    const wrappedHandler = async (event: unknown) => {
       // Unsubscribe first to prevent any race conditions
       if (subscriptionId) {
         this.unsubscribe(subscriptionId);
@@ -278,7 +278,7 @@ export class TestEventBus implements EventBus {
   /**
    * Remove a specific event listener (for compatibility with event-helpers.ts)
    */
-  removeListener(eventType: string, handler: (data: any) => void): void {
+  removeListener(eventType: string, handler: (data: unknown) => void): void {
     // First check if we have a subscription ID for this handler (from once())
     const subscriptionId = this.handlerToSubscription.get(handler);
     if (subscriptionId) {
@@ -290,7 +290,7 @@ export class TestEventBus implements EventBus {
     // Fallback: try direct removal for handlers registered via on()
     const handlers = this.handlers.get(eventType);
     if (handlers) {
-      handlers.delete(handler as any);
+      handlers.delete(handler as (event: unknown) => Promise<void>);
     }
   }
 }
@@ -489,7 +489,7 @@ export class TestProcessSpawner implements ProcessSpawner {
   async spawn(
     command: string,
     args: string[],
-    options?: any,
+    options?: Record<string, unknown>,
   ): Promise<Result<{ process: ChildProcess; workerId: string }, Error>> {
     if (this.spawnError) {
       return err(this.spawnError);
@@ -500,7 +500,7 @@ export class TestProcessSpawner implements ProcessSpawner {
 
     this.processes.set(workerId, { pid, killed: false });
 
-    const mockProcess: any = {
+    const mockProcess = {
       pid,
       kill: () => {
         const proc = this.processes.get(workerId);
@@ -509,24 +509,24 @@ export class TestProcessSpawner implements ProcessSpawner {
         }
         return true;
       },
-      on: (event: string, handler: Function) => {
+      on: (_event: string, _handler: (...args: unknown[]) => void) => {
         // Mock event handling
       },
       stdout: {
-        on: (event: string, handler: Function) => {
+        on: (event: string, handler: (data: string) => void) => {
           if (event === 'data') {
-            this.outputHandlers.set(`${workerId}-stdout`, handler as any);
+            this.outputHandlers.set(`${workerId}-stdout`, handler);
           }
         },
       },
       stderr: {
-        on: (event: string, handler: Function) => {
+        on: (event: string, handler: (data: string) => void) => {
           if (event === 'data') {
-            this.outputHandlers.set(`${workerId}-stderr`, handler as any);
+            this.outputHandlers.set(`${workerId}-stderr`, handler);
           }
         },
       },
-    };
+    } as unknown as ChildProcess;
 
     return ok({ process: mockProcess, workerId });
   }
@@ -607,7 +607,7 @@ export class TestWorktreeManager {
     return ok(undefined);
   }
 
-  async completeTask(taskId: string, result: any): Promise<Result<any, Error>> {
+  async completeTask(taskId: string, result: unknown): Promise<Result<{ taskId: string; completed: boolean; result: unknown }, Error>> {
     if (this.shouldFail) {
       return err(new Error('Task completion failed'));
     }

@@ -170,9 +170,9 @@ export function createPartialMock<T>(methods: Partial<T>): T {
  * Helper to test functions with various invalid inputs
  */
 export function testWithInvalidInputs<T>(
-  fn: (input: T) => any,
+  fn: (input: T) => unknown,
   validInput: T,
-  expectation: (result: any) => void,
+  expectation: (result: unknown) => void,
 ): void {
   INVALID_INPUTS.forEach((invalid) => {
     const result = fn(invalid as T);
@@ -183,10 +183,10 @@ export function testWithInvalidInputs<T>(
 /**
  * Creates a mock function for testing retry behavior
  */
-export class RetryTestFunction<T = any> {
+export class RetryTestFunction<T = unknown> {
   private callCount = 0;
   private readonly responses: Array<{ type: 'success' | 'error'; value: T | Error }> = [];
-  private readonly callHistory: Array<{ timestamp: number; args: any[] }> = [];
+  private readonly callHistory: Array<{ timestamp: number; args: unknown[] }> = [];
 
   constructor() {}
 
@@ -211,7 +211,7 @@ export class RetryTestFunction<T = any> {
 
   // The actual function to pass to retry utilities
   get fn() {
-    return async (...args: any[]): Promise<T> => {
+    return async (...args: unknown[]): Promise<T> => {
       this.callHistory.push({ timestamp: Date.now(), args });
       const response = this.responses[this.callCount] || this.responses[this.responses.length - 1];
       this.callCount++;
@@ -249,59 +249,62 @@ export class RetryTestFunction<T = any> {
 /**
  * Mock function class that tracks calls
  */
-export class MockFunction<T = any> {
+export class MockFunction<T = unknown> {
   private callCount = 0;
-  private calls: any[][] = [];
-  private implementation?: (...args: any[]) => T | Promise<T>;
+  private calls: unknown[][] = [];
+  private implementation?: (...args: unknown[]) => T | Promise<T>;
 
-  constructor(implementation?: (...args: any[]) => T | Promise<T>) {
+  constructor(implementation?: (...args: unknown[]) => T | Promise<T>) {
     this.implementation = implementation;
 
     // Bind the function to maintain context
     this.fn = this.fn.bind(this);
 
     // Add properties to the function
-    (this.fn as any).callCount = 0;
-    (this.fn as any).calls = [];
-    (this.fn as any).wasCalledTimes = this.wasCalledTimes.bind(this);
-    (this.fn as any).wasCalledWith = this.wasCalledWith.bind(this);
-    (this.fn as any).reset = this.reset.bind(this);
+    const fnRecord = this.fn as unknown as Record<string, unknown>;
+    fnRecord.callCount = 0;
+    fnRecord.calls = [];
+    fnRecord.wasCalledTimes = this.wasCalledTimes.bind(this);
+    fnRecord.wasCalledWith = this.wasCalledWith.bind(this);
+    fnRecord.reset = this.reset.bind(this);
   }
 
-  async fn(...args: any[]): Promise<T> {
+  async fn(...args: unknown[]): Promise<T> {
     this.callCount++;
     this.calls.push(args);
 
     // Update function properties
-    (this.fn as any).callCount = this.callCount;
-    (this.fn as any).calls = [...this.calls];
+    const fnRecord = this.fn as unknown as Record<string, unknown>;
+    fnRecord.callCount = this.callCount;
+    fnRecord.calls = [...this.calls];
 
     if (this.implementation) {
       return await this.implementation(...args);
     }
-    return undefined as any;
+    return undefined as T;
   }
 
   wasCalledTimes(n: number): boolean {
     return this.callCount === n;
   }
 
-  wasCalledWith(...args: any[]): boolean {
+  wasCalledWith(...args: unknown[]): boolean {
     return this.calls.some((call) => call.length === args.length && call.every((arg, i) => arg === args[i]));
   }
 
   reset(): void {
     this.callCount = 0;
     this.calls.length = 0;
-    (this.fn as any).callCount = 0;
-    (this.fn as any).calls = [];
+    const fnRecord = this.fn as unknown as Record<string, unknown>;
+    fnRecord.callCount = 0;
+    fnRecord.calls = [];
   }
 }
 
 /**
  * Creates a simple mock function that tracks calls
  */
-export function createMockFunction<T = any>(implementation?: (...args: any[]) => T | Promise<T>) {
+export function createMockFunction<T = unknown>(implementation?: (...args: unknown[]) => T | Promise<T>): (...args: unknown[]) => Promise<T> {
   const mock = new MockFunction(implementation);
-  return mock.fn as any;
+  return mock.fn;
 }

@@ -23,7 +23,7 @@ export const createMockLogger = (): Logger => ({
 export const createMockEventBus = (): EventBus => {
   const listeners = new Map<string, Set<Function>>();
   return {
-    emit: vi.fn((event: string, data?: any) => {
+    emit: vi.fn((event: string, data?: unknown) => {
       const handlers = listeners.get(event);
       if (handlers) {
         handlers.forEach((handler) => handler(data));
@@ -39,7 +39,7 @@ export const createMockEventBus = (): EventBus => {
       listeners.get(event)?.delete(handler);
     }),
     once: vi.fn((event: string, handler: Function) => {
-      const wrapper = (data: any) => {
+      const wrapper = (data: unknown) => {
         handler(data);
         listeners.get(event)?.delete(wrapper);
       };
