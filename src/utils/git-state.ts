@@ -6,8 +6,8 @@
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { Result, ok, err } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { err, ok, Result } from '../core/result.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -57,8 +57,8 @@ export async function captureGitState(workingDirectory: string): Promise<Result<
         dirtyFiles = statusResult.stdout
           .trim()
           .split('\n')
-          .map(line => line.substring(3).trim()) // Remove status prefix (e.g., " M ", "?? ")
-          .filter(file => file.length > 0);
+          .map((line) => line.substring(3).trim()) // Remove status prefix (e.g., " M ", "?? ")
+          .filter((file) => file.length > 0);
       }
     } catch {
       // Status failed - continue with empty dirty files
@@ -67,10 +67,12 @@ export async function captureGitState(workingDirectory: string): Promise<Result<
 
     return ok({ branch, commitSha, dirtyFiles });
   } catch (error) {
-    return err(new ClaudineError(
-      ErrorCode.SYSTEM_ERROR,
-      `Failed to capture git state: ${error instanceof Error ? error.message : String(error)}`,
-      { workingDirectory }
-    ));
+    return err(
+      new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Failed to capture git state: ${error instanceof Error ? error.message : String(error)}`,
+        { workingDirectory },
+      ),
+    );
   }
 }

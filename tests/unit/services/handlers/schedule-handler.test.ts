@@ -8,22 +8,16 @@
  * state (repo, logger) rather than thrown exceptions.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { ScheduleHandler } from '../../../../src/services/handlers/schedule-handler';
-import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
-import { SQLiteTaskRepository } from '../../../../src/implementations/task-repository';
-import { SQLiteScheduleRepository } from '../../../../src/implementations/schedule-repository';
-import { Database } from '../../../../src/implementations/database';
-import { TestLogger } from '../../../fixtures/test-doubles';
-import { createTestConfiguration } from '../../../fixtures/factories';
-import {
-  createSchedule,
-  ScheduleType,
-  ScheduleStatus,
-  MissedRunPolicy,
-  ScheduleId,
-} from '../../../../src/core/domain';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Schedule } from '../../../../src/core/domain';
+import { createSchedule, MissedRunPolicy, ScheduleId, ScheduleStatus, ScheduleType } from '../../../../src/core/domain';
+import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
+import { Database } from '../../../../src/implementations/database';
+import { SQLiteScheduleRepository } from '../../../../src/implementations/schedule-repository';
+import { SQLiteTaskRepository } from '../../../../src/implementations/task-repository';
+import { ScheduleHandler } from '../../../../src/services/handlers/schedule-handler';
+import { createTestConfiguration } from '../../../fixtures/factories';
+import { TestLogger } from '../../../fixtures/test-doubles';
 import { flushEventLoop } from '../../../utils/event-helpers';
 
 describe('ScheduleHandler - Behavioral Tests', () => {
@@ -43,12 +37,7 @@ describe('ScheduleHandler - Behavioral Tests', () => {
     scheduleRepo = new SQLiteScheduleRepository(database);
     taskRepo = new SQLiteTaskRepository(database);
 
-    const handlerResult = await ScheduleHandler.create(
-      scheduleRepo,
-      taskRepo,
-      eventBus,
-      logger
-    );
+    const handlerResult = await ScheduleHandler.create(scheduleRepo, taskRepo, eventBus, logger);
     if (!handlerResult.ok) {
       throw new Error(`Failed to create ScheduleHandler: ${handlerResult.error.message}`);
     }
@@ -85,12 +74,7 @@ describe('ScheduleHandler - Behavioral Tests', () => {
       const freshEventBus = new InMemoryEventBus(createTestConfiguration(), new TestLogger());
       const freshLogger = new TestLogger();
 
-      const result = await ScheduleHandler.create(
-        scheduleRepo,
-        taskRepo,
-        freshEventBus,
-        freshLogger
-      );
+      const result = await ScheduleHandler.create(scheduleRepo, taskRepo, freshEventBus, freshLogger);
 
       expect(result.ok).toBe(true);
       expect(freshLogger.hasLogContaining('ScheduleHandler initialized')).toBe(true);

@@ -7,10 +7,10 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { bootstrap } from './bootstrap.js';
-import { validatePath, validateBufferSize, validateTimeout } from './utils/validation.js';
-import type { Task } from './core/domain.js';
-import type { TaskManager, ScheduleService } from './core/interfaces.js';
-import { TaskId, ScheduleId } from './core/domain.js';
+import type { DelegateRequest, Task } from './core/domain.js';
+import { Priority, ScheduleId, TaskId } from './core/domain.js';
+import type { ScheduleService, TaskManager } from './core/interfaces.js';
+import { validateBufferSize, validatePath, validateTimeout } from './utils/validation.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -153,10 +153,10 @@ function showConfig() {
   const config = {
     mcpServers: {
       claudine: {
-        command: "npx",
-        args: ["-y", "claudine", "mcp", "start"]
-      }
-    }
+        command: 'npx',
+        args: ['-y', 'claudine', 'mcp', 'start'],
+      },
+    },
   };
 
   console.log(`
@@ -195,23 +195,26 @@ Learn more: https://github.com/dean0x/claudine#configuration
 `);
 }
 
-async function delegateTask(prompt: string, options?: {
-  priority?: 'P0' | 'P1' | 'P2';
-  workingDirectory?: string;
-  dependsOn?: readonly string[];
-  continueFrom?: string;
-  useWorktree?: boolean;
-  worktreeCleanup?: 'auto' | 'keep' | 'delete';
-  mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch';
-  branchName?: string;
-  baseBranch?: string;
-  autoCommit?: boolean;
-  pushToRemote?: boolean;
-  prTitle?: string;
-  prBody?: string;
-  timeout?: number;
-  maxOutputBuffer?: number;
-}) {
+async function delegateTask(
+  prompt: string,
+  options?: {
+    priority?: 'P0' | 'P1' | 'P2';
+    workingDirectory?: string;
+    dependsOn?: readonly string[];
+    continueFrom?: string;
+    useWorktree?: boolean;
+    worktreeCleanup?: 'auto' | 'keep' | 'delete';
+    mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch';
+    branchName?: string;
+    baseBranch?: string;
+    autoCommit?: boolean;
+    pushToRemote?: boolean;
+    prTitle?: string;
+    prBody?: string;
+    timeout?: number;
+    maxOutputBuffer?: number;
+  },
+) {
   try {
     console.log('🚀 Bootstrapping Claudine...');
     const containerResult = await bootstrap();
@@ -220,21 +223,24 @@ async function delegateTask(prompt: string, options?: {
       process.exit(1);
     }
     const container = containerResult.value;
-    
-    const taskManagerResult = await container.resolve('taskManager');
+
+    const taskManagerResult = await container.resolve<TaskManager>('taskManager');
     if (!taskManagerResult.ok) {
       console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
       process.exit(1);
     }
-    
-    const taskManager = taskManagerResult.value as any;
+
+    const taskManager = taskManagerResult.value;
     console.log('📝 Delegating task:', prompt.substring(0, 100) + (prompt.length > 100 ? '...' : ''));
-    
-    const request = {
+
+    const request: DelegateRequest = {
       prompt,
-      ...options
+      ...options,
+      priority: options?.priority ? Priority[options.priority as keyof typeof Priority] : undefined,
+      dependsOn: options?.dependsOn?.map((id: string) => TaskId(id)),
+      continueFrom: options?.continueFrom ? TaskId(options.continueFrom) : undefined,
     };
-    
+
     // Log the parameters being used
     if (options) {
       console.log('🔧 Task parameters:');
@@ -252,7 +258,7 @@ async function delegateTask(prompt: string, options?: {
       if (options.timeout) console.log('  Timeout:', options.timeout, 'ms');
       if (options.maxOutputBuffer) console.log('  Max Output Buffer:', options.maxOutputBuffer, 'bytes');
     }
-    
+
     const result = await taskManager.delegate(request);
     if (result.ok) {
       const task = result.value;
@@ -281,19 +287,19 @@ async function getTaskStatus(taskId?: string, showDependencies?: boolean) {
     }
     const container = containerResult.value;
 
-    const taskManagerResult = await container.resolve('taskManager');
+    const taskManagerResult = await container.resolve<TaskManager>('taskManager');
     if (!taskManagerResult.ok) {
       console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
       process.exit(1);
     }
 
-    const taskManager = taskManagerResult.value as any;
+    const taskManager = taskManagerResult.value;
 
     if (taskId) {
       console.log('🔍 Getting status for:', taskId);
-      const result = await taskManager.getStatus(taskId);
+      const result = await taskManager.getStatus(TaskId(taskId));
       if (result.ok) {
-        const task = result.value;
+        const task = result.value as Task;
         console.log('📋 Task Details:');
         console.log('   ID:', task.id);
         console.log('   Status:', task.status);
@@ -359,29 +365,29 @@ async function getTaskLogs(taskId: string, tail?: number) {
       process.exit(1);
     }
     const container = containerResult.value;
-    
-    const taskManagerResult = await container.resolve('taskManager');
+
+    const taskManagerResult = await container.resolve<TaskManager>('taskManager');
     if (!taskManagerResult.ok) {
       console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
       process.exit(1);
     }
-    
-    const taskManager = taskManagerResult.value as any;
+
+    const taskManager = taskManagerResult.value;
     console.log('📤 Getting logs for:', taskId);
-    
-    const result = await taskManager.getLogs(taskId);
+
+    const result = await taskManager.getLogs(TaskId(taskId));
     if (result.ok) {
       const logs = result.value;
-      
+
       // Apply tail limit if specified
       let stdoutLines = logs.stdout || [];
       let stderrLines = logs.stderr || [];
-      
+
       if (tail && tail > 0) {
         stdoutLines = stdoutLines.slice(-tail);
         stderrLines = stderrLines.slice(-tail);
       }
-      
+
       if (stdoutLines.length > 0) {
         console.log('\n📤 STDOUT' + (tail ? ` (last ${tail} lines)` : '') + ':');
         stdoutLines.forEach((line: string) => console.log('  ', line));
@@ -414,19 +420,19 @@ async function cancelTask(taskId: string, reason?: string) {
     }
     const container = containerResult.value;
 
-    const taskManagerResult = await container.resolve('taskManager');
+    const taskManagerResult = await container.resolve<TaskManager>('taskManager');
     if (!taskManagerResult.ok) {
       console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
       process.exit(1);
     }
 
-    const taskManager = taskManagerResult.value as any;
+    const taskManager = taskManagerResult.value;
     console.log('🛑 Canceling task:', taskId);
     if (reason) {
       console.log('📝 Reason:', reason);
     }
 
-    const result = await taskManager.cancel(taskId, reason);
+    const result = await taskManager.cancel(TaskId(taskId), reason);
     if (result.ok) {
       console.log('✅ Task canceled successfully');
       process.exit(0);
@@ -450,16 +456,16 @@ async function retryTask(taskId: string) {
     }
     const container = containerResult.value;
 
-    const taskManagerResult = await container.resolve('taskManager');
+    const taskManagerResult = await container.resolve<TaskManager>('taskManager');
     if (!taskManagerResult.ok) {
       console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
       process.exit(1);
     }
 
-    const taskManager = taskManagerResult.value as any;
+    const taskManager = taskManagerResult.value;
     console.log('🔄 Retrying task:', taskId);
 
-    const result = await taskManager.retry(taskId);
+    const result = await taskManager.retry(TaskId(taskId));
     if (result.ok) {
       const newTask = result.value;
       console.log('✅ Retry task created successfully');
@@ -613,7 +619,14 @@ async function scheduleCreate(service: ScheduleService, scheduleArgs: string[]) 
     cronExpression,
     scheduledAt,
     timezone,
-    missedRunPolicy: missedRunPolicy === 'catchup' ? MissedRunPolicy.CATCHUP : missedRunPolicy === 'fail' ? MissedRunPolicy.FAIL : missedRunPolicy ? MissedRunPolicy.SKIP : undefined,
+    missedRunPolicy:
+      missedRunPolicy === 'catchup'
+        ? MissedRunPolicy.CATCHUP
+        : missedRunPolicy === 'fail'
+          ? MissedRunPolicy.FAIL
+          : missedRunPolicy
+            ? MissedRunPolicy.SKIP
+            : undefined,
     priority: priority ? Priority[priority] : undefined,
     workingDirectory,
     maxRuns,
@@ -663,7 +676,7 @@ async function scheduleList(service: ScheduleService, scheduleArgs: string[]) {
 
   const result = await service.listSchedules(
     statusEnum ? ScheduleStatus[statusEnum.toUpperCase() as keyof typeof ScheduleStatus] : undefined,
-    limit
+    limit,
   );
 
   if (result.ok) {
@@ -674,7 +687,9 @@ async function scheduleList(service: ScheduleService, scheduleArgs: string[]) {
       console.log(`📋 Found ${schedules.length} schedule(s):\n`);
       for (const s of schedules) {
         const nextRun = s.nextRunAt ? new Date(s.nextRunAt).toISOString() : 'none';
-        console.log(`  ${s.id} | ${s.status} | ${s.scheduleType} | runs: ${s.runCount}${s.maxRuns ? '/' + s.maxRuns : ''} | next: ${nextRun}`);
+        console.log(
+          `  ${s.id} | ${s.status} | ${s.scheduleType} | runs: ${s.runCount}${s.maxRuns ? '/' + s.maxRuns : ''} | next: ${nextRun}`,
+        );
       }
     }
   } else {
@@ -715,14 +730,19 @@ async function scheduleGet(service: ScheduleService, scheduleArgs: string[]) {
     if (schedule.expiresAt) console.log('   Expires:', new Date(schedule.expiresAt).toISOString());
     if (schedule.afterScheduleId) console.log('   After Schedule:', schedule.afterScheduleId);
     console.log('   Created:', new Date(schedule.createdAt).toISOString());
-    console.log('   Prompt:', schedule.taskTemplate.prompt.substring(0, 100) + (schedule.taskTemplate.prompt.length > 100 ? '...' : ''));
+    console.log(
+      '   Prompt:',
+      schedule.taskTemplate.prompt.substring(0, 100) + (schedule.taskTemplate.prompt.length > 100 ? '...' : ''),
+    );
 
     if (history && history.length > 0) {
       console.log(`\n📜 Execution History (${history.length} entries):`);
       for (const h of history) {
         const scheduled = new Date(h.scheduledFor).toISOString();
         const executed = h.executedAt ? new Date(h.executedAt).toISOString() : 'n/a';
-        console.log(`  ${h.status} | scheduled: ${scheduled} | executed: ${executed}${h.taskId ? ' | task: ' + h.taskId : ''}${h.errorMessage ? ' | error: ' + h.errorMessage : ''}`);
+        console.log(
+          `  ${h.status} | scheduled: ${scheduled} | executed: ${executed}${h.taskId ? ' | task: ' + h.taskId : ''}${h.errorMessage ? ' | error: ' + h.errorMessage : ''}`,
+        );
       }
     }
   } else {
@@ -797,10 +817,14 @@ function parseDelay(delayStr: string): number {
   const value = parseInt(match[1]);
   const unit = match[2];
   switch (unit) {
-    case 's': return value * 1000;
-    case 'm': return value * 60 * 1000;
-    case 'h': return value * 60 * 60 * 1000;
-    default: return value * 1000;
+    case 's':
+      return value * 1000;
+    case 'm':
+      return value * 60 * 1000;
+    case 'h':
+      return value * 60 * 60 * 1000;
+    default:
+      return value * 1000;
   }
 }
 
@@ -931,38 +955,43 @@ if (mainCommand === 'mcp') {
     // For MCP, we must NOT print to stdout - just start the server
     // MCP uses stdio for communication
     const indexPath = path.join(__dirname, 'index.js');
-    import(indexPath).then((module) => {
-      // Call the main function if available
-      if (module.main) {
-        return module.main();
-      }
-    }).catch((error) => {
-      console.error('Failed to start MCP server:', error);
-      process.exit(1);
-    });
-    
+    import(indexPath)
+      .then((module) => {
+        // Call the main function if available
+        if (module.main) {
+          return module.main();
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to start MCP server:', error);
+        process.exit(1);
+      });
   } else if (subCommand === 'test') {
     console.log('🧪 Testing Claudine MCP Server...\n');
-    
+
     // Test real server startup and shutdown
     const indexPath = path.join(__dirname, 'index.js');
     const mcp = spawn('node', [indexPath], {
-      stdio: ['pipe', 'pipe', 'pipe'] // Capture output for validation
+      stdio: ['pipe', 'pipe', 'pipe'], // Capture output for validation
     });
-    
+
     let output = '';
     let hasError = false;
-    
+
     // Capture stdout/stderr
-    mcp.stdout?.on('data', (data) => { output += data.toString(); });
-    mcp.stderr?.on('data', (data) => { output += data.toString(); });
-    
+    mcp.stdout?.on('data', (data) => {
+      output += data.toString();
+    });
+    mcp.stderr?.on('data', (data) => {
+      output += data.toString();
+    });
+
     // Handle process events
     mcp.on('error', (error) => {
       console.error('❌ Failed to start server:', error.message);
       hasError = true;
     });
-    
+
     mcp.on('exit', (code) => {
       if (hasError) {
         process.exit(1);
@@ -973,7 +1002,7 @@ if (mainCommand === 'mcp') {
         process.exit(1);
       }
     });
-    
+
     // Test server starts within reasonable time
     setTimeout(() => {
       if (output.includes('Starting Claudine MCP Server') && !hasError) {
@@ -988,16 +1017,13 @@ if (mainCommand === 'mcp') {
         process.exit(1);
       }
     }, 5000);
-    
   } else if (subCommand === 'config') {
     showConfig();
-    
   } else {
     console.error(`❌ Unknown MCP subcommand: ${subCommand || '(none)'}`);
     console.log('Valid subcommands: start, test, config');
     process.exit(1);
   }
-  
 } else if (mainCommand === 'delegate') {
   // Parse arguments for delegate command
   const delegateArgs = args.slice(1);
@@ -1018,18 +1044,18 @@ if (mainCommand === 'mcp') {
     timeout?: number;
     maxOutputBuffer?: number;
   } = {
-    useWorktree: true,  // Default: use worktree
-    worktreeCleanup: 'auto',  // Default: smart cleanup
-    mergeStrategy: 'pr',  // Default: create PR
+    useWorktree: true, // Default: use worktree
+    worktreeCleanup: 'auto', // Default: smart cleanup
+    mergeStrategy: 'pr', // Default: create PR
     autoCommit: true,
-    pushToRemote: true
+    pushToRemote: true,
   };
-  
+
   let promptWords: string[] = [];
-  
+
   for (let i = 0; i < delegateArgs.length; i++) {
     const arg = delegateArgs[i];
-    
+
     if (arg === '--priority' || arg === '-p') {
       const next = delegateArgs[i + 1];
       if (next && ['P0', 'P1', 'P2'].includes(next)) {
@@ -1058,7 +1084,10 @@ if (mainCommand === 'mcp') {
       const next = delegateArgs[i + 1];
       if (next && !next.startsWith('-')) {
         // Parse comma-separated task IDs
-        const taskIds = next.split(',').map(id => id.trim()).filter(id => id.length > 0);
+        const taskIds = next
+          .split(',')
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0);
         if (taskIds.length === 0) {
           console.error('❌ --depends-on requires at least one task ID');
           process.exit(1);
@@ -1162,7 +1191,7 @@ if (mainCommand === 'mcp') {
       promptWords.push(arg);
     }
   }
-  
+
   const prompt = promptWords.join(' ');
   if (!prompt) {
     console.error('❌ Usage: claudine delegate "<prompt>" [options]');
@@ -1179,8 +1208,8 @@ if (mainCommand === 'mcp') {
     console.error('  -s, --strategy STRATEGY       Merge strategy: pr|auto|manual|patch (default: pr)');
     console.error('  -b, --branch NAME             Custom branch name');
     console.error('  --base BRANCH                 Base branch (default: current)');
-    console.error('  --no-commit                   Don\'t auto-commit changes');
-    console.error('  --no-push                     Don\'t push to remote');
+    console.error("  --no-commit                   Don't auto-commit changes");
+    console.error("  --no-push                     Don't push to remote");
     console.error('  --pr-title TITLE              PR title (for pr strategy)');
     console.error('  --pr-body BODY                PR description');
     console.error('');
@@ -1195,9 +1224,8 @@ if (mainCommand === 'mcp') {
     console.error('  claudine delegate "experiment" --keep-worktree        # Preserve worktree');
     process.exit(1);
   }
-  
+
   await delegateTask(prompt, Object.keys(options).length > 0 ? options : undefined);
-  
 } else if (mainCommand === 'status') {
   // Parse status command arguments
   let taskId: string | undefined;
@@ -1213,7 +1241,6 @@ if (mainCommand === 'mcp') {
   }
 
   await getTaskStatus(taskId, showDependencies);
-  
 } else if (mainCommand === 'logs') {
   const taskId = args[1];
   if (!taskId) {
@@ -1222,7 +1249,7 @@ if (mainCommand === 'mcp') {
     console.error('         claudine logs abc123 --tail 50');
     process.exit(1);
   }
-  
+
   // Parse optional tail parameter
   let tail: number | undefined;
   const tailIndex = args.indexOf('--tail');
@@ -1234,9 +1261,8 @@ if (mainCommand === 'mcp') {
     }
     tail = tailValue;
   }
-  
+
   await getTaskLogs(taskId, tail);
-  
 } else if (mainCommand === 'cancel') {
   const taskId = args[1];
   if (!taskId) {
@@ -1249,7 +1275,6 @@ if (mainCommand === 'mcp') {
   // Optional reason is everything after the task ID
   const reason = args.slice(2).join(' ') || undefined;
   await cancelTask(taskId, reason);
-
 } else if (mainCommand === 'retry-task') {
   const taskId = args[1];
   if (!taskId) {
@@ -1259,7 +1284,6 @@ if (mainCommand === 'mcp') {
   }
 
   await retryTask(taskId);
-
 } else if (mainCommand === 'worktree') {
   if (subCommand === 'list') {
     console.log('🌳 Listing worktrees...');
@@ -1284,13 +1308,10 @@ if (mainCommand === 'mcp') {
     console.error('❌ Usage: claudine worktree <list|cleanup|status>');
     process.exit(1);
   }
-
 } else if (mainCommand === 'schedule') {
   await handleScheduleCommand(subCommand, args.slice(2));
-
 } else if (mainCommand === 'pipeline') {
   await handlePipelineCommand(args.slice(1));
-
 } else if (mainCommand === 'resume') {
   const taskId = args[1];
   if (!taskId) {
@@ -1305,7 +1326,6 @@ if (mainCommand === 'mcp') {
   }
 
   await handleResumeCommand(taskId, additionalContext);
-
 } else if (mainCommand === 'config') {
   if (subCommand === 'show') {
     // SECURITY: Sanitize sensitive configuration values for display
@@ -1354,8 +1374,12 @@ if (mainCommand === 'mcp') {
     console.log(`   Safety Check: ${process.env.WORKTREE_REQUIRE_SAFETY_CHECK || 'true'}`);
     console.log('');
     console.log('⚡ Process Management:');
-    console.log(`   Kill Grace Period: ${sanitizeValue(process.env.PROCESS_KILL_GRACE_PERIOD_MS || '5000', 'timeout')}`);
-    console.log(`   Resource Monitor Interval: ${sanitizeValue(process.env.RESOURCE_MONITOR_INTERVAL_MS || '5000', 'timeout')}`);
+    console.log(
+      `   Kill Grace Period: ${sanitizeValue(process.env.PROCESS_KILL_GRACE_PERIOD_MS || '5000', 'timeout')}`,
+    );
+    console.log(
+      `   Resource Monitor Interval: ${sanitizeValue(process.env.RESOURCE_MONITOR_INTERVAL_MS || '5000', 'timeout')}`,
+    );
     console.log(`   Min Spawn Delay: ${sanitizeValue(process.env.WORKER_MIN_SPAWN_DELAY_MS || '10000', 'timeout')}`);
     console.log('');
     console.log('🔗 Event System:');
@@ -1365,7 +1389,9 @@ if (mainCommand === 'mcp') {
     console.log(`   Cleanup Interval: ${sanitizeValue(process.env.EVENT_CLEANUP_INTERVAL_MS || '60000', 'timeout')}`);
     console.log('');
     console.log('💾 Storage Settings:');
-    console.log(`   File Storage Threshold: ${sanitizeValue(process.env.FILE_STORAGE_THRESHOLD_BYTES || '102400', 'memory')}`);
+    console.log(
+      `   File Storage Threshold: ${sanitizeValue(process.env.FILE_STORAGE_THRESHOLD_BYTES || '102400', 'memory')}`,
+    );
     console.log('');
     console.log('🔄 Retry Behavior:');
     console.log(`   Initial Delay: ${sanitizeValue(process.env.RETRY_INITIAL_DELAY_MS || '1000', 'timeout')}`);
@@ -1392,10 +1418,8 @@ if (mainCommand === 'mcp') {
     console.error('❌ Usage: claudine config <show|set>');
     process.exit(1);
   }
-
 } else if (mainCommand === 'help' || !mainCommand) {
   showHelp();
-
 } else {
   console.error(`❌ Unknown command: ${mainCommand}`);
   showHelp();

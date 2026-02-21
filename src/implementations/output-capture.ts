@@ -3,11 +3,11 @@
  * Manages stdout/stderr for tasks with size limits
  */
 
-import { OutputCapture } from '../core/interfaces.js';
-import { EventBus } from '../core/events/event-bus.js';
 import { TaskId, TaskOutput } from '../core/domain.js';
-import { Result, ok, err } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { EventBus } from '../core/events/event-bus.js';
+import { OutputCapture } from '../core/interfaces.js';
+import { err, ok, Result } from '../core/result.js';
 
 interface OutputBuffer {
   stdout: string[];
@@ -25,14 +25,15 @@ export class BufferedOutputCapture implements OutputCapture {
   private readonly maxBufferSize: number;
   private readonly eventBus?: EventBus;
 
-  constructor(maxBufferSize = 10 * 1024 * 1024, eventBus?: EventBus) { // 10MB default
+  constructor(maxBufferSize = 10 * 1024 * 1024, eventBus?: EventBus) {
+    // 10MB default
     this.maxBufferSize = maxBufferSize;
     this.eventBus = eventBus;
   }
 
   capture(taskId: TaskId, type: 'stdout' | 'stderr', data: string): Result<void> {
     let buffer = this.buffers.get(taskId);
-    
+
     if (!buffer) {
       buffer = {
         stdout: [],
@@ -43,18 +44,19 @@ export class BufferedOutputCapture implements OutputCapture {
     }
 
     const dataSize = Buffer.byteLength(data, 'utf8');
-    
+
     // Get the applicable buffer limit (per-task or global)
     const taskConfig = this.taskConfigs.get(taskId);
     const bufferLimit = taskConfig?.maxOutputBuffer !== undefined ? taskConfig.maxOutputBuffer : this.maxBufferSize;
-    
+
     // Check if adding this would exceed the limit
     if (buffer.totalSize + dataSize > bufferLimit) {
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Output buffer limit exceeded for task ${taskId}`,
-        { currentSize: buffer.totalSize, maxSize: bufferLimit }
-      ));
+      return err(
+        new ClaudineError(ErrorCode.SYSTEM_ERROR, `Output buffer limit exceeded for task ${taskId}`, {
+          currentSize: buffer.totalSize,
+          maxSize: bufferLimit,
+        }),
+      );
     }
 
     // Add to appropriate buffer
@@ -63,27 +65,29 @@ export class BufferedOutputCapture implements OutputCapture {
     } else {
       buffer.stderr.push(data);
     }
-    
+
     buffer.totalSize += dataSize;
 
     // Emit OutputCaptured event if eventBus is available
     if (this.eventBus) {
-      this.eventBus.emit('OutputCaptured', {
-        taskId,
-        outputType: type,
-        data
-      }).catch(() => {
-        // Log error but don't fail the capture operation
-        // EventBus errors shouldn't break output capture
-      });
+      this.eventBus
+        .emit('OutputCaptured', {
+          taskId,
+          outputType: type,
+          data,
+        })
+        .catch(() => {
+          // Log error but don't fail the capture operation
+          // EventBus errors shouldn't break output capture
+        });
     }
-    
+
     return ok(undefined);
   }
 
   getOutput(taskId: TaskId, tail?: number): Result<TaskOutput> {
     const buffer = this.buffers.get(taskId);
-    
+
     if (!buffer) {
       // Return empty output if not found
       return ok({
@@ -132,7 +136,7 @@ export class BufferedOutputCapture implements OutputCapture {
     // Get task IDs sorted by insertion order (Map maintains insertion order)
     const taskIds = Array.from(this.buffers.keys());
     const toRemove = taskIds.slice(0, taskIds.length - keepCount);
-    
+
     for (const taskId of toRemove) {
       this.buffers.delete(taskId);
     }
@@ -160,7 +164,7 @@ export class TestOutputCapture implements OutputCapture {
 
   capture(taskId: TaskId, type: 'stdout' | 'stderr', data: string): Result<void> {
     let output = this.outputs.get(taskId);
-    
+
     if (!output) {
       output = { stdout: [], stderr: [] };
       this.outputs.set(taskId, output);
@@ -177,7 +181,7 @@ export class TestOutputCapture implements OutputCapture {
 
   getOutput(taskId: TaskId, tail?: number): Result<TaskOutput> {
     const output = this.outputs.get(taskId);
-    
+
     if (!output) {
       return ok({
         taskId,

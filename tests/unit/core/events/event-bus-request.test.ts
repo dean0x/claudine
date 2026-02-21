@@ -3,13 +3,13 @@
  * Validates correlation-based thread-safe implementation
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ClaudineError, ErrorCode } from '../../../../src/core/errors.js';
 import { InMemoryEventBus } from '../../../../src/core/events/event-bus.js';
 import { Logger } from '../../../../src/core/interfaces.js';
-import { ClaudineError, ErrorCode } from '../../../../src/core/errors.js';
-import { TestLogger } from '../../../fixtures/test-doubles.js';
-import { TIMEOUTS, TEST_COUNTS } from '../../../constants.js';
+import { TEST_COUNTS, TIMEOUTS } from '../../../constants.js';
 import { createTestConfiguration } from '../../../fixtures/factories.js';
+import { TestLogger } from '../../../fixtures/test-doubles.js';
 
 describe('EventBus Request-Response Pattern', () => {
   let eventBus: InMemoryEventBus;
@@ -48,10 +48,7 @@ describe('EventBus Request-Response Pattern', () => {
       // Set up handler that responds with error
       eventBus.subscribe('TestQuery', async (event: any) => {
         if (event.__correlationId) {
-          eventBus.respondError(
-            event.__correlationId,
-            new ClaudineError(ErrorCode.SYSTEM_ERROR, 'Test error')
-          );
+          eventBus.respondError(event.__correlationId, new ClaudineError(ErrorCode.SYSTEM_ERROR, 'Test error'));
         }
       });
 
@@ -73,7 +70,7 @@ describe('EventBus Request-Response Pattern', () => {
       const result = await eventBus.request(
         'TestQuery',
         { data: 'test' },
-        100 // 100ms timeout
+        100, // 100ms timeout
       );
 
       expect(result.ok).toBe(false);
@@ -107,7 +104,7 @@ describe('EventBus Request-Response Pattern', () => {
       await Promise.all([
         eventBus.request('TestQuery', {}),
         eventBus.request('TestQuery', {}),
-        eventBus.request('TestQuery', {})
+        eventBus.request('TestQuery', {}),
       ]);
 
       // Should have 3 unique correlation IDs
@@ -168,7 +165,7 @@ describe('EventBus Request-Response Pattern', () => {
 
       // Make concurrent requests
       const promises = Array.from({ length: TEST_COUNTS.MEDIUM_SET }, (_, i) =>
-        eventBus.request('TestQuery', { value: i })
+        eventBus.request('TestQuery', { value: i }),
       );
 
       const results = await Promise.all(promises);
@@ -188,16 +185,11 @@ describe('EventBus Request-Response Pattern', () => {
         if (value % 2 === 0) {
           eventBus.respond(event.__correlationId, `success-${value}`);
         } else {
-          eventBus.respondError(
-            event.__correlationId,
-            new Error(`error-${value}`)
-          );
+          eventBus.respondError(event.__correlationId, new Error(`error-${value}`));
         }
       });
 
-      const promises = Array.from({ length: 6 }, (_, i) =>
-        eventBus.request('TestQuery', { value: i })
-      );
+      const promises = Array.from({ length: 6 }, (_, i) => eventBus.request('TestQuery', { value: i }));
 
       const results = await Promise.all(promises);
 
@@ -219,31 +211,35 @@ describe('EventBus Request-Response Pattern', () => {
       }
     });
 
-    it('should handle requests with different timeouts', async () => {
-      // FIXED: Use real timeouts with SHORT durations
-      let handlerCallCount = 0;
+    it(
+      'should handle requests with different timeouts',
+      async () => {
+        // FIXED: Use real timeouts with SHORT durations
+        let handlerCallCount = 0;
 
-      eventBus.subscribe('TestQuery', async (event: any) => {
-        handlerCallCount++;
-        const delay = event.delay;
-        await new Promise(resolve => setTimeout(resolve, delay));
-        eventBus.respond(event.__correlationId, 'completed');
-      });
+        eventBus.subscribe('TestQuery', async (event: any) => {
+          handlerCallCount++;
+          const delay = event.delay;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          eventBus.respond(event.__correlationId, 'completed');
+        });
 
-      const promises = [
-        eventBus.request('TestQuery', { delay: 10 }, TIMEOUTS.MEDIUM),  // Fast response, long timeout
-        eventBus.request('TestQuery', { delay: 200 }, TIMEOUTS.SHORT)    // Slow response, short timeout (100ms)
-      ];
+        const promises = [
+          eventBus.request('TestQuery', { delay: 10 }, TIMEOUTS.MEDIUM), // Fast response, long timeout
+          eventBus.request('TestQuery', { delay: 200 }, TIMEOUTS.SHORT), // Slow response, short timeout (100ms)
+        ];
 
-      const [fast, slow] = await Promise.all(promises);
+        const [fast, slow] = await Promise.all(promises);
 
-      expect(fast.ok).toBe(true); // Should succeed
-      expect(slow.ok).toBe(false); // Should timeout
-      if (!slow.ok) {
-        expect(slow.error.message).toContain('timeout');
-      }
-      expect(handlerCallCount).toBe(2); // Both handlers called
-    }, TIMEOUTS.LONG); // Set test timeout
+        expect(fast.ok).toBe(true); // Should succeed
+        expect(slow.ok).toBe(false); // Should timeout
+        if (!slow.ok) {
+          expect(slow.error.message).toContain('timeout');
+        }
+        expect(handlerCallCount).toBe(2); // Both handlers called
+      },
+      TIMEOUTS.LONG,
+    ); // Set test timeout
   });
 
   describe('Handler Execution', () => {
@@ -315,39 +311,47 @@ describe('EventBus Request-Response Pattern', () => {
   });
 
   describe('Custom Timeouts', () => {
-    it('should respect custom timeout values', async () => {
-      // FIXED: Use real timeouts with SHORT duration for reliability
-      eventBus.subscribe('TestQuery', async (event: any) => {
-        // Delay longer than short timeout but less than long timeout
-        await new Promise(resolve => setTimeout(resolve, TIMEOUTS.SHORT + 50));
-        eventBus.respond(event.__correlationId, 'done');
-      });
+    it(
+      'should respect custom timeout values',
+      async () => {
+        // FIXED: Use real timeouts with SHORT duration for reliability
+        eventBus.subscribe('TestQuery', async (event: any) => {
+          // Delay longer than short timeout but less than long timeout
+          await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.SHORT + 50));
+          eventBus.respond(event.__correlationId, 'done');
+        });
 
-      // Should timeout with SHORT duration (100ms)
-      const shortResult = await eventBus.request('TestQuery', {}, TIMEOUTS.SHORT);
-      expect(shortResult.ok).toBe(false);
-      if (!shortResult.ok) {
-        expect(shortResult.error.message).toContain('timeout');
-      }
+        // Should timeout with SHORT duration (100ms)
+        const shortResult = await eventBus.request('TestQuery', {}, TIMEOUTS.SHORT);
+        expect(shortResult.ok).toBe(false);
+        if (!shortResult.ok) {
+          expect(shortResult.error.message).toContain('timeout');
+        }
 
-      // Should succeed with MEDIUM duration (1000ms)
-      const longResult = await eventBus.request('TestQuery', {}, TIMEOUTS.MEDIUM);
-      expect(longResult.ok).toBe(true);
-    }, TIMEOUTS.LONG); // Set test timeout
+        // Should succeed with MEDIUM duration (1000ms)
+        const longResult = await eventBus.request('TestQuery', {}, TIMEOUTS.MEDIUM);
+        expect(longResult.ok).toBe(true);
+      },
+      TIMEOUTS.LONG,
+    ); // Set test timeout
 
-    it('should timeout with very short custom timeout', async () => {
-      eventBus.subscribe('TestQuery', async () => {
-        // Never respond
-      });
+    it(
+      'should timeout with very short custom timeout',
+      async () => {
+        eventBus.subscribe('TestQuery', async () => {
+          // Never respond
+        });
 
-      const result = await eventBus.request('TestQuery', {}, TIMEOUTS.SHORT);
+        const result = await eventBus.request('TestQuery', {}, TIMEOUTS.SHORT);
 
-      // Should timeout with error
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('timeout');
-      }
-    }, TIMEOUTS.MEDIUM); // Set test timeout
+        // Should timeout with error
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('timeout');
+        }
+      },
+      TIMEOUTS.MEDIUM,
+    ); // Set test timeout
   });
 
   describe('Memory Management', () => {
@@ -375,14 +379,12 @@ describe('EventBus Request-Response Pattern', () => {
       });
 
       // Fire requests without waiting
-      const promises = Array.from({ length: 100 }, () =>
-        eventBus.request('TestQuery', {})
-      );
+      const promises = Array.from({ length: 100 }, () => eventBus.request('TestQuery', {}));
 
       const results = await Promise.all(promises);
 
       // All should succeed
-      expect(results.every(r => r.ok)).toBe(true);
+      expect(results.every((r) => r.ok)).toBe(true);
       expect(responseCount).toBe(100);
     });
   });

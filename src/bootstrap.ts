@@ -3,14 +3,28 @@
  * Wires all components together
  */
 
-import { Container } from './core/container.js';
-import { Config, Logger, ProcessSpawner, ResourceMonitor, OutputCapture, TaskQueue, WorkerPool, TaskRepository, TaskManager, WorktreeManager, DependencyRepository, ScheduleRepository, ScheduleService, CheckpointRepository } from './core/interfaces.js';
-import { EventBus } from './core/events/event-bus.js';
-import { Configuration, loadConfiguration } from './core/configuration.js';
-import { InMemoryEventBus } from './core/events/event-bus.js';
 import { validateConfiguration } from './core/config-validator.js';
-import { Result, ok, err } from './core/result.js';
+import { Configuration, loadConfiguration } from './core/configuration.js';
+import { Container } from './core/container.js';
 import { ClaudineError, ErrorCode } from './core/errors.js';
+import { EventBus, InMemoryEventBus } from './core/events/event-bus.js';
+import {
+  CheckpointRepository,
+  Config,
+  DependencyRepository,
+  Logger,
+  OutputCapture,
+  ProcessSpawner,
+  ResourceMonitor,
+  ScheduleRepository,
+  ScheduleService,
+  TaskManager,
+  TaskQueue,
+  TaskRepository,
+  WorkerPool,
+  WorktreeManager,
+} from './core/interfaces.js';
+import { err, ok, Result } from './core/result.js';
 
 /**
  * Options for bootstrapping the application
@@ -25,36 +39,32 @@ export interface BootstrapOptions {
   skipResourceMonitoring?: boolean;
 }
 
-// Implementations
-import { PriorityTaskQueue } from './implementations/task-queue.js';
-import { ClaudeProcessSpawner } from './implementations/process-spawner.js';
-import { SystemResourceMonitor } from './implementations/resource-monitor.js';
-import { EventDrivenWorkerPool } from './implementations/event-driven-worker-pool.js';
-import { BufferedOutputCapture } from './implementations/output-capture.js';
-import { StructuredLogger, ConsoleLogger, LogLevel } from './implementations/logger.js';
-import { Database } from './implementations/database.js';
-import { SQLiteTaskRepository } from './implementations/task-repository.js';
-import { SQLiteOutputRepository } from './implementations/output-repository.js';
-import { SQLiteDependencyRepository } from './implementations/dependency-repository.js';
-import { SQLiteScheduleRepository } from './implementations/schedule-repository.js';
-import { SQLiteCheckpointRepository } from './implementations/checkpoint-repository.js';
-
-// Schedule Executor
-import { ScheduleExecutor } from './services/schedule-executor.js';
-
-// Services
-import { TaskManagerService } from './services/task-manager.js';
-import { ScheduleManagerService } from './services/schedule-manager.js';
-import { AutoscalingManager } from './services/autoscaling-manager.js';
-import { RecoveryManager } from './services/recovery-manager.js';
-import { GitWorktreeManager } from './services/worktree-manager.js';
-import { GitHubIntegration } from './services/github-integration.js';
-
-// Handler Setup (extracts handler creation from bootstrap)
-import { extractHandlerDependencies, setupEventHandlers } from './services/handler-setup.js';
-
 // Adapter
 import { MCPAdapter } from './adapters/mcp-adapter.js';
+import { SQLiteCheckpointRepository } from './implementations/checkpoint-repository.js';
+import { Database } from './implementations/database.js';
+import { SQLiteDependencyRepository } from './implementations/dependency-repository.js';
+import { EventDrivenWorkerPool } from './implementations/event-driven-worker-pool.js';
+import { ConsoleLogger, LogLevel, StructuredLogger } from './implementations/logger.js';
+import { BufferedOutputCapture } from './implementations/output-capture.js';
+import { SQLiteOutputRepository } from './implementations/output-repository.js';
+import { ClaudeProcessSpawner } from './implementations/process-spawner.js';
+import { SystemResourceMonitor } from './implementations/resource-monitor.js';
+import { SQLiteScheduleRepository } from './implementations/schedule-repository.js';
+// Implementations
+import { PriorityTaskQueue } from './implementations/task-queue.js';
+import { SQLiteTaskRepository } from './implementations/task-repository.js';
+import { AutoscalingManager } from './services/autoscaling-manager.js';
+import { GitHubIntegration } from './services/github-integration.js';
+// Handler Setup (extracts handler creation from bootstrap)
+import { extractHandlerDependencies, setupEventHandlers } from './services/handler-setup.js';
+import { RecoveryManager } from './services/recovery-manager.js';
+// Schedule Executor
+import { ScheduleExecutor } from './services/schedule-executor.js';
+import { ScheduleManagerService } from './services/schedule-manager.js';
+// Services
+import { TaskManagerService } from './services/task-manager.js';
+import { GitWorktreeManager } from './services/worktree-manager.js';
 
 // Convert new configuration format to existing Config interface
 const getConfig = (): Config => {
@@ -66,7 +76,7 @@ const getConfig = (): Config => {
     memoryReserve: config.memoryReserve,
     logLevel: config.logLevel,
     maxListenersPerEvent: config.maxListenersPerEvent,
-    maxTotalSubscriptions: config.maxTotalSubscriptions
+    maxTotalSubscriptions: config.maxTotalSubscriptions,
   };
 };
 
@@ -96,11 +106,12 @@ const getFromContainer = <T>(container: Container, key: string): T => {
 const getFromContainerSafe = <T>(container: Container, key: string): Result<T> => {
   const result = container.get(key);
   if (!result.ok) {
-    return err(new ClaudineError(
-      ErrorCode.DEPENDENCY_INJECTION_FAILED,
-      `Failed to get ${key} from container`,
-      { key, error: result.error.message }
-    ));
+    return err(
+      new ClaudineError(ErrorCode.DEPENDENCY_INJECTION_FAILED, `Failed to get ${key} from container`, {
+        key,
+        error: result.error.message,
+      }),
+    );
   }
   return ok(result.value as T);
 };
@@ -117,10 +128,14 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
   container.registerValue('config', config);
 
   // Register logger
-  const logLevel = config.logLevel === 'debug' ? LogLevel.DEBUG :
-                   config.logLevel === 'warn' ? LogLevel.WARN :
-                   config.logLevel === 'error' ? LogLevel.ERROR :
-                   LogLevel.INFO;
+  const logLevel =
+    config.logLevel === 'debug'
+      ? LogLevel.DEBUG
+      : config.logLevel === 'warn'
+        ? LogLevel.WARN
+        : config.logLevel === 'error'
+          ? LogLevel.ERROR
+          : LogLevel.INFO;
 
   container.registerSingleton('logger', () => {
     if (process.env.NODE_ENV === 'production') {
@@ -141,8 +156,8 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
 
   // Log summary if warnings exist
   if (validationWarnings.length > 0) {
-    const warningCount = validationWarnings.filter(w => w.severity === 'warning').length;
-    const infoCount = validationWarnings.filter(w => w.severity === 'info').length;
+    const warningCount = validationWarnings.filter((w) => w.severity === 'warning').length;
+    const infoCount = validationWarnings.filter((w) => w.severity === 'info').length;
     bootstrapLogger.warn('Configuration validation complete', {
       warnings: warningCount,
       info: infoCount,
@@ -163,20 +178,17 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
     }
 
     const cfg = configResult.value as Configuration;
-    return new InMemoryEventBus(
-      cfg,
-      (loggerResult.value as Logger).child({ module: 'SharedEventBus' })
-    );
+    return new InMemoryEventBus(cfg, (loggerResult.value as Logger).child({ module: 'SharedEventBus' }));
   });
 
   // Get logger for bootstrap
   const loggerResult = container.get<Logger>('logger');
   if (!loggerResult.ok) {
-    return err(new ClaudineError(
-      ErrorCode.DEPENDENCY_INJECTION_FAILED,
-      'Failed to create logger',
-      { error: loggerResult.error.message }
-    ));
+    return err(
+      new ClaudineError(ErrorCode.DEPENDENCY_INJECTION_FAILED, 'Failed to create logger', {
+        error: loggerResult.error.message,
+      }),
+    );
   }
   const logger = loggerResult.value;
 
@@ -188,14 +200,14 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
     const dbLogger = logger.child({ module: 'database' });
     return new Database(undefined, dbLogger);
   });
-  
+
   // Register repositories
   container.registerSingleton('taskRepository', () => {
     const dbResult = container.get<Database>('database');
     if (!dbResult.ok) throw new Error('Failed to get database');
     return new SQLiteTaskRepository(dbResult.value);
   });
-  
+
   container.registerSingleton('outputRepository', () => {
     const configResult = container.get<Configuration>('config');
     const dbResult = container.get<Database>('database');
@@ -230,7 +242,7 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
     return new ScheduleManagerService(
       getFromContainer<EventBus>(container, 'eventBus'),
       getFromContainer<Logger>(container, 'logger').child({ module: 'ScheduleManager' }),
-      getFromContainer<ScheduleRepository>(container, 'scheduleRepository')
+      getFromContainer<ScheduleRepository>(container, 'scheduleRepository'),
     );
   });
 
@@ -267,7 +279,7 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
     const monitor = new SystemResourceMonitor(
       configResult.value,
       getFromContainer<EventBus>(container, 'eventBus'),
-      getFromContainer<Logger>(container, 'logger').child({ module: 'ResourceMonitor' })
+      getFromContainer<Logger>(container, 'logger').child({ module: 'ResourceMonitor' }),
     );
 
     // Skip resource monitoring if requested (e.g., in tests to prevent CPU/memory overhead)
@@ -288,17 +300,15 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
 
   // Register GitHub integration
   container.registerSingleton('githubIntegration', () => {
-    const github = new GitHubIntegration(
-      getFromContainer<Logger>(container, 'logger').child({ module: 'GitHub' })
-    );
-    
+    const github = new GitHubIntegration(getFromContainer<Logger>(container, 'logger').child({ module: 'GitHub' }));
+
     // Check availability but don't fail
-    github.isAvailable().then(available => {
+    github.isAvailable().then((available) => {
       if (!available) {
         getFromContainer<Logger>(container, 'logger').warn('GitHub CLI not available - PR merge strategy disabled');
       }
     });
-    
+
     return github;
   });
 
@@ -306,7 +316,7 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
   container.registerSingleton('worktreeManager', () => {
     return new GitWorktreeManager(
       getFromContainer<Logger>(container, 'logger').child({ module: 'WorktreeManager' }),
-      getFromContainer<GitHubIntegration>(container, 'githubIntegration')
+      getFromContainer<GitHubIntegration>(container, 'githubIntegration'),
     );
   });
 
@@ -318,7 +328,7 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
       getFromContainer<Logger>(container, 'logger').child({ module: 'WorkerPool' }),
       getFromContainer<EventBus>(container, 'eventBus'),
       getFromContainer<WorktreeManager>(container, 'worktreeManager'),
-      getFromContainer<OutputCapture>(container, 'outputCapture')
+      getFromContainer<OutputCapture>(container, 'outputCapture'),
     );
     return pool;
   });
@@ -330,7 +340,7 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
       getFromContainer<EventBus>(container, 'eventBus'),
       getFromContainer<Logger>(container, 'logger').child({ module: 'TaskManager' }),
       config, // Pass complete config - no partial objects needed
-      getFromContainer<CheckpointRepository>(container, 'checkpointRepository')
+      getFromContainer<CheckpointRepository>(container, 'checkpointRepository'),
     );
 
     // Wire up event handlers using centralized handler setup
@@ -358,15 +368,15 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
       getFromContainer<WorkerPool>(container, 'workerPool'),
       getFromContainer<ResourceMonitor>(container, 'resourceMonitor'),
       getFromContainer<EventBus>(container, 'eventBus'),
-      getFromContainer<Logger>(container, 'logger').child({ module: 'Autoscaler' })
+      getFromContainer<Logger>(container, 'logger').child({ module: 'Autoscaler' }),
     );
-    
+
     // Set up event subscriptions
     const setupResult = await autoscaler.setup();
     if (!setupResult.ok) {
       throw new Error(`Failed to setup AutoscalingManager: ${setupResult.error.message}`);
     }
-    
+
     return autoscaler;
   });
 
@@ -380,31 +390,31 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
     return new MCPAdapter(
       taskManagerResult.value,
       getFromContainer<Logger>(container, 'logger').child({ module: 'MCP' }),
-      getFromContainer<ScheduleService>(container, 'scheduleService')
+      getFromContainer<ScheduleService>(container, 'scheduleService'),
     );
   });
 
   // Register recovery manager
   container.registerSingleton('recoveryManager', () => {
     const repositoryResult = container.get('taskRepository');
-    
+
     if (!repositoryResult.ok) {
       throw new Error('TaskRepository required for RecoveryManager');
     }
-    
+
     return new RecoveryManager(
       repositoryResult.value as TaskRepository,
       getFromContainer<TaskQueue>(container, 'taskQueue'),
       getFromContainer<EventBus>(container, 'eventBus'),
-      getFromContainer<Logger>(container, 'logger').child({ module: 'Recovery' })
+      getFromContainer<Logger>(container, 'logger').child({ module: 'Recovery' }),
     );
   });
-  
+
   // Run recovery on startup
   const recoveryResult = container.get('recoveryManager');
   if (recoveryResult.ok) {
     const recovery = recoveryResult.value as RecoveryManager;
-    recovery.recover().then(result => {
+    recovery.recover().then((result) => {
       if (!result.ok) {
         logger.error('Recovery failed', result.error);
       }
@@ -426,7 +436,7 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
     const createResult = ScheduleExecutor.create(
       scheduleRepoResult.value,
       eventBusResult.value,
-      loggerResult.value.child({ module: 'ScheduleExecutor' })
+      loggerResult.value.child({ module: 'ScheduleExecutor' }),
     );
 
     if (!createResult.ok) {
@@ -455,4 +465,3 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
 
   return ok(container);
 }
-

@@ -5,22 +5,22 @@
  * Rationale: Ensures dependency integrity, prevents deadlocks, enables parallel task execution
  */
 
-import { DependencyRepository, Logger, TaskRepository, CheckpointLookup } from '../../core/interfaces.js';
-import { Result, ok, err } from '../../core/result.js';
-import { BaseEventHandler } from '../../core/events/handlers.js';
-import { EventBus } from '../../core/events/event-bus.js';
-import { TaskId, type TaskCheckpoint } from '../../core/domain.js';
-import {
-  TaskDelegatedEvent,
-  TaskCompletedEvent,
-  TaskFailedEvent,
-  TaskCancelledEvent,
-  TaskTimeoutEvent,
-  TaskDeletedEvent,
-  CheckpointCreatedEvent
-} from '../../core/events/events.js';
 import { DependencyGraph } from '../../core/dependency-graph.js';
+import { type TaskCheckpoint, TaskId } from '../../core/domain.js';
 import { ClaudineError, ErrorCode } from '../../core/errors.js';
+import { EventBus } from '../../core/events/event-bus.js';
+import {
+  CheckpointCreatedEvent,
+  TaskCancelledEvent,
+  TaskCompletedEvent,
+  TaskDelegatedEvent,
+  TaskDeletedEvent,
+  TaskFailedEvent,
+  TaskTimeoutEvent,
+} from '../../core/events/events.js';
+import { BaseEventHandler } from '../../core/events/handlers.js';
+import { CheckpointLookup, DependencyRepository, Logger, TaskRepository } from '../../core/interfaces.js';
+import { err, ok, Result } from '../../core/result.js';
 import { buildContinuationPrompt } from '../../utils/continuation-prompt.js';
 
 // SECURITY: Maximum allowed depth for dependency chains (DoS prevention)
@@ -55,7 +55,7 @@ export class DependencyHandler extends BaseEventHandler {
     eventBus: EventBus,
     graph: DependencyGraph,
     maxChainDepth: number,
-    checkpointLookup?: CheckpointLookup
+    checkpointLookup?: CheckpointLookup,
   ) {
     super(logger, 'DependencyHandler');
     this.eventBus = eventBus;
@@ -81,7 +81,7 @@ export class DependencyHandler extends BaseEventHandler {
     taskRepo: TaskRepository,
     logger: Logger,
     eventBus: EventBus,
-    options?: DependencyHandlerOptions
+    options?: DependencyHandlerOptions,
   ): Promise<Result<DependencyHandler>> {
     const maxChainDepth = options?.maxChainDepth ?? DEFAULT_MAX_DEPENDENCY_CHAIN_DEPTH;
     const checkpointLookup = options?.checkpointLookup;
@@ -104,7 +104,7 @@ export class DependencyHandler extends BaseEventHandler {
     const graph = new DependencyGraph(allDepsResult.value);
     handlerLogger.info('Dependency graph initialized', {
       nodeCount: graph.size(),
-      dependencyCount: allDepsResult.value.length
+      dependencyCount: allDepsResult.value.length,
     });
 
     // Create handler with initialized graph
@@ -115,7 +115,7 @@ export class DependencyHandler extends BaseEventHandler {
       eventBus,
       graph,
       maxChainDepth,
-      checkpointLookup
+      checkpointLookup,
     );
 
     // Subscribe to events
@@ -126,7 +126,7 @@ export class DependencyHandler extends BaseEventHandler {
 
     handlerLogger.info('DependencyHandler initialized with incremental graph updates', {
       pattern: 'event-driven incremental updates',
-      maxDepth: maxChainDepth
+      maxDepth: maxChainDepth,
     });
 
     return ok(handler);
@@ -146,7 +146,7 @@ export class DependencyHandler extends BaseEventHandler {
       this.eventBus.subscribe('TaskCancelled', this.handleTaskCancelled.bind(this)),
       this.eventBus.subscribe('TaskTimeout', this.handleTaskTimeout.bind(this)),
       // Listen for task deletions to maintain graph consistency
-      this.eventBus.subscribe('TaskDeleted', this.handleTaskDeleted.bind(this))
+      this.eventBus.subscribe('TaskDeleted', this.handleTaskDeleted.bind(this)),
       // NOTE: No longer subscribe to TaskDependencyAdded - we update graph directly
     ];
 
@@ -173,7 +173,7 @@ export class DependencyHandler extends BaseEventHandler {
    */
   private validateSingleDependency(
     taskId: TaskId,
-    depId: TaskId
+    depId: TaskId,
   ): { depId: TaskId; error: Error | null; type: 'ok' | 'cycle' | 'depth' | 'system' } {
     // Cycle detection
     const cycleCheck = this.graph.wouldCreateCycle(taskId, depId);
@@ -186,9 +186,9 @@ export class DependencyHandler extends BaseEventHandler {
         error: new ClaudineError(
           ErrorCode.INVALID_OPERATION,
           `Cannot add dependency: would create cycle (${taskId} -> ${depId})`,
-          { taskId, dependsOnTaskId: depId }
+          { taskId, dependsOnTaskId: depId },
         ),
-        type: 'cycle'
+        type: 'cycle',
       };
     }
 
@@ -201,9 +201,9 @@ export class DependencyHandler extends BaseEventHandler {
         error: new ClaudineError(
           ErrorCode.INVALID_OPERATION,
           `Cannot add dependency: would create chain depth of ${resultingDepth} (max ${this.maxChainDepth})`,
-          { taskId, dependsOnTaskId: depId, depth: resultingDepth }
+          { taskId, dependsOnTaskId: depId, depth: resultingDepth },
         ),
-        type: 'depth'
+        type: 'depth',
       };
     }
 
@@ -219,7 +219,7 @@ export class DependencyHandler extends BaseEventHandler {
   private async handleValidationFailure(
     taskId: TaskId,
     requestedDependencies: readonly TaskId[],
-    failure: { depId: TaskId; error: Error; type: 'cycle' | 'depth' | 'system' }
+    failure: { depId: TaskId; error: Error; type: 'cycle' | 'depth' | 'system' },
   ): Promise<void> {
     const context = { taskId, dependsOnTaskId: failure.depId };
 
@@ -237,7 +237,7 @@ export class DependencyHandler extends BaseEventHandler {
       taskId,
       failedDependencyId: failure.depId,
       requestedDependencies,
-      error: failure.error
+      error: failure.error,
     });
   }
 
@@ -248,14 +248,10 @@ export class DependencyHandler extends BaseEventHandler {
    * Note: dependencies array is guaranteed non-empty by caller (handleTaskDelegated
    * early-exits when dependsOn is empty), but defensive check added for safety.
    */
-  private async handleDatabaseFailure(
-    taskId: TaskId,
-    dependencies: readonly TaskId[],
-    error: Error
-  ): Promise<void> {
+  private async handleDatabaseFailure(taskId: TaskId, dependencies: readonly TaskId[], error: Error): Promise<void> {
     this.logger.error('Failed to add dependencies', error, {
       taskId,
-      dependencies
+      dependencies,
     });
 
     // Defensive: use first dependency if available, otherwise use taskId as fallback
@@ -264,7 +260,7 @@ export class DependencyHandler extends BaseEventHandler {
     await this.eventBus.emit('TaskDependencyFailed', {
       taskId,
       failedDependencyId: failedDepId,
-      error
+      error,
     });
   }
 
@@ -273,22 +269,20 @@ export class DependencyHandler extends BaseEventHandler {
    * INVARIANT: Must happen AFTER database write succeeds
    * RECOVERY: Graph errors are logged but don't fail - reconciled on restart
    */
-  private updateGraphAfterPersistence(
-    dependencies: readonly { taskId: TaskId; dependsOnTaskId: TaskId }[]
-  ): void {
+  private updateGraphAfterPersistence(dependencies: readonly { taskId: TaskId; dependsOnTaskId: TaskId }[]): void {
     for (const dependency of dependencies) {
       const edgeResult = this.graph.addEdge(dependency.taskId, dependency.dependsOnTaskId);
       if (!edgeResult.ok) {
         // This should never happen for valid data, but log if it does
         this.logger.error('Unexpected error updating graph after DB write', edgeResult.error, {
           taskId: dependency.taskId,
-          dependsOnTaskId: dependency.dependsOnTaskId
+          dependsOnTaskId: dependency.dependsOnTaskId,
         });
         // Continue - graph will be reconciled on restart
       }
       this.logger.debug('Graph updated with new dependency', {
         taskId: dependency.taskId,
-        dependsOnTaskId: dependency.dependsOnTaskId
+        dependsOnTaskId: dependency.dependsOnTaskId,
       });
     }
   }
@@ -298,12 +292,12 @@ export class DependencyHandler extends BaseEventHandler {
    * INVARIANT: Must happen AFTER graph update
    */
   private async emitDependencyAddedEvents(
-    dependencies: readonly { taskId: TaskId; dependsOnTaskId: TaskId }[]
+    dependencies: readonly { taskId: TaskId; dependsOnTaskId: TaskId }[],
   ): Promise<void> {
     for (const dependency of dependencies) {
       await this.eventBus.emit('TaskDependencyAdded', {
         taskId: dependency.taskId,
-        dependsOnTaskId: dependency.dependsOnTaskId
+        dependsOnTaskId: dependency.dependsOnTaskId,
       });
     }
   }
@@ -334,23 +328,23 @@ export class DependencyHandler extends BaseEventHandler {
       this.logger.info('Processing dependencies for new task', {
         taskId: task.id,
         dependencyCount: task.dependsOn.length,
-        dependencies: task.dependsOn
+        dependencies: task.dependsOn,
       });
 
       // Step 2: Validate all dependencies in parallel (INVARIANT: all validations run)
       // PERFORMANCE: Parallel validation per Issue #14
       const validationResults = await Promise.all(
-        task.dependsOn.map(depId => this.validateSingleDependency(task.id, depId))
+        task.dependsOn.map((depId) => this.validateSingleDependency(task.id, depId)),
       );
 
       // Step 3: Check for validation failures (INVARIANT: fail-fast on first error)
-      const failure = validationResults.find(r => r.error !== null);
+      const failure = validationResults.find((r) => r.error !== null);
       if (failure && failure.error) {
         // Type narrow: failure.error is verified non-null, type is not 'ok'
         await this.handleValidationFailure(task.id, task.dependsOn, {
           depId: failure.depId,
           error: failure.error,
-          type: failure.type as 'cycle' | 'depth' | 'system'
+          type: failure.type as 'cycle' | 'depth' | 'system',
         });
         return err(failure.error);
       }
@@ -365,7 +359,7 @@ export class DependencyHandler extends BaseEventHandler {
       this.logger.info('All dependencies added atomically', {
         taskId: task.id,
         count: addResult.value.length,
-        dependencyIds: addResult.value.map(d => d.id)
+        dependencyIds: addResult.value.map((d) => d.id),
       });
 
       // Step 5: Update graph (INVARIANT: only after successful DB write)
@@ -427,7 +421,7 @@ export class DependencyHandler extends BaseEventHandler {
       const removeResult = this.graph.removeTask(event.taskId);
       if (!removeResult.ok) {
         this.logger.error('Failed to remove task from graph', removeResult.error, {
-          taskId: event.taskId
+          taskId: event.taskId,
         });
         return removeResult;
       }
@@ -447,10 +441,7 @@ export class DependencyHandler extends BaseEventHandler {
    * EventBus runs them via Promise.all, so checkpoint creation may happen in parallel.
    * This method handles the race condition gracefully.
    */
-  private async waitForCheckpoint(
-    taskId: TaskId,
-    timeoutMs: number = 5000
-  ): Promise<TaskCheckpoint | null> {
+  private async waitForCheckpoint(taskId: TaskId, timeoutMs: number = 5000): Promise<TaskCheckpoint | null> {
     let settled = false;
     let resolvePromise: (checkpoint: TaskCheckpoint | null) => void;
     const waitPromise = new Promise<TaskCheckpoint | null>((resolve) => {
@@ -465,7 +456,7 @@ export class DependencyHandler extends BaseEventHandler {
           settled = true;
           resolvePromise(event.checkpoint);
         }
-      }
+      },
     );
 
     // Track subscription ID for cleanup
@@ -510,7 +501,7 @@ export class DependencyHandler extends BaseEventHandler {
    */
   private async resolveDependencies(
     completedTaskId: TaskId,
-    resolution: 'completed' | 'failed' | 'cancelled'
+    resolution: 'completed' | 'failed' | 'cancelled',
   ): Promise<Result<void>> {
     // PERFORMANCE: Get dependents BEFORE batch resolution to emit events and check unblocked state
     // This is necessary because we need the list of affected tasks for:
@@ -519,7 +510,7 @@ export class DependencyHandler extends BaseEventHandler {
     const dependentsResult = await this.dependencyRepo.getDependents(completedTaskId);
     if (!dependentsResult.ok) {
       this.logger.error('Failed to get dependents', dependentsResult.error, {
-        taskId: completedTaskId
+        taskId: completedTaskId,
       });
       return dependentsResult;
     }
@@ -534,20 +525,17 @@ export class DependencyHandler extends BaseEventHandler {
     this.logger.info('Resolving dependencies for completed task', {
       taskId: completedTaskId,
       resolution,
-      dependentCount: dependents.length
+      dependentCount: dependents.length,
     });
 
     // PERFORMANCE: Batch resolve ALL dependencies in single UPDATE query (7-10× faster)
     // Replaces N individual UPDATE queries with one query that updates all pending dependents
-    const batchResolveResult = await this.dependencyRepo.resolveDependenciesBatch(
-      completedTaskId,
-      resolution
-    );
+    const batchResolveResult = await this.dependencyRepo.resolveDependenciesBatch(completedTaskId, resolution);
 
     if (!batchResolveResult.ok) {
       this.logger.error('Failed to batch resolve dependencies', batchResolveResult.error, {
         taskId: completedTaskId,
-        resolution
+        resolution,
       });
       return batchResolveResult;
     }
@@ -555,7 +543,7 @@ export class DependencyHandler extends BaseEventHandler {
     this.logger.info('Batch resolved dependencies', {
       taskId: completedTaskId,
       resolution,
-      resolvedCount: batchResolveResult.value
+      resolvedCount: batchResolveResult.value,
     });
 
     // Emit resolution events and check for unblocked tasks
@@ -571,21 +559,21 @@ export class DependencyHandler extends BaseEventHandler {
       this.logger.debug('Dependency resolved', {
         taskId: dep.taskId,
         dependsOnTaskId: dep.dependsOnTaskId,
-        resolution
+        resolution,
       });
 
       // Emit resolution event
       await this.eventBus.emit('TaskDependencyResolved', {
         taskId: dep.taskId,
         dependsOnTaskId: dep.dependsOnTaskId,
-        resolution
+        resolution,
       });
 
       // Check if this task is now unblocked
       const isBlockedResult = await this.dependencyRepo.isBlocked(dep.taskId);
       if (!isBlockedResult.ok) {
         this.logger.error('Failed to check if task is blocked', isBlockedResult.error, {
-          taskId: dep.taskId
+          taskId: dep.taskId,
         });
         continue;
       }
@@ -599,7 +587,7 @@ export class DependencyHandler extends BaseEventHandler {
         if (!taskResult.ok || !taskResult.value) {
           const errorMessage = taskResult.ok ? 'Task not found' : taskResult.error.message;
           this.logger.error('Failed to fetch unblocked task', new Error(errorMessage), {
-            taskId: dep.taskId
+            taskId: dep.taskId,
           });
           continue;
         }
@@ -613,9 +601,8 @@ export class DependencyHandler extends BaseEventHandler {
           if (checkpoint) {
             // Fetch the dependency task to get its original prompt
             const depTaskResult = await this.taskRepo.findById(task.continueFrom);
-            const dependencyPrompt = depTaskResult.ok && depTaskResult.value
-              ? depTaskResult.value.prompt
-              : '(dependency prompt unavailable)';
+            const dependencyPrompt =
+              depTaskResult.ok && depTaskResult.value ? depTaskResult.value.prompt : '(dependency prompt unavailable)';
 
             const enrichedPrompt = buildContinuationPrompt(task, checkpoint, dependencyPrompt);
 

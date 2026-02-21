@@ -31,8 +31,7 @@ export class StructuredLogger implements Logger {
   constructor(
     context: Record<string, unknown> = {},
     level: LogLevel = LogLevel.INFO,
-    private readonly output: (entry: LogEntry) => void = (entry) => 
-      console.error(JSON.stringify(entry))  // Use stderr for MCP compatibility
+    private readonly output: (entry: LogEntry) => void = (entry) => console.error(JSON.stringify(entry)), // Use stderr for MCP compatibility
   ) {
     this.context = { ...context };
     this.level = level;
@@ -78,11 +77,7 @@ export class StructuredLogger implements Logger {
   }
 
   child(context: Record<string, unknown>): Logger {
-    return new StructuredLogger(
-      { ...this.context, ...context },
-      this.level,
-      this.output
-    );
+    return new StructuredLogger({ ...this.context, ...context }, this.level, this.output);
   }
 
   private log(level: string, message: string, context?: Record<string, unknown>): void {
@@ -103,7 +98,7 @@ export class StructuredLogger implements Logger {
 export class ConsoleLogger implements Logger {
   constructor(
     private readonly prefix = '[Claudine]',
-    private readonly useColors = true
+    private readonly useColors = true,
   ) {}
 
   debug(message: string, context?: Record<string, unknown>): void {
@@ -137,9 +132,7 @@ export class ConsoleLogger implements Logger {
   }
 
   child(context: Record<string, unknown>): Logger {
-    const childPrefix = context.module 
-      ? `${this.prefix}[${context.module}]`
-      : this.prefix;
+    const childPrefix = context.module ? `${this.prefix}[${context.module}]` : this.prefix;
     return new ConsoleLogger(childPrefix, this.useColors);
   }
 }
@@ -180,6 +173,6 @@ export class TestLogger implements Logger {
   }
 
   hasLog(level: string, message: string): boolean {
-    return this.logs.some(log => log.level === level && log.message === message);
+    return this.logs.some((log) => log.level === level && log.message === message);
   }
 }

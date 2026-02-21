@@ -6,8 +6,8 @@
  * to avoid unsafe type assertions while maintaining test flexibility
  */
 
-import { EventEmitter } from 'events';
 import type { ChildProcess } from 'child_process';
+import { EventEmitter } from 'events';
 import type { Readable, Writable } from 'stream';
 
 /**
@@ -30,7 +30,7 @@ export function createMockChildProcess(overrides?: Partial<ChildProcess>): Child
     unpipe: () => stdout,
     unshift: () => undefined,
     wrap: () => stdout,
-    destroy: () => stdout
+    destroy: () => stdout,
   });
 
   Object.assign(stderr, {
@@ -44,7 +44,7 @@ export function createMockChildProcess(overrides?: Partial<ChildProcess>): Child
     unpipe: () => stderr,
     unshift: () => undefined,
     wrap: () => stderr,
-    destroy: () => stderr
+    destroy: () => stderr,
   });
 
   Object.assign(stdin, {
@@ -54,11 +54,11 @@ export function createMockChildProcess(overrides?: Partial<ChildProcess>): Child
     destroy: () => stdin,
     cork: () => undefined,
     uncork: () => undefined,
-    setDefaultEncoding: () => stdin
+    setDefaultEncoding: () => stdin,
   });
 
   const process = new EventEmitter() as EventEmitter & ChildProcess;
-  
+
   return Object.assign(process, {
     pid: 12345,
     stdin: stdin as Writable,
@@ -82,7 +82,7 @@ export function createMockChildProcess(overrides?: Partial<ChildProcess>): Child
     spawnfile: 'test',
     spawnargs: ['test'],
     channel: undefined,
-    ...overrides
+    ...overrides,
   }) as ChildProcess;
 }
 
@@ -105,11 +105,16 @@ export function isObject(value: unknown): value is Record<string, unknown> {
  */
 export function createNonError(type: 'null' | 'undefined' | 'string' | 'number' | 'object'): unknown {
   switch (type) {
-    case 'null': return null;
-    case 'undefined': return undefined;
-    case 'string': return 'not an error';
-    case 'number': return 42;
-    case 'object': return { message: 'error-like but not Error' };
+    case 'null':
+      return null;
+    case 'undefined':
+      return undefined;
+    case 'string':
+      return 'not an error';
+    case 'number':
+      return 42;
+    case 'object':
+      return { message: 'error-like but not Error' };
   }
 }
 
@@ -123,11 +128,7 @@ export function createErrorLike(message: string, code?: string): { message: stri
 /**
  * Safely casts to a specific type with runtime validation
  */
-export function safeCast<T>(
-  value: unknown,
-  validator: (v: unknown) => v is T,
-  fallback: T
-): T {
+export function safeCast<T>(value: unknown, validator: (v: unknown) => v is T, fallback: T): T {
   return validator(value) ? value : fallback;
 }
 
@@ -147,7 +148,7 @@ export function createMockStream(): Readable & EventEmitter {
     unpipe: () => stream,
     unshift: () => undefined,
     wrap: () => stream,
-    destroy: () => stream
+    destroy: () => stream,
   }) as Readable & EventEmitter;
 }
 
@@ -156,15 +157,7 @@ export function createMockStream(): Readable & EventEmitter {
  */
 export type InvalidInput = null | undefined | string | number | boolean | object;
 
-export const INVALID_INPUTS: InvalidInput[] = [
-  null,
-  undefined,
-  'string',
-  42,
-  true,
-  false,
-  { notAnError: true }
-];
+export const INVALID_INPUTS: InvalidInput[] = [null, undefined, 'string', 42, true, false, { notAnError: true }];
 
 /**
  * Creates a partial mock with only specified methods
@@ -179,9 +172,9 @@ export function createPartialMock<T>(methods: Partial<T>): T {
 export function testWithInvalidInputs<T>(
   fn: (input: T) => any,
   validInput: T,
-  expectation: (result: any) => void
+  expectation: (result: any) => void,
 ): void {
-  INVALID_INPUTS.forEach(invalid => {
+  INVALID_INPUTS.forEach((invalid) => {
     const result = fn(invalid as T);
     expectation(result);
   });
@@ -294,10 +287,7 @@ export class MockFunction<T = any> {
   }
 
   wasCalledWith(...args: any[]): boolean {
-    return this.calls.some(call =>
-      call.length === args.length &&
-      call.every((arg, i) => arg === args[i])
-    );
+    return this.calls.some((call) => call.length === args.length && call.every((arg, i) => arg === args[i]));
   }
 
   reset(): void {

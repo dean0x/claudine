@@ -4,15 +4,25 @@
  */
 
 import { ChildProcess, exec } from 'child_process';
-import { promisify } from 'util';
 import path from 'path';
+import { promisify } from 'util';
 
 const execAsync = promisify(exec);
-import { WorkerPool, ProcessSpawner, ResourceMonitor, Logger, OutputCapture, WorktreeManager, WorktreeInfo, CompletionResult } from '../core/interfaces.js';
-import { EventBus } from '../core/events/event-bus.js';
-import { Worker, WorkerId, Task, TaskId } from '../core/domain.js';
-import { Result, ok, err, tryCatchAsync } from '../core/result.js';
+
+import { Task, TaskId, Worker, WorkerId } from '../core/domain.js';
 import { ClaudineError, ErrorCode, taskTimeout } from '../core/errors.js';
+import { EventBus } from '../core/events/event-bus.js';
+import {
+  CompletionResult,
+  Logger,
+  OutputCapture,
+  ProcessSpawner,
+  ResourceMonitor,
+  WorkerPool,
+  WorktreeInfo,
+  WorktreeManager,
+} from '../core/interfaces.js';
+import { err, ok, Result, tryCatchAsync } from '../core/result.js';
 import { ProcessConnector } from '../services/process-connector.js';
 
 interface WorkerState extends Worker {
@@ -33,7 +43,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
     private readonly logger: Logger,
     private readonly eventBus: EventBus,
     private readonly worktreeManager: WorktreeManager,
-    outputCapture: OutputCapture
+    outputCapture: OutputCapture,
   ) {
     this.processConnector = new ProcessConnector(outputCapture, logger);
   }
@@ -41,21 +51,18 @@ export class EventDrivenWorkerPool implements WorkerPool {
   async spawn(task: Task): Promise<Result<Worker>> {
     this.logger.debug('Spawning worker for task', {
       taskId: task.id,
-      prompt: task.prompt.substring(0, 100)
+      prompt: task.prompt.substring(0, 100),
     });
 
     // Check if we can spawn based on resources
     const canSpawnResult = await this.monitor.canSpawnWorker();
-    
+
     if (!canSpawnResult.ok) {
       return canSpawnResult;
     }
 
     if (!canSpawnResult.value) {
-      return err(new ClaudineError(
-        ErrorCode.INSUFFICIENT_RESOURCES,
-        'Insufficient resources to spawn worker'
-      ));
+      return err(new ClaudineError(ErrorCode.INSUFFICIENT_RESOURCES, 'Insufficient resources to spawn worker'));
     }
 
     // Handle git worktree creation if requested
@@ -65,11 +72,11 @@ export class EventDrivenWorkerPool implements WorkerPool {
     if (task.useWorktree) {
       this.logger.debug('Creating git worktree for task', { taskId: task.id });
       const worktreeResult = await this.worktreeManager.createWorktree(task);
-      
+
       if (!worktreeResult.ok) {
         this.logger.warn('Failed to create worktree, falling back to normal execution', {
           taskId: task.id,
-          error: worktreeResult.error.message
+          error: worktreeResult.error.message,
         });
         // Graceful fallback - continue without worktree
         finalWorkingDirectory = task.workingDirectory || process.cwd();
@@ -83,12 +90,12 @@ export class EventDrivenWorkerPool implements WorkerPool {
             // We need to extract the relative path from the git root
             // The worktreeManager has already determined the git root, but we need it here
             // For now, let's use a simple approach: assume workingDirectory is within the project
-            
+
             // Try to find the git root of the working directory to calculate relative path
             try {
-              const { stdout } = await execAsync('git rev-parse --show-toplevel', { 
+              const { stdout } = await execAsync('git rev-parse --show-toplevel', {
                 cwd: task.workingDirectory,
-                timeout: 5000 
+                timeout: 5000,
               });
               const gitRoot = stdout.trim();
               const relativePath = path.relative(gitRoot, task.workingDirectory);
@@ -104,12 +111,12 @@ export class EventDrivenWorkerPool implements WorkerPool {
         } else {
           finalWorkingDirectory = worktreeInfo.path;
         }
-        
+
         this.logger.info('Using git worktree for task execution', {
           taskId: task.id,
           worktreePath: worktreeInfo.path,
           branch: worktreeInfo.branch,
-          finalWorkingDirectory
+          finalWorkingDirectory,
         });
       }
     } else {
@@ -127,15 +134,14 @@ export class EventDrivenWorkerPool implements WorkerPool {
           this.logger.warn('Failed to cleanup worktree after spawn failure', {
             taskId: task.id,
             worktreePath: worktreeInfo.path,
-            error: cleanupResult.error.message
+            error: cleanupResult.error.message,
           });
         }
       }
 
-      return err(new ClaudineError(
-        ErrorCode.WORKER_SPAWN_FAILED,
-        `Failed to spawn worker: ${spawnResult.error.message}`
-      ));
+      return err(
+        new ClaudineError(ErrorCode.WORKER_SPAWN_FAILED, `Failed to spawn worker: ${spawnResult.error.message}`),
+      );
     }
 
     const { process: childProcess, pid } = spawnResult.value;
@@ -162,20 +168,16 @@ export class EventDrivenWorkerPool implements WorkerPool {
     this.setupTimeoutForWorker(worker);
 
     // Connect process output to OutputCapture
-    this.processConnector.connect(
-      childProcess,
-      task.id,
-      (exitCode) => {
-        // Handle worker completion through events
-        // Log removed to avoid interfering with output capture
-        this.handleWorkerCompletion(task.id, exitCode ?? 0);
-      }
-    );
+    this.processConnector.connect(childProcess, task.id, (exitCode) => {
+      // Handle worker completion through events
+      // Log removed to avoid interfering with output capture
+      this.handleWorkerCompletion(task.id, exitCode ?? 0);
+    });
 
     this.logger.info('Worker spawned successfully', {
       taskId: task.id,
       workerId: worker.id,
-      pid: worker.pid
+      pid: worker.pid,
     });
 
     // Note: WorkerSpawned event is emitted by WorkerHandler, not here
@@ -185,18 +187,15 @@ export class EventDrivenWorkerPool implements WorkerPool {
 
   async kill(workerId: WorkerId): Promise<Result<void>> {
     const worker = this.workers.get(workerId);
-    
+
     if (!worker) {
-      return err(new ClaudineError(
-        ErrorCode.WORKER_NOT_FOUND,
-        `Worker ${workerId} not found`
-      ));
+      return err(new ClaudineError(ErrorCode.WORKER_NOT_FOUND, `Worker ${workerId} not found`));
     }
 
     this.logger.info('Killing worker', {
       workerId,
       taskId: worker.taskId,
-      pid: worker.pid
+      pid: worker.pid,
     });
 
     try {
@@ -206,7 +205,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
       // Kill the process
       if (worker.process && !worker.process.killed) {
         worker.process.kill('SIGTERM');
-        
+
         // Force kill after 5 seconds if still alive
         setTimeout(() => {
           if (!worker.process.killed) {
@@ -231,35 +230,30 @@ export class EventDrivenWorkerPool implements WorkerPool {
       await this.eventBus.emit('WorkerKilled', {
         workerId,
         taskId: worker.taskId,
-        reason: 'Explicit kill request'
+        reason: 'Explicit kill request',
       });
 
       return ok(undefined);
     } catch (error) {
-      return err(new ClaudineError(
-        ErrorCode.WORKER_KILL_FAILED,
-        `Failed to kill worker: ${error}`
-      ));
+      return err(new ClaudineError(ErrorCode.WORKER_KILL_FAILED, `Failed to kill worker: ${error}`));
     }
   }
 
   async killAll(): Promise<Result<void>> {
     const workerIds = Array.from(this.workers.keys());
-    
+
     this.logger.info('Killing all workers', {
-      workerCount: workerIds.length
+      workerCount: workerIds.length,
     });
 
-    const results = await Promise.allSettled(
-      workerIds.map(workerId => this.kill(workerId))
-    );
+    const results = await Promise.allSettled(workerIds.map((workerId) => this.kill(workerId)));
 
-    const failures = results.filter(result => result.status === 'rejected') as PromiseRejectedResult[];
-    
+    const failures = results.filter((result) => result.status === 'rejected') as PromiseRejectedResult[];
+
     if (failures.length > 0) {
       this.logger.error('Some workers failed to kill', undefined, {
         failures: failures.length,
-        total: workerIds.length
+        total: workerIds.length,
       });
     }
 
@@ -281,7 +275,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
 
   getWorkerForTask(taskId: TaskId): Result<Worker | null> {
     const workerId = this.taskToWorker.get(taskId);
-    
+
     if (!workerId) {
       return ok(null);
     }
@@ -295,17 +289,17 @@ export class EventDrivenWorkerPool implements WorkerPool {
    */
   private setupTimeoutForWorker(worker: WorkerState): void {
     const timeoutMs = worker.task.timeout;
-    
+
     // Debug logs removed to avoid interfering with output capture
     // console.error(`[WorkerPool] Setting up timeout for task ${worker.taskId}: ${timeoutMs}ms`);
-    
+
     // CRITICAL FIX: setTimeout(fn, undefined) executes immediately!
     if (!timeoutMs || timeoutMs <= 0) {
       // console.error(`[WorkerPool] No timeout configured for task ${worker.taskId}`);
       return; // No timeout configured
     }
 
-    // Create timeout timer  
+    // Create timeout timer
     worker.timeoutTimer = setTimeout(() => {
       // console.error(`[WorkerPool] TIMEOUT TRIGGERED for task ${worker.taskId} after ${timeoutMs}ms`);
       this.handleWorkerTimeout(worker.taskId, timeoutMs);
@@ -314,7 +308,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
     this.logger.debug('Worker timeout set', {
       taskId: worker.taskId,
       workerId: worker.id,
-      timeoutMs
+      timeoutMs,
     });
   }
 
@@ -325,10 +319,10 @@ export class EventDrivenWorkerPool implements WorkerPool {
     if (worker.timeoutTimer) {
       clearTimeout(worker.timeoutTimer);
       worker.timeoutTimer = undefined;
-      
+
       this.logger.debug('Worker timeout cleared', {
         taskId: worker.taskId,
-        workerId: worker.id
+        workerId: worker.id,
       });
     }
   }
@@ -338,14 +332,14 @@ export class EventDrivenWorkerPool implements WorkerPool {
    */
   private async handleWorkerCompletion(taskId: TaskId, exitCode: number): Promise<void> {
     const workerId = this.taskToWorker.get(taskId);
-    
+
     if (!workerId) {
       this.logger.warn('Worker completion for unknown task', { taskId, exitCode });
       return;
     }
 
     const worker = this.workers.get(workerId);
-    
+
     if (!worker) {
       this.logger.warn('Worker completion for unknown worker', { taskId, workerId, exitCode });
       return;
@@ -360,7 +354,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
     // Handle worktree completion and cleanup
     let mergeResult: CompletionResult | undefined;
     let mergeError: Error | undefined;
-    
+
     if (worker.worktreeInfo && worker.task.mergeStrategy) {
       const completionResult = await this.worktreeManager.completeTask(worker.task, worker.worktreeInfo);
       if (completionResult.ok) {
@@ -368,16 +362,16 @@ export class EventDrivenWorkerPool implements WorkerPool {
         this.logger.info('Task merge strategy completed', {
           taskId,
           strategy: worker.task.mergeStrategy,
-          result: mergeResult
+          result: mergeResult,
         });
       } else {
         mergeError = completionResult.error;
-        this.logger.error('Merge strategy failed', completionResult.error, { 
+        this.logger.error('Merge strategy failed', completionResult.error, {
           taskId,
           strategy: worker.task.mergeStrategy,
           worktreePath: worker.worktreeInfo.path,
           branch: worker.worktreeInfo.branch,
-          message: `Merge strategy '${worker.task.mergeStrategy}' failed. Worktree preserved at ${worker.worktreeInfo.path}`
+          message: `Merge strategy '${worker.task.mergeStrategy}' failed. Worktree preserved at ${worker.worktreeInfo.path}`,
         });
       }
     }
@@ -389,7 +383,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
         this.logger.warn('Preserving worktree due to merge failure', {
           taskId,
           path: worker.worktreeInfo.path,
-          branch: worker.worktreeInfo.branch
+          branch: worker.worktreeInfo.branch,
         });
       } else {
         await this.handleWorktreeCleanup(worker.task, worker.worktreeInfo);
@@ -406,16 +400,13 @@ export class EventDrivenWorkerPool implements WorkerPool {
       await this.eventBus.emit('TaskCompleted', {
         taskId,
         exitCode,
-        duration
+        duration,
       });
     } else {
       await this.eventBus.emit('TaskFailed', {
         taskId,
         exitCode,
-        error: new ClaudineError(
-          ErrorCode.TASK_EXECUTION_FAILED,
-          `Task failed with exit code ${exitCode}`
-        )
+        error: new ClaudineError(ErrorCode.TASK_EXECUTION_FAILED, `Task failed with exit code ${exitCode}`),
       });
     }
 
@@ -423,7 +414,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
       taskId,
       workerId,
       exitCode,
-      duration
+      duration,
     });
   }
 
@@ -431,16 +422,15 @@ export class EventDrivenWorkerPool implements WorkerPool {
    * Handle worker timeout - event-driven
    */
   private async handleWorkerTimeout(taskId: TaskId, timeoutMs: number): Promise<void> {
-    
     const workerId = this.taskToWorker.get(taskId);
-    
+
     if (!workerId) {
       this.logger.warn('Worker timeout for unknown task', { taskId, timeoutMs });
       return;
     }
 
     const worker = this.workers.get(workerId);
-    
+
     if (!worker) {
       this.logger.warn('Worker timeout for unknown worker', { taskId, workerId, timeoutMs });
       return;
@@ -450,7 +440,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
       taskId,
       workerId,
       timeoutMs,
-      pid: worker.pid
+      pid: worker.pid,
     });
 
     // Kill the worker (this will clean up state)
@@ -459,7 +449,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
     // Emit timeout event
     await this.eventBus.emit('TaskTimeout', {
       taskId,
-      error: taskTimeout(taskId, timeoutMs)
+      error: taskTimeout(taskId, timeoutMs),
     });
   }
 
@@ -473,10 +463,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
     await this.eventBus.emit('TaskFailed', {
       taskId,
       exitCode: 1,
-      error: new ClaudineError(
-        ErrorCode.TASK_EXECUTION_FAILED,
-        `Worker process error: ${error.message}`
-      )
+      error: new ClaudineError(ErrorCode.TASK_EXECUTION_FAILED, `Worker process error: ${error.message}`),
     });
   }
 
@@ -507,14 +494,14 @@ export class EventDrivenWorkerPool implements WorkerPool {
       } else {
         this.logger.warn('Failed to cleanup worktree', {
           taskId: task.id,
-          error: result.error.message
+          error: result.error.message,
         });
       }
     } else {
       this.logger.info('Worktree preserved', {
         taskId: task.id,
         path: info.path,
-        branch: info.branch
+        branch: info.branch,
       });
     }
   }

@@ -1,18 +1,18 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
-  ok,
+  combine,
   err,
-  isOk,
+  flatMap,
   isErr,
-  unwrap,
-  unwrapOr,
+  isOk,
   map,
   mapError,
-  flatMap,
+  ok,
+  Result,
   tryCatch,
   tryCatchAsync,
-  combine,
-  Result
+  unwrap,
+  unwrapOr,
 } from '../../../src/core/result';
 
 describe('Result Type - REAL Behavior Tests', () => {
@@ -78,7 +78,7 @@ describe('Result Type - REAL Behavior Tests', () => {
     it('should handle complex objects in results', () => {
       const complexValue = {
         nested: { data: [1, 2, 3] },
-        fn: () => 'test'
+        fn: () => 'test',
       };
       const result = ok(complexValue);
 
@@ -121,7 +121,7 @@ describe('Result Type - REAL Behavior Tests', () => {
   describe('map transformations', () => {
     it('should map Ok value', () => {
       const result = ok(5);
-      const mapped = map(result, x => x * 2);
+      const mapped = map(result, (x) => x * 2);
 
       expect(isOk(mapped)).toBe(true);
       if (mapped.ok) {
@@ -132,7 +132,7 @@ describe('Result Type - REAL Behavior Tests', () => {
     it('should not map Err value', () => {
       const error = new Error('original');
       const result = err<number>(error);
-      const mapped = map(result, x => x * 2);
+      const mapped = map(result, (x) => x * 2);
 
       expect(isErr(mapped)).toBe(true);
       if (!mapped.ok) {
@@ -142,7 +142,7 @@ describe('Result Type - REAL Behavior Tests', () => {
 
     it('should handle type transformations in map', () => {
       const result = ok(42);
-      const mapped = map(result, n => `Number: ${n}`);
+      const mapped = map(result, (n) => `Number: ${n}`);
 
       if (mapped.ok) {
         expect(typeof mapped.value).toBe('string');
@@ -152,7 +152,7 @@ describe('Result Type - REAL Behavior Tests', () => {
 
     it('should map error with mapError', () => {
       const result = err(new Error('original'));
-      const mapped = mapError(result, e => new Error(`Wrapped: ${e.message}`));
+      const mapped = mapError(result, (e) => new Error(`Wrapped: ${e.message}`));
 
       expect(isErr(mapped)).toBe(true);
       if (!mapped.ok) {
@@ -162,7 +162,7 @@ describe('Result Type - REAL Behavior Tests', () => {
 
     it('should not mapError on Ok result', () => {
       const result = ok('value');
-      const mapped = mapError(result, e => new Error('should not run'));
+      const mapped = mapError(result, (e) => new Error('should not run'));
 
       expect(isOk(mapped)).toBe(true);
       if (mapped.ok) {
@@ -177,7 +177,7 @@ describe('Result Type - REAL Behavior Tests', () => {
         by === 0 ? err(new Error('Division by zero')) : ok(n / by);
 
       const result = ok(20);
-      const chained = flatMap(result, n => divide(n, 2));
+      const chained = flatMap(result, (n) => divide(n, 2));
 
       expect(isOk(chained)).toBe(true);
       if (chained.ok) {
@@ -190,7 +190,7 @@ describe('Result Type - REAL Behavior Tests', () => {
         by === 0 ? err(new Error('Division by zero')) : ok(n / by);
 
       const result = ok(20);
-      const chained = flatMap(result, n => divide(n, 0));
+      const chained = flatMap(result, (n) => divide(n, 0));
 
       expect(isErr(chained)).toBe(true);
       if (!chained.ok) {
@@ -202,7 +202,7 @@ describe('Result Type - REAL Behavior Tests', () => {
       let executed = false;
       const result = err<number>(new Error('initial error'));
 
-      const chained = flatMap(result, n => {
+      const chained = flatMap(result, (n) => {
         executed = true;
         return ok(n * 2);
       });
@@ -221,18 +221,12 @@ describe('Result Type - REAL Behavior Tests', () => {
         by === 0 ? err(new Error('Division by zero')) : ok(n / by);
 
       // Success case
-      const success = flatMap(
-        parseNumber('100'),
-        n => safeDivide(n, 4)
-      );
+      const success = flatMap(parseNumber('100'), (n) => safeDivide(n, 4));
 
       expect(unwrap(success)).toBe(25);
 
       // Failure at parse
-      const failParse = flatMap(
-        parseNumber('abc'),
-        n => safeDivide(n, 4)
-      );
+      const failParse = flatMap(parseNumber('abc'), (n) => safeDivide(n, 4));
 
       expect(isErr(failParse)).toBe(true);
       if (!failParse.ok) {
@@ -240,10 +234,7 @@ describe('Result Type - REAL Behavior Tests', () => {
       }
 
       // Failure at divide
-      const failDivide = flatMap(
-        parseNumber('100'),
-        n => safeDivide(n, 0)
-      );
+      const failDivide = flatMap(parseNumber('100'), (n) => safeDivide(n, 0));
 
       expect(isErr(failDivide)).toBe(true);
       if (!failDivide.ok) {
@@ -281,10 +272,7 @@ describe('Result Type - REAL Behavior Tests', () => {
         throw new TypeError('Wrong type');
       };
 
-      const result = tryCatch(
-        dangerous,
-        (e) => new Error(`Caught: ${e}`)
-      );
+      const result = tryCatch(dangerous, (e) => new Error(`Caught: ${e}`));
 
       expect(isErr(result)).toBe(true);
       if (!result.ok) {
@@ -375,10 +363,7 @@ describe('Result Type - REAL Behavior Tests', () => {
         throw new TypeError('Wrong async type');
       };
 
-      const result = await tryCatchAsync(
-        failingAsync,
-        (e) => new Error(`Async caught: ${e}`)
-      );
+      const result = await tryCatchAsync(failingAsync, (e) => new Error(`Async caught: ${e}`));
 
       expect(isErr(result)).toBe(true);
       if (!result.ok) {
@@ -389,11 +374,7 @@ describe('Result Type - REAL Behavior Tests', () => {
 
   describe('combine multiple results', () => {
     it('should combine all Ok results', () => {
-      const results = [
-        ok(1),
-        ok(2),
-        ok(3)
-      ];
+      const results = [ok(1), ok(2), ok(3)];
 
       const combined = combine(results);
 
@@ -404,12 +385,7 @@ describe('Result Type - REAL Behavior Tests', () => {
     });
 
     it('should fail fast on first Err', () => {
-      const results = [
-        ok(1),
-        err(new Error('Second failed')),
-        ok(3),
-        err(new Error('Fourth failed'))
-      ];
+      const results = [ok(1), err(new Error('Second failed')), ok(3), err(new Error('Fourth failed'))];
 
       const combined = combine(results);
 
@@ -430,17 +406,14 @@ describe('Result Type - REAL Behavior Tests', () => {
     });
 
     it('should preserve types in combined result', () => {
-      const results = [
-        ok('string'),
-        ok('another')
-      ];
+      const results = [ok('string'), ok('another')];
 
       const combined = combine(results);
 
       expect(isOk(combined)).toBe(true);
       if (combined.ok) {
         expect(combined.value).toEqual(['string', 'another']);
-        combined.value.forEach(v => {
+        combined.value.forEach((v) => {
           expect(typeof v).toBe('string');
         });
       }
@@ -456,7 +429,7 @@ describe('Result Type - REAL Behavior Tests', () => {
 
       if (combined.ok) {
         const values: number[] = combined.value;
-        expect(values.every(v => typeof v === 'number')).toBe(true);
+        expect(values.every((v) => typeof v === 'number')).toBe(true);
       }
     });
   });
@@ -481,34 +454,19 @@ describe('Result Type - REAL Behavior Tests', () => {
     });
 
     it('should handle validation chain', () => {
-      const validatePositive = (n: number): Result<number> =>
-        n > 0 ? ok(n) : err(new Error('Must be positive'));
+      const validatePositive = (n: number): Result<number> => (n > 0 ? ok(n) : err(new Error('Must be positive')));
 
-      const validateEven = (n: number): Result<number> =>
-        n % 2 === 0 ? ok(n) : err(new Error('Must be even'));
+      const validateEven = (n: number): Result<number> => (n % 2 === 0 ? ok(n) : err(new Error('Must be even')));
 
-      const validateRange = (n: number): Result<number> =>
-        n <= 100 ? ok(n) : err(new Error('Must be <= 100'));
+      const validateRange = (n: number): Result<number> => (n <= 100 ? ok(n) : err(new Error('Must be <= 100')));
 
       // Test valid number
-      const valid = flatMap(
-        flatMap(
-          validatePositive(42),
-          validateEven
-        ),
-        validateRange
-      );
+      const valid = flatMap(flatMap(validatePositive(42), validateEven), validateRange);
 
       expect(unwrap(valid)).toBe(42);
 
       // Test negative number
-      const negative = flatMap(
-        flatMap(
-          validatePositive(-5),
-          validateEven
-        ),
-        validateRange
-      );
+      const negative = flatMap(flatMap(validatePositive(-5), validateEven), validateRange);
 
       expect(isErr(negative)).toBe(true);
       if (!negative.ok) {
@@ -516,13 +474,7 @@ describe('Result Type - REAL Behavior Tests', () => {
       }
 
       // Test odd number
-      const odd = flatMap(
-        flatMap(
-          validatePositive(7),
-          validateEven
-        ),
-        validateRange
-      );
+      const odd = flatMap(flatMap(validatePositive(7), validateEven), validateRange);
 
       expect(isErr(odd)).toBe(true);
       if (!odd.ok) {
@@ -547,7 +499,7 @@ describe('Result Type - REAL Behavior Tests', () => {
 
       // Success case
       const successResult = await fetchData(42);
-      const processed = flatMap(successResult, data => processData(data));
+      const processed = flatMap(successResult, (data) => processData(data));
 
       expect(isOk(processed)).toBe(true);
       if (processed.ok) {
@@ -556,7 +508,7 @@ describe('Result Type - REAL Behavior Tests', () => {
 
       // Failure case
       const failResult = await fetchData(-1);
-      const failProcessed = flatMap(failResult, data => processData(data));
+      const failProcessed = flatMap(failResult, (data) => processData(data));
 
       expect(isErr(failProcessed)).toBe(true);
       if (!failProcessed.ok) {

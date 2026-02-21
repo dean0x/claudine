@@ -7,18 +7,18 @@
 
 import SQLite from 'better-sqlite3';
 import { z } from 'zod';
-import { ScheduleRepository, ScheduleExecution } from '../core/interfaces.js';
 import {
+  DelegateRequest,
+  MissedRunPolicy,
   Schedule,
   ScheduleId,
   ScheduleStatus,
   ScheduleType,
-  MissedRunPolicy,
-  DelegateRequest,
   TaskId,
 } from '../core/domain.js';
-import { Result, ok, err, tryCatchAsync } from '../core/result.js';
 import { ClaudineError, ErrorCode, operationErrorHandler } from '../core/errors.js';
+import { ScheduleExecution, ScheduleRepository } from '../core/interfaces.js';
+import { err, ok, Result, tryCatchAsync } from '../core/result.js';
 import { Database } from './database.js';
 
 /**
@@ -247,7 +247,7 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
 
         this.saveStmt.run(dbSchedule);
       },
-      operationErrorHandler('save schedule', { scheduleId: schedule.id })
+      operationErrorHandler('save schedule', { scheduleId: schedule.id }),
     );
   }
 
@@ -267,10 +267,7 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
     }
 
     if (!existingResult.value) {
-      return err(new ClaudineError(
-        ErrorCode.TASK_NOT_FOUND,
-        `Schedule ${id} not found`
-      ));
+      return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Schedule ${id} not found`));
     }
 
     // Merge updates with existing schedule
@@ -301,7 +298,7 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
           updatedAt: updatedSchedule.updatedAt,
         });
       },
-      operationErrorHandler('update schedule', { scheduleId: id })
+      operationErrorHandler('update schedule', { scheduleId: id }),
     );
   }
 
@@ -322,7 +319,7 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
 
         return this.rowToSchedule(row);
       },
-      operationErrorHandler('find schedule', { scheduleId: id })
+      operationErrorHandler('find schedule', { scheduleId: id }),
     );
   }
 
@@ -334,16 +331,13 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
    * @returns Result containing paginated array of schedules
    */
   async findAll(limit?: number, offset?: number): Promise<Result<readonly Schedule[]>> {
-    return tryCatchAsync(
-      async () => {
-        const effectiveLimit = limit ?? SQLiteScheduleRepository.DEFAULT_LIMIT;
-        const effectiveOffset = offset ?? 0;
+    return tryCatchAsync(async () => {
+      const effectiveLimit = limit ?? SQLiteScheduleRepository.DEFAULT_LIMIT;
+      const effectiveOffset = offset ?? 0;
 
-        const rows = this.findAllPaginatedStmt.all(effectiveLimit, effectiveOffset) as ScheduleRow[];
-        return rows.map(row => this.rowToSchedule(row));
-      },
-      operationErrorHandler('find all schedules')
-    );
+      const rows = this.findAllPaginatedStmt.all(effectiveLimit, effectiveOffset) as ScheduleRow[];
+      return rows.map((row) => this.rowToSchedule(row));
+    }, operationErrorHandler('find all schedules'));
   }
 
   /**
@@ -361,9 +355,9 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
         const effectiveOffset = offset ?? 0;
 
         const rows = this.findByStatusStmt.all(status, effectiveLimit, effectiveOffset) as ScheduleRow[];
-        return rows.map(row => this.rowToSchedule(row));
+        return rows.map((row) => this.rowToSchedule(row));
       },
-      operationErrorHandler('find schedules by status', { status })
+      operationErrorHandler('find schedules by status', { status }),
     );
   }
 
@@ -380,9 +374,9 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
     return tryCatchAsync(
       async () => {
         const rows = this.findDueStmt.all(beforeTime) as ScheduleRow[];
-        return rows.map(row => this.rowToSchedule(row));
+        return rows.map((row) => this.rowToSchedule(row));
       },
-      operationErrorHandler('find due schedules', { beforeTime })
+      operationErrorHandler('find due schedules', { beforeTime }),
     );
   }
 
@@ -397,7 +391,7 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
       async () => {
         this.deleteStmt.run(id);
       },
-      operationErrorHandler('delete schedule', { scheduleId: id })
+      operationErrorHandler('delete schedule', { scheduleId: id }),
     );
   }
 
@@ -407,13 +401,10 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
    * @returns Result containing total schedule count
    */
   async count(): Promise<Result<number>> {
-    return tryCatchAsync(
-      async () => {
-        const result = this.countStmt.get() as { count: number };
-        return result.count;
-      },
-      operationErrorHandler('count schedules')
-    );
+    return tryCatchAsync(async () => {
+      const result = this.countStmt.get() as { count: number };
+      return result.count;
+    }, operationErrorHandler('count schedules'));
   }
 
   /**
@@ -432,13 +423,13 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
           execution.executedAt ?? null,
           execution.status,
           execution.errorMessage ?? null,
-          execution.createdAt
+          execution.createdAt,
         );
 
         const row = this.getExecutionByIdStmt.get(result.lastInsertRowid) as ScheduleExecutionRow;
         return this.rowToExecution(row);
       },
-      operationErrorHandler('record schedule execution', { scheduleId: execution.scheduleId })
+      operationErrorHandler('record schedule execution', { scheduleId: execution.scheduleId }),
     );
   }
 
@@ -454,9 +445,9 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
       async () => {
         const effectiveLimit = limit ?? SQLiteScheduleRepository.DEFAULT_LIMIT;
         const rows = this.getExecutionHistoryStmt.all(scheduleId, effectiveLimit) as ScheduleExecutionRow[];
-        return rows.map(row => this.rowToExecution(row));
+        return rows.map((row) => this.rowToExecution(row));
       },
-      operationErrorHandler('get execution history', { scheduleId })
+      operationErrorHandler('get execution history', { scheduleId }),
     );
   }
 

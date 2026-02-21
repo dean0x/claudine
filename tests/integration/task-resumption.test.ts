@@ -11,21 +11,21 @@
  * For testing failure paths, we emit TaskFailed events manually.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { bootstrap } from '../../src/bootstrap.js';
-import { Container } from '../../src/core/container.js';
-import { TaskManager, CheckpointRepository, TaskRepository } from '../../src/core/interfaces.js';
-import { TaskId, TaskStatus, Priority } from '../../src/core/domain.js';
-import type { Task, TaskCheckpoint } from '../../src/core/domain.js';
-import type { CheckpointCreatedEvent } from '../../src/core/events/events.js';
-import { EventBus } from '../../src/core/events/event-bus.js';
-import { Database } from '../../src/implementations/database.js';
-import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
-import { TestResourceMonitor } from '../../src/implementations/resource-monitor.js';
-import { flushEventLoop, waitForEvent } from '../utils/event-helpers.js';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { bootstrap } from '../../src/bootstrap.js';
+import { Container } from '../../src/core/container.js';
+import type { Task, TaskCheckpoint } from '../../src/core/domain.js';
+import { Priority, TaskId, TaskStatus } from '../../src/core/domain.js';
+import { EventBus } from '../../src/core/events/event-bus.js';
+import type { CheckpointCreatedEvent } from '../../src/core/events/events.js';
+import { CheckpointRepository, TaskManager, TaskRepository } from '../../src/core/interfaces.js';
+import { Database } from '../../src/implementations/database.js';
+import { TestResourceMonitor } from '../../src/implementations/resource-monitor.js';
+import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
+import { flushEventLoop, waitForEvent } from '../utils/event-helpers.js';
 
 describe('Integration: Task Resumption - End-to-End Flow', () => {
   let container: Container;
@@ -159,7 +159,11 @@ describe('Integration: Task Resumption - End-to-End Flow', () => {
       await autoCompletePromise;
       await flushEventLoop();
 
-      // Set up checkpoint listener before manually emitting failure
+      // Delete the auto-created 'completed' checkpoint so findLatest returns
+      // only the manually-emitted 'failed' checkpoint (avoids same-millisecond
+      // timestamp race where findLatest could return either one)
+      await checkpointRepo.deleteByTask(failTask.value.id);
+
       const failCheckpointPromise = waitForEvent(eventBus, 'CheckpointCreated');
 
       // Manually emit TaskFailed event (since NoOpProcessSpawner always exits 0)
@@ -191,8 +195,12 @@ describe('Integration: Task Resumption - End-to-End Flow', () => {
       // Step 1: Create and complete a task
       const originalTask = await delegateAndWaitForCompletion('Original task for resume test');
 
-      // Step 2: Manually save a checkpoint with rich context
-      // (auto-created checkpoints may lack output since NoOpProcessSpawner produces none)
+      // Step 2: Delete auto-created checkpoint (NoOpProcessSpawner produces no output,
+      // so auto-checkpoint lacks the rich context this test needs), then save one with
+      // explicit data. Without deletion, findLatest may return the empty auto-checkpoint
+      // when both share the same created_at millisecond.
+      await checkpointRepo.deleteByTask(originalTask.id);
+
       const saveResult = await checkpointRepo.save({
         taskId: originalTask.id,
         checkpointType: 'completed',

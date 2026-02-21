@@ -1,17 +1,17 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { QueryHandler } from '../../../../src/services/handlers/query-handler';
-import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
-import { SQLiteTaskRepository } from '../../../../src/implementations/task-repository';
-import { Database } from '../../../../src/implementations/database';
-import { TestLogger } from '../../../fixtures/test-doubles';
-import { BufferedOutputCapture } from '../../../../src/implementations/output-capture';
-import { createTask, type Task } from '../../../../src/core/domain';
-import { ok, err } from '../../../../src/core/result';
-import { taskNotFound } from '../../../../src/core/errors';
 import { mkdtemp, rm } from 'fs/promises';
-import { join } from 'path';
 import { tmpdir } from 'os';
+import { join } from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createTask, type Task } from '../../../../src/core/domain';
+import { taskNotFound } from '../../../../src/core/errors';
+import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
+import { err, ok } from '../../../../src/core/result';
+import { Database } from '../../../../src/implementations/database';
+import { BufferedOutputCapture } from '../../../../src/implementations/output-capture';
+import { SQLiteTaskRepository } from '../../../../src/implementations/task-repository';
+import { QueryHandler } from '../../../../src/services/handlers/query-handler';
 import { createTestConfiguration } from '../../../fixtures/factories';
+import { TestLogger } from '../../../fixtures/test-doubles';
 
 describe('QueryHandler - Behavioral Tests', () => {
   let handler: QueryHandler;
@@ -59,10 +59,7 @@ describe('QueryHandler - Behavioral Tests', () => {
 
       // Act - Query for the task
       // FIXED: Response is Task directly, not wrapped in {task: ...}
-      const result = await eventBus.request<{ taskId: string }, Task>(
-        'TaskStatusQuery',
-        { taskId: task.id }
-      );
+      const result = await eventBus.request<{ taskId: string }, Task>('TaskStatusQuery', { taskId: task.id });
 
       // Assert - Verify behavior, not mocks
       expect(result.ok).toBe(true);
@@ -77,10 +74,9 @@ describe('QueryHandler - Behavioral Tests', () => {
     it('should return null for non-existent task', async () => {
       // Act - Query for non-existent task
       // FIXED: Response is Task | null directly, not wrapped
-      const result = await eventBus.request<{ taskId: string }, Task | null>(
-        'TaskStatusQuery',
-        { taskId: 'non-existent-id' }
-      );
+      const result = await eventBus.request<{ taskId: string }, Task | null>('TaskStatusQuery', {
+        taskId: 'non-existent-id',
+      });
 
       // Assert - Should handle gracefully
       expect(result.ok).toBe(true);
@@ -95,10 +91,7 @@ describe('QueryHandler - Behavioral Tests', () => {
 
       // Act - Try to query
       // FIXED: Response is Task | null directly
-      const result = await eventBus.request<{ taskId: string }, Task | null>(
-        'TaskStatusQuery',
-        { taskId: 'any-id' }
-      );
+      const result = await eventBus.request<{ taskId: string }, Task | null>('TaskStatusQuery', { taskId: 'any-id' });
 
       // Assert - Should return error
       expect(result.ok).toBe(false);
@@ -129,10 +122,7 @@ describe('QueryHandler - Behavioral Tests', () => {
 
       // Act - Query all tasks
       // FIXED: Use TaskStatusQuery with no taskId (returns Task[])
-      const result = await eventBus.request<{}, readonly Task[]>(
-        'TaskStatusQuery',
-        {}
-      );
+      const result = await eventBus.request<{}, readonly Task[]>('TaskStatusQuery', {});
 
       // Assert - Verify we get all tasks
       expect(result.ok).toBe(true);
@@ -140,21 +130,18 @@ describe('QueryHandler - Behavioral Tests', () => {
         expect(result.value).toHaveLength(5);
 
         // Verify status distribution (2 queued, 1 running, 1 completed, 1 failed)
-        const statuses = result.value.map(t => t.status);
-        expect(statuses.filter(s => s === 'queued')).toHaveLength(2);
-        expect(statuses.filter(s => s === 'running')).toHaveLength(1);
-        expect(statuses.filter(s => s === 'completed')).toHaveLength(1);
-        expect(statuses.filter(s => s === 'failed')).toHaveLength(1);
+        const statuses = result.value.map((t) => t.status);
+        expect(statuses.filter((s) => s === 'queued')).toHaveLength(2);
+        expect(statuses.filter((s) => s === 'running')).toHaveLength(1);
+        expect(statuses.filter((s) => s === 'completed')).toHaveLength(1);
+        expect(statuses.filter((s) => s === 'failed')).toHaveLength(1);
       }
     });
 
     it('should return empty array when no tasks exist', async () => {
       // Act - Query empty database
       // FIXED: Use TaskStatusQuery with no taskId
-      const result = await eventBus.request<{}, readonly Task[]>(
-        'TaskStatusQuery',
-        {}
-      );
+      const result = await eventBus.request<{}, readonly Task[]>('TaskStatusQuery', {});
 
       // Assert
       expect(result.ok).toBe(true);
@@ -167,9 +154,7 @@ describe('QueryHandler - Behavioral Tests', () => {
     it('should handle large task lists efficiently', async () => {
       // Arrange - Create many tasks
       const taskCount = 100;
-      const tasks = Array.from({ length: taskCount }, (_, i) =>
-        createTask({ prompt: `task ${i}` })
-      );
+      const tasks = Array.from({ length: taskCount }, (_, i) => createTask({ prompt: `task ${i}` }));
 
       // Save all tasks
       for (const task of tasks) {
@@ -179,10 +164,7 @@ describe('QueryHandler - Behavioral Tests', () => {
       // Act - Query all tasks
       const startTime = Date.now();
       // FIXED: Use TaskStatusQuery with no taskId
-      const result = await eventBus.request<{}, readonly Task[]>(
-        'TaskStatusQuery',
-        {}
-      );
+      const result = await eventBus.request<{}, readonly Task[]>('TaskStatusQuery', {});
       const queryTime = Date.now() - startTime;
 
       // Assert - Should be fast and complete
@@ -207,7 +189,7 @@ describe('QueryHandler - Behavioral Tests', () => {
       // Act - Query output using correct event name
       const result = await eventBus.request<{ taskId: string }, any>(
         'TaskLogsQuery', // FIX: Use TaskLogsQuery not TaskOutputQuery
-        { taskId: task.id }
+        { taskId: task.id },
       );
 
       // Assert - Verify real output
@@ -224,10 +206,7 @@ describe('QueryHandler - Behavioral Tests', () => {
       await repository.save(task);
 
       // Act - FIX: Use TaskLogsQuery not TaskOutputQuery
-      const result = await eventBus.request<{ taskId: string }, any>(
-        'TaskLogsQuery',
-        { taskId: task.id }
-      );
+      const result = await eventBus.request<{ taskId: string }, any>('TaskLogsQuery', { taskId: task.id });
 
       // Assert
       expect(result.ok).toBe(true);
@@ -250,10 +229,7 @@ describe('QueryHandler - Behavioral Tests', () => {
       }
 
       // Act - FIX: Use TaskLogsQuery not TaskOutputQuery
-      const result = await eventBus.request<{ taskId: string }, any>(
-        'TaskLogsQuery',
-        { taskId: task.id }
-      );
+      const result = await eventBus.request<{ taskId: string }, any>('TaskLogsQuery', { taskId: task.id });
 
       // Assert
       expect(result.ok).toBe(true);
@@ -295,9 +271,7 @@ describe('QueryHandler - Behavioral Tests', () => {
   describe('Concurrent query handling', () => {
     it('should handle multiple concurrent queries correctly', async () => {
       // Arrange - Create multiple tasks
-      const tasks = Array.from({ length: 10 }, (_, i) =>
-        createTask({ prompt: `concurrent task ${i}` })
-      );
+      const tasks = Array.from({ length: 10 }, (_, i) => createTask({ prompt: `concurrent task ${i}` }));
 
       // Save all tasks
       for (const task of tasks) {
@@ -305,12 +279,9 @@ describe('QueryHandler - Behavioral Tests', () => {
       }
 
       // Act - Make concurrent queries
-      const promises = tasks.map(task =>
+      const promises = tasks.map((task) =>
         // FIXED: Response is Task | null directly
-        eventBus.request<{ taskId: string }, Task | null>(
-          'TaskStatusQuery',
-          { taskId: task.id }
-        )
+        eventBus.request<{ taskId: string }, Task | null>('TaskStatusQuery', { taskId: task.id }),
       );
 
       const results = await Promise.all(promises);
@@ -338,7 +309,7 @@ describe('QueryHandler - Behavioral Tests', () => {
       const [result1, result2, listResult] = await Promise.all([
         eventBus.request<{ taskId: string }, Task>('TaskStatusQuery', { taskId: task1.id }),
         eventBus.request<{ taskId: string }, Task>('TaskStatusQuery', { taskId: task2.id }),
-        eventBus.request<{}, readonly Task[]>('TaskStatusQuery', {})
+        eventBus.request<{}, readonly Task[]>('TaskStatusQuery', {}),
       ]);
 
       // Assert - Each query gets correct results
@@ -359,10 +330,7 @@ describe('QueryHandler - Behavioral Tests', () => {
       database.close();
 
       // First query should fail (database closed)
-      const failResult = await eventBus.request<{ taskId: string }, any>(
-        'TaskStatusQuery',
-        { taskId: task.id }
-      );
+      const failResult = await eventBus.request<{ taskId: string }, any>('TaskStatusQuery', { taskId: task.id });
       expect(failResult.ok).toBe(false);
 
       // FIX: Recovery means reopening same database and querying again
@@ -382,10 +350,7 @@ describe('QueryHandler - Behavioral Tests', () => {
       }
 
       // Second query should succeed (database recovered)
-      const successResult = await eventBus.request<{ taskId: string }, any>(
-        'TaskStatusQuery',
-        { taskId: task.id }
-      );
+      const successResult = await eventBus.request<{ taskId: string }, any>('TaskStatusQuery', { taskId: task.id });
 
       expect(successResult.ok).toBe(true);
       if (successResult.ok) {

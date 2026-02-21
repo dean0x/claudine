@@ -3,11 +3,11 @@
  * Provides pub/sub pattern for loosely coupled components
  */
 
-import { Result, ok, err } from '../result.js';
+import { Configuration } from '../configuration.js';
 import { ClaudineError, ErrorCode } from '../errors.js';
 import { Logger } from '../interfaces.js';
-import { ClaudineEvent, EventHandler, createEvent, BaseEvent } from './events.js';
-import { Configuration } from '../configuration.js';
+import { err, ok, Result } from '../result.js';
+import { BaseEvent, ClaudineEvent, createEvent, EventHandler } from './events.js';
 
 /**
  * Event bus interface for dependency injection
@@ -17,7 +17,10 @@ import { Configuration } from '../configuration.js';
  */
 export interface EventBus {
   emit<T extends ClaudineEvent>(type: T['type'], payload: Omit<T, keyof BaseEvent | 'type'>): Promise<Result<void>>;
-  request<T extends ClaudineEvent, R = unknown>(type: T['type'], payload: Omit<T, keyof BaseEvent | 'type'>): Promise<Result<R>>;
+  request<T extends ClaudineEvent, R = unknown>(
+    type: T['type'],
+    payload: Omit<T, keyof BaseEvent | 'type'>,
+  ): Promise<Result<R>>;
   subscribe<T extends ClaudineEvent>(eventType: T['type'], handler: EventHandler<T>): Result<string>;
   unsubscribe(subscriptionId: string): Result<void>;
   subscribeAll(handler: EventHandler): Result<string>;
@@ -25,10 +28,15 @@ export interface EventBus {
   dispose?(): void; // Optional cleanup method
 
   // Additional convenience methods for testing compatibility
+  // biome-ignore lint/suspicious/noExplicitAny: testing convenience methods — `unknown` would break all test call sites for no safety gain
   on?(event: string, handler: (data: any) => void): string;
   off?(event: string, subscriptionId: string): void;
+  // biome-ignore lint/suspicious/noExplicitAny: testing convenience methods — `unknown` would break all test call sites for no safety gain
   once?(event: string, handler: (data: any) => void): void;
+  // biome-ignore lint/suspicious/noExplicitAny: testing convenience methods — `unknown` would break all test call sites for no safety gain
   onRequest?(event: string, handler: (data: any) => Promise<Result<any>>): string;
+  respond?<T = unknown>(correlationId: string, response: T): boolean;
+  respondError?(correlationId: string, error: Error): boolean;
 }
 
 /**
@@ -59,7 +67,7 @@ export class InMemoryEventBus implements EventBus {
 
   constructor(
     config: Configuration,
-    private readonly logger: Logger
+    private readonly logger: Logger,
   ) {
     // SECURITY: Use safe defaults instead of non-null assertions to prevent runtime crashes
     // These match ConfigurationSchema defaults from configuration.ts
@@ -133,20 +141,20 @@ export class InMemoryEventBus implements EventBus {
     this.logger.debug('EventBus disposed', {
       handlersCleared: true,
       subscriptionsCleared: true,
-      pendingRequestsCleared: true
+      pendingRequestsCleared: true,
     });
   }
 
   async emit<T extends ClaudineEvent>(
-    type: T['type'], 
-    payload: Omit<T, keyof BaseEvent | 'type'>
+    type: T['type'],
+    payload: Omit<T, keyof BaseEvent | 'type'>,
   ): Promise<Result<void>> {
     const event = createEvent(type, payload) as T;
-    
+
     this.logger.debug('Event emitted', {
       eventType: event.type,
       eventId: event.eventId,
-      timestamp: event.timestamp
+      timestamp: event.timestamp,
     });
 
     try {
@@ -175,7 +183,7 @@ export class InMemoryEventBus implements EventBus {
               eventType: type,
               handlerIndex: index,
               duration,
-              threshold: 100
+              threshold: 100,
             });
           }
 
@@ -195,40 +203,42 @@ export class InMemoryEventBus implements EventBus {
         eventId: event.eventId,
         handlerCount: allHandlers.length,
         totalDuration,
-        slowHandlers: results.filter(r => r.duration > 100).length
+        slowHandlers: results.filter((r) => r.duration > 100).length,
       });
 
       // Check for handler failures
-      const failures = results.filter(result => result.status === 'rejected');
+      const failures = results.filter((result) => result.status === 'rejected');
 
       if (failures.length > 0) {
         this.logger.error('Event handler failures', undefined, {
           eventType: type,
           eventId: event.eventId,
-          failures: failures.map(f => f.reason),
-          durations: failures.map(f => f.duration)
+          failures: failures.map((f) => f.reason),
+          durations: failures.map((f) => f.duration),
         });
 
         // Return error if any handler failed
-        return err(new ClaudineError(
-          ErrorCode.SYSTEM_ERROR,
-          `Event handler failures for ${type}: ${failures.map(f => f.reason).join(', ')}`,
-          { eventId: event.eventId, failures: failures.length }
-        ));
+        return err(
+          new ClaudineError(
+            ErrorCode.SYSTEM_ERROR,
+            `Event handler failures for ${type}: ${failures.map((f) => f.reason).join(', ')}`,
+            { eventId: event.eventId, failures: failures.length },
+          ),
+        );
       }
 
       return ok(undefined);
     } catch (error) {
       this.logger.error('Event emission failed', error as Error, {
         eventType: type,
-        eventId: event.eventId
+        eventId: event.eventId,
       });
 
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Event emission failed for ${type}: ${error}`,
-        { eventId: event.eventId }
-      ));
+      return err(
+        new ClaudineError(ErrorCode.SYSTEM_ERROR, `Event emission failed for ${type}: ${error}`, {
+          eventId: event.eventId,
+        }),
+      );
     }
   }
 
@@ -237,10 +247,10 @@ export class InMemoryEventBus implements EventBus {
    * ARCHITECTURE: Thread-safe implementation using correlation IDs and promises
    * Includes automatic timeout (default 5s) to prevent hanging queries
    */
-  async request<T extends ClaudineEvent, R = any>(
+  async request<T extends ClaudineEvent, R = unknown>(
     type: T['type'],
     payload: Omit<T, keyof BaseEvent | 'type'>,
-    timeoutMs: number = this.defaultRequestTimeoutMs
+    timeoutMs: number = this.defaultRequestTimeoutMs,
   ): Promise<Result<R>> {
     const correlationId = crypto.randomUUID();
 
@@ -253,12 +263,9 @@ export class InMemoryEventBus implements EventBus {
           this.logger.error('Request timeout', undefined, {
             eventType: type,
             correlationId,
-            timeoutMs
+            timeoutMs,
           });
-          resolve(err(new ClaudineError(
-            ErrorCode.SYSTEM_ERROR,
-            `Request timeout after ${timeoutMs}ms for ${type}`
-          )));
+          resolve(err(new ClaudineError(ErrorCode.SYSTEM_ERROR, `Request timeout after ${timeoutMs}ms for ${type}`)));
         }
       }, timeoutMs);
 
@@ -277,29 +284,29 @@ export class InMemoryEventBus implements EventBus {
             pendingRequest.resolved = true;
             clearTimeout(timeoutId);
             this.pendingRequests.delete(correlationId);
-            resolve(err(error instanceof ClaudineError ? error : new ClaudineError(
-              ErrorCode.SYSTEM_ERROR,
-              error.message
-            )));
+            resolve(
+              err(error instanceof ClaudineError ? error : new ClaudineError(ErrorCode.SYSTEM_ERROR, error.message)),
+            );
           }
         },
         timeoutId,
         timestamp: Date.now(),
-        resolved: false
+        resolved: false,
       };
 
       this.pendingRequests.set(correlationId, pendingRequest as PendingRequest);
 
       // Emit event with correlation ID
       const event = createEvent(type, {
-        ...payload,
-        __correlationId: correlationId
-      } as any) as T;
+        ...(payload as Record<string, unknown>),
+        __correlationId: correlationId,
+        // biome-ignore lint/suspicious/noExplicitAny: createEvent requires Omit<T> but we're merging runtime fields
+      } as any as Omit<T, keyof BaseEvent | 'type'>) as T;
 
       this.logger.debug('Request event emitted', {
         eventType: event.type,
         eventId: event.eventId,
-        correlationId
+        correlationId,
       });
 
       // Get handlers for this event type
@@ -308,10 +315,7 @@ export class InMemoryEventBus implements EventBus {
       if (handlers.length === 0) {
         const pending = this.pendingRequests.get(correlationId);
         if (pending) {
-          pending.reject(new ClaudineError(
-            ErrorCode.SYSTEM_ERROR,
-            `No handlers registered for query: ${type}`
-          ));
+          pending.reject(new ClaudineError(ErrorCode.SYSTEM_ERROR, `No handlers registered for query: ${type}`));
         }
         return;
       }
@@ -374,12 +378,14 @@ export class InMemoryEventBus implements EventBus {
     if (this.subscriptions.size >= this.maxTotalSubscriptions) {
       this.logger.error('Maximum total subscriptions reached', undefined, {
         limit: this.maxTotalSubscriptions,
-        current: this.subscriptions.size
+        current: this.subscriptions.size,
       });
-      return err(new ClaudineError(
-        ErrorCode.RESOURCE_LIMIT_EXCEEDED,
-        `Maximum subscription limit (${this.maxTotalSubscriptions}) reached`
-      ));
+      return err(
+        new ClaudineError(
+          ErrorCode.RESOURCE_LIMIT_EXCEEDED,
+          `Maximum subscription limit (${this.maxTotalSubscriptions}) reached`,
+        ),
+      );
     }
 
     if (!this.handlers.has(eventType)) {
@@ -393,7 +399,7 @@ export class InMemoryEventBus implements EventBus {
       this.logger.warn('Maximum listeners per event approaching limit', {
         eventType,
         limit: this.maxListenersPerEvent,
-        current: handlers.length
+        current: handlers.length,
       });
     }
 
@@ -404,13 +410,13 @@ export class InMemoryEventBus implements EventBus {
     this.subscriptions.set(subscriptionId, {
       eventType,
       handler: handler as EventHandler,
-      isGlobal: false
+      isGlobal: false,
     });
 
     this.logger.debug('Event handler subscribed', {
       eventType,
       subscriptionId,
-      handlerCount: handlers.length
+      handlerCount: handlers.length,
     });
 
     return ok(subscriptionId);
@@ -420,10 +426,7 @@ export class InMemoryEventBus implements EventBus {
     const subscription = this.subscriptions.get(subscriptionId);
 
     if (!subscription) {
-      return err(new ClaudineError(
-        ErrorCode.CONFIGURATION_ERROR,
-        `Subscription not found: ${subscriptionId}`
-      ));
+      return err(new ClaudineError(ErrorCode.CONFIGURATION_ERROR, `Subscription not found: ${subscriptionId}`));
     }
 
     // Remove from subscriptions map
@@ -448,7 +451,7 @@ export class InMemoryEventBus implements EventBus {
     this.logger.debug('Handler unsubscribed', {
       subscriptionId,
       eventType: subscription.eventType || 'global',
-      isGlobal: subscription.isGlobal
+      isGlobal: subscription.isGlobal,
     });
 
     return ok(undefined);
@@ -461,12 +464,12 @@ export class InMemoryEventBus implements EventBus {
     const subscriptionId = `global-${++this.subscriptionCounter}`;
     this.subscriptions.set(subscriptionId, {
       handler,
-      isGlobal: true
+      isGlobal: true,
     });
 
     this.logger.debug('Global event handler subscribed', {
       subscriptionId,
-      globalHandlerCount: this.globalHandlers.length
+      globalHandlerCount: this.globalHandlers.length,
     });
 
     return ok(subscriptionId);
@@ -485,23 +488,24 @@ export class InMemoryEventBus implements EventBus {
    * Get current subscription statistics
    */
   getStats(): { eventTypes: number; totalHandlers: number; globalHandlers: number } {
-    const totalHandlers = Array.from(this.handlers.values())
-      .reduce((sum, handlers) => sum + handlers.length, 0);
+    const totalHandlers = Array.from(this.handlers.values()).reduce((sum, handlers) => sum + handlers.length, 0);
 
     return {
       eventTypes: this.handlers.size,
       totalHandlers,
-      globalHandlers: this.globalHandlers.length
+      globalHandlers: this.globalHandlers.length,
     };
   }
 
   /**
    * Convenience method for testing - similar to Node's EventEmitter
    */
+  // biome-ignore lint/suspicious/noExplicitAny: testing convenience — mirrors Node EventEmitter API
   on(event: string, handler: (data: any) => void): string {
     const wrappedHandler: EventHandler = async (evt) => {
       handler(evt);
     };
+    // biome-ignore lint/suspicious/noExplicitAny: string event name can't be narrowed to ClaudineEvent union at this call site
     const result = this.subscribe(event as any, wrappedHandler);
     return result.ok ? result.value : '';
   }
@@ -516,6 +520,7 @@ export class InMemoryEventBus implements EventBus {
   /**
    * Convenience method for testing - one-time event listener
    */
+  // biome-ignore lint/suspicious/noExplicitAny: testing convenience — mirrors Node EventEmitter API
   once(event: string, handler: (data: any) => void): void {
     const subscriptionId = this.on(event, (data) => {
       handler(data);
@@ -526,9 +531,10 @@ export class InMemoryEventBus implements EventBus {
   /**
    * Convenience method for testing - handle request/response pattern
    */
+  // biome-ignore lint/suspicious/noExplicitAny: testing convenience — handler receives untyped event payloads
   onRequest(event: string, handler: (data: any) => Promise<Result<any>>): string {
-    const wrappedHandler: EventHandler = async (evt: any) => {
-      const correlationId = evt.__correlationId || evt.correlationId;
+    const wrappedHandler: EventHandler = async (evt) => {
+      const correlationId = evt.__correlationId;
       if (!correlationId) return;
 
       try {
@@ -542,6 +548,7 @@ export class InMemoryEventBus implements EventBus {
         }
       }
     };
+    // biome-ignore lint/suspicious/noExplicitAny: string event name can't be narrowed to ClaudineEvent union at this call site
     const result = this.subscribe(event as any, wrappedHandler);
     return result.ok ? result.value : '';
   }

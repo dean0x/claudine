@@ -1,13 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import {
-  retryWithBackoff,
-  retryImmediate,
-  isRetryableError,
-  type RetryOptions
-} from '../../../src/utils/retry';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TestLogger } from '../../../src/implementations/logger';
-import { TIMEOUTS, RETRY_CONFIG } from '../../constants';
-import { INVALID_INPUTS, createNonError, RetryTestFunction, createMockFunction } from '../../fixtures/test-helpers';
+import { isRetryableError, type RetryOptions, retryImmediate, retryWithBackoff } from '../../../src/utils/retry';
+import { RETRY_CONFIG, TIMEOUTS } from '../../constants';
+import { createMockFunction, createNonError, INVALID_INPUTS, RetryTestFunction } from '../../fixtures/test-helpers';
 
 describe('isRetryableError - Error Classification', () => {
   // Data-driven tests for retryable errors
@@ -34,7 +29,7 @@ describe('isRetryableError - Error Classification', () => {
     // File system race conditions
     ['EBUSY: resource busy or locked', 'resource busy'],
     ['File is locked by another process', 'resource locked'],
-    ['Resource busy', 'resource busy']
+    ['Resource busy', 'resource busy'],
   ];
 
   // Data-driven tests for non-retryable errors
@@ -49,22 +44,16 @@ describe('isRetryableError - Error Classification', () => {
     ['Resource already exists', 'conflict'],
     ['Some random error', 'unknown'],
     ['Unexpected failure', 'unknown'],
-    ['Internal error', 'unknown']
+    ['Internal error', 'unknown'],
   ];
 
-  it.each(retryableErrorCases)(
-    'should classify "%s" as retryable (%s)',
-    (errorMessage, category) => {
-      expect(isRetryableError(new Error(errorMessage))).toBe(true);
-    }
-  );
+  it.each(retryableErrorCases)('should classify "%s" as retryable (%s)', (errorMessage, category) => {
+    expect(isRetryableError(new Error(errorMessage))).toBe(true);
+  });
 
-  it.each(nonRetryableErrorCases)(
-    'should classify "%s" as non-retryable (%s)',
-    (errorMessage, category) => {
-      expect(isRetryableError(new Error(errorMessage))).toBe(false);
-    }
-  );
+  it.each(nonRetryableErrorCases)('should classify "%s" as non-retryable (%s)', (errorMessage, category) => {
+    expect(isRetryableError(new Error(errorMessage))).toBe(false);
+  });
 
   it('should return false for non-Error objects', () => {
     // Test with properly typed non-Error values
@@ -82,10 +71,10 @@ describe('isRetryableError - Error Classification', () => {
       new Error('ECONNREFUSED: connection refused'),
       new Error('econnrefused: Connection Refused'),
       new Error('Rate Limit Exceeded'),
-      new Error('RATE limit exceeded')
+      new Error('RATE limit exceeded'),
     ];
 
-    errors.forEach(error => {
+    errors.forEach((error) => {
       expect(isRetryableError(error)).toBe(true);
     });
   });
@@ -101,8 +90,7 @@ describe('retryWithBackoff - Exponential Backoff Strategy', () => {
   });
 
   it('should return immediately on first success', async () => {
-    const testFn = new RetryTestFunction<string>()
-      .willSucceedWith('success');
+    const testFn = new RetryTestFunction<string>().willSucceedWith('success');
 
     const resultPromise = retryWithBackoff(testFn.fn, { maxRetries: 3 });
     await vi.runAllTimersAsync();
@@ -113,9 +101,7 @@ describe('retryWithBackoff - Exponential Backoff Strategy', () => {
   });
 
   it('should retry with exponential backoff on failure', async () => {
-    const testFn = new RetryTestFunction<string>()
-      .willFailTimes(2, 'ECONNREFUSED')
-      .willSucceedWith('success');
+    const testFn = new RetryTestFunction<string>().willFailTimes(2, 'ECONNREFUSED').willSucceedWith('success');
 
     const resultPromise = retryWithBackoff(testFn.fn);
     await vi.runAllTimersAsync();
@@ -126,14 +112,12 @@ describe('retryWithBackoff - Exponential Backoff Strategy', () => {
   });
 
   it('should respect custom backoff settings', async () => {
-    const testFn = new RetryTestFunction<string>()
-      .willFailWith('ETIMEDOUT')
-      .willSucceedWith('success');
+    const testFn = new RetryTestFunction<string>().willFailWith('ETIMEDOUT').willSucceedWith('success');
 
     const options: RetryOptions = {
       initialDelay: 200,
       multiplier: 3,
-      maxDelay: TIMEOUTS.MEDIUM
+      maxDelay: TIMEOUTS.MEDIUM,
     };
 
     const resultPromise = retryWithBackoff(testFn.fn, options);
@@ -158,16 +142,13 @@ describe('retryWithBackoff - Exponential Backoff Strategy', () => {
       initialDelay: 100,
       multiplier: 10,
       maxDelay: 500,
-      maxRetries: 3
+      maxRetries: 3,
     };
 
     const resultPromise = retryWithBackoff(trackingFn, options);
 
     // Run timers and await rejection together to avoid unhandled promises
-    const [rejection] = await Promise.allSettled([
-      resultPromise,
-      vi.runAllTimersAsync()
-    ]);
+    const [rejection] = await Promise.allSettled([resultPromise, vi.runAllTimersAsync()]);
 
     expect(rejection.status).toBe('rejected');
     if (rejection.status === 'rejected') {
@@ -185,16 +166,12 @@ describe('retryWithBackoff - Exponential Backoff Strategy', () => {
   });
 
   it('should throw after max retries', async () => {
-    const testFn = new RetryTestFunction()
-      .willFailTimes(10, 'ECONNREFUSED'); // Always fails
+    const testFn = new RetryTestFunction().willFailTimes(10, 'ECONNREFUSED'); // Always fails
 
     const resultPromise = retryWithBackoff(testFn.fn, { maxRetries: 2 });
 
     // Run timers and await rejection together
-    const [rejection] = await Promise.allSettled([
-      resultPromise,
-      vi.runAllTimersAsync()
-    ]);
+    const [rejection] = await Promise.allSettled([resultPromise, vi.runAllTimersAsync()]);
 
     expect(rejection.status).toBe('rejected');
     if (rejection.status === 'rejected') {
@@ -206,16 +183,12 @@ describe('retryWithBackoff - Exponential Backoff Strategy', () => {
   });
 
   it('should not retry non-retryable errors', async () => {
-    const testFn = new RetryTestFunction()
-      .willFailWith('Authentication failed');
+    const testFn = new RetryTestFunction().willFailWith('Authentication failed');
 
     const resultPromise = retryWithBackoff(testFn.fn);
 
     // Run timers and await rejection together
-    const [rejection] = await Promise.allSettled([
-      resultPromise,
-      vi.runAllTimersAsync()
-    ]);
+    const [rejection] = await Promise.allSettled([resultPromise, vi.runAllTimersAsync()]);
 
     expect(rejection.status).toBe('rejected');
     if (rejection.status === 'rejected') {
@@ -234,7 +207,7 @@ describe('retryWithBackoff - Exponential Backoff Strategy', () => {
 
     const resultPromise = retryWithBackoff(testFn.fn, {
       isRetryable: customRetryable,
-      maxRetries: 3
+      maxRetries: 3,
     });
 
     await vi.runAllTimersAsync();
@@ -246,13 +219,11 @@ describe('retryWithBackoff - Exponential Backoff Strategy', () => {
 
   it('should log retry attempts with context', async () => {
     const logger = new TestLogger();
-    const testFn = new RetryTestFunction<string>()
-      .willFailWith('ECONNREFUSED')
-      .willSucceedWith('success');
+    const testFn = new RetryTestFunction<string>().willFailWith('ECONNREFUSED').willSucceedWith('success');
 
     const resultPromise = retryWithBackoff(testFn.fn, {
       logger,
-      operation: 'test-operation'
+      operation: 'test-operation',
     });
 
     await vi.runAllTimersAsync();
@@ -264,9 +235,8 @@ describe('retryWithBackoff - Exponential Backoff Strategy', () => {
     expect(hasRetryLogs).toBe(true);
 
     // Find retry log - should contain the operation name in the message
-    const retryLog = logs.find(l =>
-      l.message.includes('test-operation') &&
-      l.message.toLowerCase().includes('retry')
+    const retryLog = logs.find(
+      (l) => l.message.includes('test-operation') && l.message.toLowerCase().includes('retry'),
     );
 
     expect(retryLog).toBeDefined();
@@ -283,7 +253,7 @@ describe('retryWithBackoff - Exponential Backoff Strategy', () => {
     let callCount = 0;
     const asyncOperation = async () => {
       callCount++;
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 10));
       if (callCount < 3) {
         throw new Error('ECONNREFUSED');
       }
@@ -301,8 +271,7 @@ describe('retryWithBackoff - Exponential Backoff Strategy', () => {
 
 describe('retryImmediate - Fast Retry Strategy', () => {
   it('should succeed on first attempt', async () => {
-    const testFn = new RetryTestFunction<string>()
-      .willSucceedWith('success');
+    const testFn = new RetryTestFunction<string>().willSucceedWith('success');
 
     const result = await retryImmediate(testFn.fn);
 
@@ -311,9 +280,7 @@ describe('retryImmediate - Fast Retry Strategy', () => {
   });
 
   it('should retry immediately without delay', async () => {
-    const testFn = new RetryTestFunction<string>()
-      .willFailTimes(2, 'Failed')
-      .willSucceedWith('success');
+    const testFn = new RetryTestFunction<string>().willFailTimes(2, 'Failed').willSucceedWith('success');
 
     const start = Date.now();
     const result = await retryImmediate(testFn.fn, 5);
@@ -325,8 +292,7 @@ describe('retryImmediate - Fast Retry Strategy', () => {
   });
 
   it('should throw after max attempts', async () => {
-    const testFn = new RetryTestFunction()
-      .willFailTimes(10, 'Failed');
+    const testFn = new RetryTestFunction().willFailTimes(10, 'Failed');
 
     await expect(retryImmediate(testFn.fn, 3)).rejects.toThrow('Failed');
     expect(testFn.wasCalledTimes(3)).toBe(true);
@@ -389,7 +355,7 @@ describe('Real-world scenarios', () => {
 
     const resultPromise = retryWithBackoff(testFn.fn, {
       initialDelay: RETRY_CONFIG.BASE_DELAY,
-      maxRetries: 5
+      maxRetries: 5,
     });
 
     await vi.runAllTimersAsync();
@@ -406,7 +372,7 @@ describe('Real-world scenarios', () => {
 
     const resultPromise = retryWithBackoff(testFn.fn, {
       initialDelay: 100,
-      maxRetries: 10
+      maxRetries: 10,
     });
 
     await vi.runAllTimersAsync();
@@ -418,19 +384,15 @@ describe('Real-world scenarios', () => {
 
   it('should handle concurrent retries efficiently', async () => {
     const testFunctions = Array.from({ length: 5 }, (_, i) => {
-      return new RetryTestFunction<string>()
-        .willFailWith('ECONNREFUSED')
-        .willSucceedWith(`success-${i}`);
+      return new RetryTestFunction<string>().willFailWith('ECONNREFUSED').willSucceedWith(`success-${i}`);
     });
 
-    const promises = testFunctions.map(tf =>
-      retryWithBackoff(tf.fn, { initialDelay: 50, maxRetries: 2 })
-    );
+    const promises = testFunctions.map((tf) => retryWithBackoff(tf.fn, { initialDelay: 50, maxRetries: 2 }));
 
     await vi.runAllTimersAsync();
     const results = await Promise.all(promises);
 
     expect(results).toEqual(['success-0', 'success-1', 'success-2', 'success-3', 'success-4']);
-    testFunctions.forEach(tf => expect(tf.wasCalledTimes(2)).toBe(true));
+    testFunctions.forEach((tf) => expect(tf.wasCalledTimes(2)).toBe(true));
   });
 });

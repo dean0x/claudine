@@ -8,9 +8,13 @@
  * - Test recommendations are helpful
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import os from 'os';
-import { validateConfiguration, ConfigValidationWarning, formatValidationWarnings } from '../../../src/core/config-validator.js';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  ConfigValidationWarning,
+  formatValidationWarnings,
+  validateConfiguration,
+} from '../../../src/core/config-validator.js';
 import { Configuration } from '../../../src/core/configuration.js';
 import { createTestConfiguration } from '../../fixtures/factories.js';
 
@@ -29,7 +33,7 @@ describe('Component-Level Configuration Validation', () => {
       });
 
       const warnings = validateConfiguration(config);
-      const cpuWarning = warnings.find(w => w.field === 'cpuCoresReserved');
+      const cpuWarning = warnings.find((w) => w.field === 'cpuCoresReserved');
 
       expect(cpuWarning).toBeDefined();
       expect(cpuWarning!.severity).toBe('warning');
@@ -44,9 +48,7 @@ describe('Component-Level Configuration Validation', () => {
       });
 
       const warnings = validateConfiguration(config);
-      const cpuWarning = warnings.find(
-        w => w.field === 'cpuCoresReserved' && w.message.includes('%')
-      );
+      const cpuWarning = warnings.find((w) => w.field === 'cpuCoresReserved' && w.message.includes('%'));
 
       expect(cpuWarning).toBeDefined();
       expect(cpuWarning!.severity).toBe('info');
@@ -59,9 +61,7 @@ describe('Component-Level Configuration Validation', () => {
       });
 
       const warnings = validateConfiguration(config);
-      const cpuWarning = warnings.find(
-        w => w.field === 'cpuCoresReserved' && w.message.includes('Only 1 core')
-      );
+      const cpuWarning = warnings.find((w) => w.field === 'cpuCoresReserved' && w.message.includes('Only 1 core'));
 
       expect(cpuWarning).toBeDefined();
       expect(cpuWarning!.severity).toBe('info');
@@ -74,7 +74,7 @@ describe('Component-Level Configuration Validation', () => {
       });
 
       const warnings = validateConfiguration(config);
-      const cpuWarnings = warnings.filter(w => w.field === 'cpuCoresReserved');
+      const cpuWarnings = warnings.filter((w) => w.field === 'cpuCoresReserved');
 
       expect(cpuWarnings).toHaveLength(0);
     });
@@ -87,7 +87,7 @@ describe('Component-Level Configuration Validation', () => {
       });
 
       const warnings = validateConfiguration(config);
-      const memWarning = warnings.find(w => w.field === 'memoryReserve');
+      const memWarning = warnings.find((w) => w.field === 'memoryReserve');
 
       expect(memWarning).toBeDefined();
       expect(memWarning!.severity).toBe('warning');
@@ -101,9 +101,7 @@ describe('Component-Level Configuration Validation', () => {
       });
 
       const warnings = validateConfiguration(config);
-      const memWarning = warnings.find(
-        w => w.field === 'memoryReserve' && w.message.includes('%')
-      );
+      const memWarning = warnings.find((w) => w.field === 'memoryReserve' && w.message.includes('%'));
 
       expect(memWarning).toBeDefined();
       expect(memWarning!.severity).toBe('info');
@@ -115,9 +113,7 @@ describe('Component-Level Configuration Validation', () => {
       });
 
       const warnings = validateConfiguration(config);
-      const memWarning = warnings.find(
-        w => w.field === 'memoryReserve' && w.message.includes('very low')
-      );
+      const memWarning = warnings.find((w) => w.field === 'memoryReserve' && w.message.includes('very low'));
 
       expect(memWarning).toBeDefined();
       expect(memWarning!.severity).toBe('warning');
@@ -130,7 +126,7 @@ describe('Component-Level Configuration Validation', () => {
       });
 
       const warnings = validateConfiguration(config);
-      const memWarnings = warnings.filter(w => w.field === 'memoryReserve');
+      const memWarnings = warnings.filter((w) => w.field === 'memoryReserve');
 
       expect(memWarnings).toHaveLength(0);
     });
@@ -143,7 +139,7 @@ describe('Component-Level Configuration Validation', () => {
       });
 
       const warnings = validateConfiguration(config);
-      const timeoutWarning = warnings.find(w => w.field === 'timeout');
+      const timeoutWarning = warnings.find((w) => w.field === 'timeout');
 
       expect(timeoutWarning).toBeDefined();
       expect(timeoutWarning!.severity).toBe('info');
@@ -156,7 +152,7 @@ describe('Component-Level Configuration Validation', () => {
       });
 
       const warnings = validateConfiguration(config);
-      const timeoutWarning = warnings.find(w => w.field === 'timeout');
+      const timeoutWarning = warnings.find((w) => w.field === 'timeout');
 
       expect(timeoutWarning).toBeDefined();
       expect(timeoutWarning!.severity).toBe('info');
@@ -169,7 +165,7 @@ describe('Component-Level Configuration Validation', () => {
       });
 
       const warnings = validateConfiguration(config);
-      const timeoutWarnings = warnings.filter(w => w.field === 'timeout');
+      const timeoutWarnings = warnings.filter((w) => w.field === 'timeout');
 
       expect(timeoutWarnings).toHaveLength(0);
     });
@@ -182,7 +178,7 @@ describe('Component-Level Configuration Validation', () => {
       });
 
       const warnings = validateConfiguration(config);
-      const listenerWarning = warnings.find(w => w.field === 'maxListenersPerEvent');
+      const listenerWarning = warnings.find((w) => w.field === 'maxListenersPerEvent');
 
       expect(listenerWarning).toBeDefined();
       expect(listenerWarning!.severity).toBe('warning');
@@ -195,7 +191,7 @@ describe('Component-Level Configuration Validation', () => {
       });
 
       const warnings = validateConfiguration(config);
-      const subWarning = warnings.find(w => w.field === 'maxTotalSubscriptions');
+      const subWarning = warnings.find((w) => w.field === 'maxTotalSubscriptions');
 
       expect(subWarning).toBeDefined();
       expect(subWarning!.severity).toBe('warning');
@@ -210,7 +206,7 @@ describe('Component-Level Configuration Validation', () => {
 
       const warnings = validateConfiguration(config);
       const eventBusWarnings = warnings.filter(
-        w => w.field === 'maxListenersPerEvent' || w.field === 'maxTotalSubscriptions'
+        (w) => w.field === 'maxListenersPerEvent' || w.field === 'maxTotalSubscriptions',
       );
 
       expect(eventBusWarnings).toHaveLength(0);
@@ -224,7 +220,7 @@ describe('Component-Level Configuration Validation', () => {
       });
 
       const warnings = validateConfiguration(config);
-      const bufferWarning = warnings.find(w => w.field === 'maxOutputBuffer');
+      const bufferWarning = warnings.find((w) => w.field === 'maxOutputBuffer');
 
       expect(bufferWarning).toBeDefined();
       expect(bufferWarning!.severity).toBe('info');
@@ -237,7 +233,7 @@ describe('Component-Level Configuration Validation', () => {
       });
 
       const warnings = validateConfiguration(config);
-      const thresholdWarning = warnings.find(w => w.field === 'fileStorageThresholdBytes');
+      const thresholdWarning = warnings.find((w) => w.field === 'fileStorageThresholdBytes');
 
       expect(thresholdWarning).toBeDefined();
       expect(thresholdWarning!.severity).toBe('info');
@@ -251,7 +247,7 @@ describe('Component-Level Configuration Validation', () => {
 
       const warnings = validateConfiguration(config);
       const outputWarnings = warnings.filter(
-        w => w.field === 'maxOutputBuffer' || w.field === 'fileStorageThresholdBytes'
+        (w) => w.field === 'maxOutputBuffer' || w.field === 'fileStorageThresholdBytes',
       );
 
       expect(outputWarnings).toHaveLength(0);
@@ -286,10 +282,10 @@ describe('Component-Level Configuration Validation', () => {
       const warnings = validateConfiguration(config);
 
       expect(warnings.length).toBeGreaterThanOrEqual(4);
-      expect(warnings.some(w => w.field === 'cpuCoresReserved')).toBe(true);
-      expect(warnings.some(w => w.field === 'memoryReserve')).toBe(true);
-      expect(warnings.some(w => w.field === 'timeout')).toBe(true);
-      expect(warnings.some(w => w.field === 'maxListenersPerEvent')).toBe(true);
+      expect(warnings.some((w) => w.field === 'cpuCoresReserved')).toBe(true);
+      expect(warnings.some((w) => w.field === 'memoryReserve')).toBe(true);
+      expect(warnings.some((w) => w.field === 'timeout')).toBe(true);
+      expect(warnings.some((w) => w.field === 'maxListenersPerEvent')).toBe(true);
     });
 
     it('should categorize warnings by severity correctly', () => {
@@ -299,8 +295,8 @@ describe('Component-Level Configuration Validation', () => {
       });
 
       const warnings = validateConfiguration(config);
-      const warningCount = warnings.filter(w => w.severity === 'warning').length;
-      const infoCount = warnings.filter(w => w.severity === 'info').length;
+      const warningCount = warnings.filter((w) => w.severity === 'warning').length;
+      const infoCount = warnings.filter((w) => w.severity === 'info').length;
 
       expect(warningCount).toBeGreaterThanOrEqual(1);
       expect(infoCount).toBeGreaterThanOrEqual(1);

@@ -8,21 +8,21 @@
  * Quality: 3-5 assertions per test, AAA pattern, behavioral testing
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { TaskFactory } from '../fixtures/factories';
-import type { TaskManager, ScheduleService } from '../../src/core/interfaces';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Container } from '../../src/core/container';
-import { ok, err } from '../../src/core/result';
-import { ClaudineError, ErrorCode, taskNotFound } from '../../src/core/errors';
+import type { ResumeTaskRequest, Schedule, ScheduleExecution } from '../../src/core/domain';
 import {
-  ScheduleType,
-  ScheduleStatus,
+  createSchedule,
   MissedRunPolicy,
   ScheduleId,
+  ScheduleStatus,
+  ScheduleType,
   TaskId,
-  createSchedule,
 } from '../../src/core/domain';
-import type { Schedule, ScheduleExecution, ResumeTaskRequest } from '../../src/core/domain';
+import { ClaudineError, ErrorCode, taskNotFound } from '../../src/core/errors';
+import type { ScheduleService, TaskManager } from '../../src/core/interfaces';
+import { err, ok } from '../../src/core/result';
+import { TaskFactory } from '../fixtures/factories';
 
 // Test constants
 const VALID_PROMPT = 'analyze the codebase';
@@ -72,7 +72,7 @@ class MockTaskManager implements TaskManager {
       taskId,
       stdout: ['line 1', 'line 2', 'line 3'],
       stderr: [],
-      totalSize: 24
+      totalSize: 24,
     });
   }
 
@@ -92,9 +92,7 @@ class MockTaskManager implements TaskManager {
     if (!oldTask) {
       return err(taskNotFound(taskId));
     }
-    const newTask = new TaskFactory()
-      .withPrompt(oldTask.prompt)
-      .build();
+    const newTask = new TaskFactory().withPrompt(oldTask.prompt).build();
     this.taskStorage.set(newTask.id, newTask);
     return ok(newTask);
   }
@@ -108,14 +106,14 @@ class MockTaskManager implements TaskManager {
       return err(taskNotFound(request.taskId));
     }
     if (oldTask.status !== 'completed' && oldTask.status !== 'failed' && oldTask.status !== 'cancelled') {
-      return err(new ClaudineError(
-        ErrorCode.INVALID_OPERATION,
-        `Task ${request.taskId} cannot be resumed in state ${oldTask.status}`
-      ));
+      return err(
+        new ClaudineError(
+          ErrorCode.INVALID_OPERATION,
+          `Task ${request.taskId} cannot be resumed in state ${oldTask.status}`,
+        ),
+      );
     }
-    const newTask = new TaskFactory()
-      .withPrompt(`PREVIOUS TASK CONTEXT:\n${oldTask.prompt}`)
-      .build();
+    const newTask = new TaskFactory().withPrompt(`PREVIOUS TASK CONTEXT:\n${oldTask.prompt}`).build();
     (newTask as any).retryCount = 1;
     (newTask as any).parentTaskId = request.taskId;
     this.taskStorage.set(newTask.id, newTask);
@@ -123,9 +121,15 @@ class MockTaskManager implements TaskManager {
   }
 
   // Stub worktree methods to satisfy interface
-  async listWorktrees() { return ok([]); }
-  async getWorktreeStatus() { return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, 'Not implemented')); }
-  async cleanupWorktrees() { return ok({ removed: 0, kept: 0, errors: [] }); }
+  async listWorktrees() {
+    return ok([]);
+  }
+  async getWorktreeStatus() {
+    return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, 'Not implemented'));
+  }
+  async cleanupWorktrees() {
+    return ok({ removed: 0, kept: 0, errors: [] });
+  }
 
   reset() {
     this.delegateCalls = [];
@@ -176,7 +180,7 @@ class MockScheduleService implements ScheduleService {
     this.listCalls.push({ status, limit, offset });
     const all = Array.from(this.scheduleStorage.values());
     if (status) {
-      return ok(all.filter(s => s.status === status));
+      return ok(all.filter((s) => s.status === status));
     }
     return ok(all);
   }
@@ -185,12 +189,9 @@ class MockScheduleService implements ScheduleService {
     this.getCalls.push({ scheduleId, includeHistory, historyLimit });
     const schedule = this.scheduleStorage.get(scheduleId);
     if (!schedule) {
-      return err(new ClaudineError(
-        ErrorCode.TASK_NOT_FOUND,
-        `Schedule ${scheduleId} not found`
-      ));
+      return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`));
     }
-    const history: ScheduleExecution[] = includeHistory ? [] : undefined as any;
+    const history: ScheduleExecution[] = includeHistory ? [] : (undefined as any);
     return ok({ schedule, history });
   }
 
@@ -250,11 +251,7 @@ class MockContainer implements Container {
   get<T>(key: string) {
     const value = this.services.get(key);
     if (!value) {
-      return err(new ClaudineError(
-        ErrorCode.DEPENDENCY_INJECTION_FAILED,
-        `Service not found: ${key}`,
-        { key }
-      ));
+      return err(new ClaudineError(ErrorCode.DEPENDENCY_INJECTION_FAILED, `Service not found: ${key}`, { key }));
     }
 
     // Handle singleton factories
@@ -290,8 +287,8 @@ describe('CLI - Command Parsing and Validation', () => {
         info: vi.fn(),
         error: vi.fn(),
         warn: vi.fn(),
-        debug: vi.fn()
-      }))
+        debug: vi.fn(),
+      })),
     });
   });
 
@@ -373,7 +370,7 @@ describe('CLI - Command Parsing and Validation', () => {
 
     it('should reject invalid priority values', () => {
       const result = validateDelegateInput(VALID_PROMPT, {
-        priority: 'P5' as any
+        priority: 'P5' as any,
       });
 
       expect(result.ok).toBe(false);
@@ -394,9 +391,9 @@ describe('CLI - Command Parsing and Validation', () => {
 
     it('should validate working directory path format', () => {
       const invalidPaths = [
-        '../../../etc/passwd',  // Path traversal
-        'relative/path',         // Non-absolute
-        '/path/with/../../',     // Normalized traversal
+        '../../../etc/passwd', // Path traversal
+        'relative/path', // Non-absolute
+        '/path/with/../../', // Normalized traversal
       ];
 
       for (const workingDirectory of invalidPaths) {
@@ -419,7 +416,7 @@ describe('CLI - Command Parsing and Validation', () => {
 
     it('should validate maxOutputBuffer is within limits', () => {
       const result = validateDelegateInput(VALID_PROMPT, {
-        maxOutputBuffer: 1024 * 1024 * 1024 * 10  // 10GB - too large
+        maxOutputBuffer: 1024 * 1024 * 1024 * 10, // 10GB - too large
       });
 
       expect(result.ok).toBe(false);
@@ -440,7 +437,7 @@ describe('CLI - Command Parsing and Validation', () => {
 
     it('should create task with custom priority when specified', async () => {
       await simulateDelegateCommand(mockTaskManager, VALID_PROMPT, {
-        priority: VALID_PRIORITY
+        priority: VALID_PRIORITY,
       });
 
       expect(mockTaskManager.delegateCalls).toHaveLength(1);
@@ -452,12 +449,12 @@ describe('CLI - Command Parsing and Validation', () => {
 
       const call = mockTaskManager.delegateCalls[0];
       expect(call.workingDirectory).toBeTruthy();
-      expect(call.workingDirectory).toMatch(/^\//);  // Absolute path
+      expect(call.workingDirectory).toMatch(/^\//); // Absolute path
     });
 
     it('should use custom working directory when provided', async () => {
       await simulateDelegateCommand(mockTaskManager, VALID_PROMPT, {
-        workingDirectory: VALID_WORKING_DIR
+        workingDirectory: VALID_WORKING_DIR,
       });
 
       expect(mockTaskManager.delegateCalls[0].workingDirectory).toBe(VALID_WORKING_DIR);
@@ -504,7 +501,7 @@ describe('CLI - Command Parsing and Validation', () => {
 
     it('should enable worktree when explicitly requested', async () => {
       await simulateDelegateCommand(mockTaskManager, VALID_PROMPT, {
-        useWorktree: true
+        useWorktree: true,
       });
 
       expect(mockTaskManager.delegateCalls[0].useWorktree).toBe(true);
@@ -517,7 +514,7 @@ describe('CLI - Command Parsing and Validation', () => {
         mockTaskManager.reset();
         await simulateDelegateCommand(mockTaskManager, VALID_PROMPT, {
           useWorktree: true,
-          worktreeCleanup: strategy
+          worktreeCleanup: strategy,
         });
 
         expect(mockTaskManager.delegateCalls[0].worktreeCleanup).toBe(strategy);
@@ -530,7 +527,7 @@ describe('CLI - Command Parsing and Validation', () => {
       for (const strategy of strategies) {
         mockTaskManager.reset();
         await simulateDelegateCommand(mockTaskManager, VALID_PROMPT, {
-          mergeStrategy: strategy
+          mergeStrategy: strategy,
         });
 
         expect(mockTaskManager.delegateCalls[0].mergeStrategy).toBe(strategy);
@@ -640,7 +637,7 @@ describe('CLI - Command Parsing and Validation', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok && Array.isArray(result.value)) {
-        result.value.forEach(task => {
+        result.value.forEach((task) => {
           expect(task).toHaveProperty('status');
           expect(['queued', 'running', 'completed', 'failed', 'cancelled']).toContain(task.status);
         });
@@ -801,7 +798,7 @@ describe('CLI - Command Parsing and Validation', () => {
       expect(retryResult.ok).toBe(true);
       if (retryResult.ok) {
         expect(retryResult.value.prompt).toBe(originalPrompt);
-        expect(retryResult.value.id).not.toBe(taskId);  // New task, new ID
+        expect(retryResult.value.id).not.toBe(taskId); // New task, new ID
       }
     });
 
@@ -1314,68 +1311,55 @@ For local development, use /path/to/claudine/dist/index.js
 
 function validateDelegateInput(prompt: string, options: any) {
   if (!prompt || prompt.trim().length === 0) {
-    return err(new ClaudineError(
-      ErrorCode.INVALID_INPUT,
-      'Prompt is required',
-      { field: 'prompt' }
-    ));
+    return err(new ClaudineError(ErrorCode.INVALID_INPUT, 'Prompt is required', { field: 'prompt' }));
   }
 
   if (options.priority && !['P0', 'P1', 'P2'].includes(options.priority)) {
-    return err(new ClaudineError(
-      ErrorCode.INVALID_INPUT,
-      'Priority must be P0, P1, or P2',
-      { field: 'priority', value: options.priority }
-    ));
+    return err(
+      new ClaudineError(ErrorCode.INVALID_INPUT, 'Priority must be P0, P1, or P2', {
+        field: 'priority',
+        value: options.priority,
+      }),
+    );
   }
 
   if (options.workingDirectory) {
     const path = options.workingDirectory;
     if (!path.startsWith('/')) {
-      return err(new ClaudineError(
-        ErrorCode.INVALID_DIRECTORY,
-        'Working directory must be absolute path',
-        { path }
-      ));
+      return err(new ClaudineError(ErrorCode.INVALID_DIRECTORY, 'Working directory must be absolute path', { path }));
     }
     if (path.includes('..')) {
-      return err(new ClaudineError(
-        ErrorCode.INVALID_DIRECTORY,
-        'Path traversal not allowed',
-        { path }
-      ));
+      return err(new ClaudineError(ErrorCode.INVALID_DIRECTORY, 'Path traversal not allowed', { path }));
     }
   }
 
   if (options.timeout !== undefined) {
     if (typeof options.timeout !== 'number' || options.timeout <= 0 || !isFinite(options.timeout)) {
-      return err(new ClaudineError(
-        ErrorCode.INVALID_INPUT,
-        'Timeout must be positive number',
-        { field: 'timeout', value: options.timeout }
-      ));
+      return err(
+        new ClaudineError(ErrorCode.INVALID_INPUT, 'Timeout must be positive number', {
+          field: 'timeout',
+          value: options.timeout,
+        }),
+      );
     }
   }
 
   if (options.maxOutputBuffer !== undefined) {
-    const maxAllowed = 1024 * 1024 * 100;  // 100MB
+    const maxAllowed = 1024 * 1024 * 100; // 100MB
     if (options.maxOutputBuffer > maxAllowed) {
-      return err(new ClaudineError(
-        ErrorCode.INVALID_INPUT,
-        `maxOutputBuffer exceeds limit of ${maxAllowed} bytes`,
-        { field: 'maxOutputBuffer', value: options.maxOutputBuffer }
-      ));
+      return err(
+        new ClaudineError(ErrorCode.INVALID_INPUT, `maxOutputBuffer exceeds limit of ${maxAllowed} bytes`, {
+          field: 'maxOutputBuffer',
+          value: options.maxOutputBuffer,
+        }),
+      );
     }
   }
 
   return ok(undefined);
 }
 
-async function simulateDelegateCommand(
-  taskManager: MockTaskManager,
-  prompt: string,
-  options?: any
-) {
+async function simulateDelegateCommand(taskManager: MockTaskManager, prompt: string, options?: any) {
   const validation = validateDelegateInput(prompt, options || {});
   if (!validation.ok) {
     return validation;
@@ -1399,33 +1383,19 @@ async function simulateDelegateCommand(
   return await taskManager.delegate(request);
 }
 
-async function simulateStatusCommand(
-  taskManager: MockTaskManager,
-  taskId?: string
-) {
+async function simulateStatusCommand(taskManager: MockTaskManager, taskId?: string) {
   return await taskManager.getStatus(taskId);
 }
 
-async function simulateLogsCommand(
-  taskManager: MockTaskManager,
-  taskId: string,
-  tail?: number
-) {
+async function simulateLogsCommand(taskManager: MockTaskManager, taskId: string, tail?: number) {
   return await taskManager.getLogs(taskId, tail);
 }
 
-async function simulateCancelCommand(
-  taskManager: MockTaskManager,
-  taskId: string,
-  reason?: string
-) {
+async function simulateCancelCommand(taskManager: MockTaskManager, taskId: string, reason?: string) {
   return await taskManager.cancel(taskId, reason);
 }
 
-async function simulateRetryCommand(
-  taskManager: MockTaskManager,
-  taskId: string
-) {
+async function simulateRetryCommand(taskManager: MockTaskManager, taskId: string) {
   return await taskManager.retry(taskId);
 }
 
@@ -1435,19 +1405,18 @@ async function simulateRetryCommand(
 
 function validateScheduleCreateInput(prompt: string, options: any) {
   if (!prompt || prompt.trim().length === 0) {
-    return err(new ClaudineError(
-      ErrorCode.INVALID_INPUT,
-      'Prompt is required for schedule creation',
-      { field: 'prompt' }
-    ));
+    return err(
+      new ClaudineError(ErrorCode.INVALID_INPUT, 'Prompt is required for schedule creation', { field: 'prompt' }),
+    );
   }
 
   if (!options.type || !['cron', 'one_time'].includes(options.type)) {
-    return err(new ClaudineError(
-      ErrorCode.INVALID_INPUT,
-      '--type must be "cron" or "one_time"',
-      { field: 'type', value: options.type }
-    ));
+    return err(
+      new ClaudineError(ErrorCode.INVALID_INPUT, '--type must be "cron" or "one_time"', {
+        field: 'type',
+        value: options.type,
+      }),
+    );
   }
 
   return ok(undefined);
@@ -1467,7 +1436,7 @@ async function simulateScheduleCreate(
     maxRuns?: number;
     expiresAt?: string;
     afterScheduleId?: string;
-  }
+  },
 ) {
   const validation = validateScheduleCreateInput(options.prompt, options);
   if (!validation.ok) return validation;
@@ -1478,7 +1447,14 @@ async function simulateScheduleCreate(
     cronExpression: options.cron,
     scheduledAt: options.at,
     timezone: options.timezone,
-    missedRunPolicy: options.missedRunPolicy === 'catchup' ? MissedRunPolicy.CATCHUP : options.missedRunPolicy === 'fail' ? MissedRunPolicy.FAIL : options.missedRunPolicy ? MissedRunPolicy.SKIP : undefined,
+    missedRunPolicy:
+      options.missedRunPolicy === 'catchup'
+        ? MissedRunPolicy.CATCHUP
+        : options.missedRunPolicy === 'fail'
+          ? MissedRunPolicy.FAIL
+          : options.missedRunPolicy
+            ? MissedRunPolicy.SKIP
+            : undefined,
     priority: options.priority,
     workingDirectory: options.workingDirectory,
     maxRuns: options.maxRuns,
@@ -1496,28 +1472,25 @@ function testParseDelay(delayStr: string): number | null {
   const value = parseInt(match[1]);
   const unit = match[2];
   switch (unit) {
-    case 's': return value * 1000;
-    case 'm': return value * 60 * 1000;
-    case 'h': return value * 60 * 60 * 1000;
-    default: return value * 1000;
+    case 's':
+      return value * 1000;
+    case 'm':
+      return value * 60 * 1000;
+    case 'h':
+      return value * 60 * 60 * 1000;
+    default:
+      return value * 1000;
   }
 }
 
 function validatePipelineInput(steps: string[]) {
   if (steps.length === 0) {
-    return err(new ClaudineError(
-      ErrorCode.INVALID_INPUT,
-      'No pipeline steps found',
-      { field: 'steps' }
-    ));
+    return err(new ClaudineError(ErrorCode.INVALID_INPUT, 'No pipeline steps found', { field: 'steps' }));
   }
   return ok(undefined);
 }
 
-async function simulatePipeline(
-  service: MockScheduleService,
-  pipelineArgs: string[]
-) {
+async function simulatePipeline(service: MockScheduleService, pipelineArgs: string[]) {
   // Parse pipeline: prompt, delay, prompt, delay, prompt...
   const steps: Array<{ prompt: string; delayMs: number }> = [];
   let currentPromptWords: string[] = [];
@@ -1542,7 +1515,7 @@ async function simulatePipeline(
     steps.push({ prompt: currentPromptWords.join(' '), delayMs: cumulativeDelay });
   }
 
-  const validation = validatePipelineInput(steps.map(s => s.prompt));
+  const validation = validatePipelineInput(steps.map((s) => s.prompt));
   if (!validation.ok) return validation;
 
   const now = Date.now();
@@ -1564,11 +1537,7 @@ async function simulatePipeline(
   return ok(undefined);
 }
 
-async function simulateResumeCommand(
-  taskManager: MockTaskManager,
-  taskId: string,
-  additionalContext?: string
-) {
+async function simulateResumeCommand(taskManager: MockTaskManager, taskId: string, additionalContext?: string) {
   return taskManager.resume({
     taskId: TaskId(taskId),
     additionalContext,

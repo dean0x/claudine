@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { PriorityTaskQueue } from '../../../src/implementations/task-queue';
-import { Priority, TaskStatus, TaskId, createTask } from '../../../src/core/domain';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { Task } from '../../../src/core/domain';
+import { createTask, Priority, TaskId, TaskStatus } from '../../../src/core/domain';
+import { PriorityTaskQueue } from '../../../src/implementations/task-queue';
 import { TEST_COUNTS, TIMEOUTS } from '../../constants';
 import { TaskFactory } from '../../fixtures/factories';
 
@@ -21,7 +21,7 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
     it('should enqueue and dequeue a single task', () => {
       const task = createTask({
         prompt: 'test task',
-        priority: Priority.P1
+        priority: Priority.P1,
       });
 
       const enqueueResult = queue.enqueue(task);
@@ -80,11 +80,11 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
       const tasks = Array.from({ length: 5 }, (_, i) =>
         createTask({
           prompt: `task ${i}`,
-          priority: Priority.P1
-        })
+          priority: Priority.P1,
+        }),
       );
 
-      tasks.forEach(task => {
+      tasks.forEach((task) => {
         const result = queue.enqueue(task);
         expect(result.ok).toBe(true);
       });
@@ -119,9 +119,7 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
       }
 
       expect(dequeued).toHaveLength(5);
-      expect(dequeued.map(t => t.prompt)).toEqual(
-        tasks.map(t => t.prompt)
-      );
+      expect(dequeued.map((t) => t.prompt)).toEqual(tasks.map((t) => t.prompt));
     });
   });
 
@@ -151,11 +149,11 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
       const tasks = Array.from({ length: 5 }, (_, i) =>
         createTask({
           prompt: `P1 task ${i}`,
-          priority: Priority.P1
-        })
+          priority: Priority.P1,
+        }),
       );
 
-      tasks.forEach(task => queue.enqueue(task));
+      tasks.forEach((task) => queue.enqueue(task));
 
       const dequeued = [];
       while (!queue.isEmpty()) {
@@ -166,13 +164,7 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
       }
 
       // Should maintain insertion order for same priority
-      expect(dequeued).toEqual([
-        'P1 task 0',
-        'P1 task 1',
-        'P1 task 2',
-        'P1 task 3',
-        'P1 task 4'
-      ]);
+      expect(dequeued).toEqual(['P1 task 0', 'P1 task 1', 'P1 task 2', 'P1 task 3', 'P1 task 4']);
     });
 
     it('should handle complex priority scenarios', () => {
@@ -187,7 +179,7 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
         createTask({ prompt: 'P0-3', priority: Priority.P0 }),
       ];
 
-      tasks.forEach(task => queue.enqueue(task));
+      tasks.forEach((task) => queue.enqueue(task));
 
       const dequeued = [];
       while (!queue.isEmpty()) {
@@ -199,9 +191,13 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
 
       // Expected order: All P0s (FIFO), then P1s (FIFO), then P2s (FIFO)
       expect(dequeued).toEqual([
-        'P0-1', 'P0-2', 'P0-3',  // P0 tasks in order
-        'P1-1', 'P1-2',          // P1 tasks in order
-        'P2-1', 'P2-2'           // P2 tasks in order
+        'P0-1',
+        'P0-2',
+        'P0-3', // P0 tasks in order
+        'P1-1',
+        'P1-2', // P1 tasks in order
+        'P2-1',
+        'P2-2', // P2 tasks in order
       ]);
     });
   });
@@ -210,7 +206,7 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
     it('should peek without removing', () => {
       const task = createTask({
         prompt: 'peek test',
-        priority: Priority.P1
+        priority: Priority.P1,
       });
 
       queue.enqueue(task);
@@ -340,12 +336,12 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
       const tasks = [
         createTask({ prompt: 'P0', priority: Priority.P0 }),
         createTask({ prompt: 'P1', priority: Priority.P1 }),
-        createTask({ prompt: 'P2', priority: Priority.P2 })
+        createTask({ prompt: 'P2', priority: Priority.P2 }),
       ];
 
-      tasks.forEach(task => queue.enqueue(task));
+      tasks.forEach((task) => queue.enqueue(task));
 
-      tasks.forEach(task => {
+      tasks.forEach((task) => {
         expect(queue.contains(task.id)).toBe(true);
       });
 
@@ -360,10 +356,10 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
         createTask({ prompt: 'P0-1', priority: Priority.P0 }),
         createTask({ prompt: 'P1-1', priority: Priority.P1 }),
         createTask({ prompt: 'P2-2', priority: Priority.P2 }),
-        createTask({ prompt: 'P0-2', priority: Priority.P0 })
+        createTask({ prompt: 'P0-2', priority: Priority.P0 }),
       ];
 
-      tasks.forEach(task => queue.enqueue(task));
+      tasks.forEach((task) => queue.enqueue(task));
 
       const allResult = queue.getAll();
       expect(allResult.ok).toBe(true);
@@ -411,10 +407,12 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
   describe('Clear queue', () => {
     it('should remove all tasks', () => {
       for (let i = 0; i < 10; i++) {
-        queue.enqueue(createTask({
-          prompt: `task ${i}`,
-          priority: [Priority.P0, Priority.P1, Priority.P2][i % 3]
-        }));
+        queue.enqueue(
+          createTask({
+            prompt: `task ${i}`,
+            priority: [Priority.P0, Priority.P1, Priority.P2][i % 3],
+          }),
+        );
       }
 
       expect(queue.size()).toBe(10);
@@ -458,10 +456,12 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
       for (let i = 0; i < operations; i++) {
         if (Math.random() > 0.3 || queue.isEmpty()) {
           // 70% chance to enqueue (or always if empty)
-          queue.enqueue(createTask({
-            prompt: `task ${i}`,
-            priority: [Priority.P0, Priority.P1, Priority.P2][i % 3]
-          }));
+          queue.enqueue(
+            createTask({
+              prompt: `task ${i}`,
+              priority: [Priority.P0, Priority.P1, Priority.P2][i % 3],
+            }),
+          );
           enqueued++;
         } else {
           // 30% chance to dequeue
@@ -494,10 +494,12 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
 
       // Enqueue up to max capacity
       for (let i = 0; i < maxQueueSize; i++) {
-        const result = queue.enqueue(createTask({
-          prompt: `task ${i}`,
-          priority: [Priority.P0, Priority.P1, Priority.P2][i % 3]
-        }));
+        const result = queue.enqueue(
+          createTask({
+            prompt: `task ${i}`,
+            priority: [Priority.P0, Priority.P1, Priority.P2][i % 3],
+          }),
+        );
         expect(result.ok).toBe(true);
       }
 
@@ -552,10 +554,10 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
       const tasks = [
         { ...createTask({ prompt: 'A', priority: Priority.P1 }), createdAt: now },
         { ...createTask({ prompt: 'B', priority: Priority.P1 }), createdAt: now },
-        { ...createTask({ prompt: 'C', priority: Priority.P1 }), createdAt: now }
+        { ...createTask({ prompt: 'C', priority: Priority.P1 }), createdAt: now },
       ];
 
-      tasks.forEach(task => queue.enqueue(task));
+      tasks.forEach((task) => queue.enqueue(task));
 
       const dequeued = [];
       while (!queue.isEmpty()) {
@@ -575,7 +577,7 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
       // Simulate real task flow
       const task = createTask({
         prompt: 'process data',
-        priority: Priority.P1
+        priority: Priority.P1,
       });
 
       // Task created and queued
@@ -591,7 +593,7 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
       const retriedTask = {
         ...task,
         attempts: task.attempts + 1,
-        status: TaskStatus.QUEUED
+        status: TaskStatus.QUEUED,
       };
 
       queue.enqueue(retriedTask);
@@ -602,7 +604,7 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
       // Task starts as P2
       const task = createTask({
         prompt: 'background job',
-        priority: Priority.P2
+        priority: Priority.P2,
       });
 
       queue.enqueue(task);
@@ -613,7 +615,7 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
 
       const escalatedTask = {
         ...task,
-        priority: Priority.P0 // Escalated to P0
+        priority: Priority.P0, // Escalated to P0
       };
 
       queue.enqueue(escalatedTask);
@@ -637,11 +639,11 @@ describe('PriorityTaskQueue - REAL Queue Operations', () => {
         const tasks = Array.from({ length: batchSize }, (_, i) =>
           createTask({
             prompt: `batch-${batch}-task-${i}`,
-            priority: batch === 0 ? Priority.P0 : Priority.P1 // First batch is urgent
-          })
+            priority: batch === 0 ? Priority.P0 : Priority.P1, // First batch is urgent
+          }),
         );
 
-        tasks.forEach(task => queue.enqueue(task));
+        tasks.forEach((task) => queue.enqueue(task));
       }
 
       expect(queue.size()).toBe(batchSize * batches);

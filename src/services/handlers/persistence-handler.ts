@@ -3,27 +3,27 @@
  * Manages all task persistence operations through events
  */
 
-import { TaskRepository, Logger } from '../../core/interfaces.js';
-import { Result, ok } from '../../core/result.js';
-import { BaseEventHandler } from '../../core/events/handlers.js';
+import type { Task } from '../../core/domain.js';
+import { TaskStatus } from '../../core/domain.js';
 import { EventBus } from '../../core/events/event-bus.js';
 import {
-  TaskDelegatedEvent,
-  TaskStartedEvent,
-  TaskCompletedEvent,
-  TaskFailedEvent,
   TaskCancelledEvent,
+  TaskCompletedEvent,
+  TaskDelegatedEvent,
+  TaskFailedEvent,
+  TaskStartedEvent,
   TaskTimeoutEvent,
 } from '../../core/events/events.js';
-import { TaskStatus } from '../../core/domain.js';
-import type { Task } from '../../core/domain.js';
+import { BaseEventHandler } from '../../core/events/handlers.js';
+import { Logger, TaskRepository } from '../../core/interfaces.js';
+import { ok, Result } from '../../core/result.js';
 
 export class PersistenceHandler extends BaseEventHandler {
   private eventBus?: EventBus;
 
   constructor(
     private readonly repository: TaskRepository,
-    logger: Logger
+    logger: Logger,
   ) {
     super(logger, 'PersistenceHandler');
   }
@@ -41,7 +41,7 @@ export class PersistenceHandler extends BaseEventHandler {
       eventBus.subscribe('TaskCompleted', this.handleTaskCompleted.bind(this)),
       eventBus.subscribe('TaskFailed', this.handleTaskFailed.bind(this)),
       eventBus.subscribe('TaskCancelled', this.handleTaskCancelled.bind(this)),
-      eventBus.subscribe('TaskTimeout', this.handleTaskTimeout.bind(this))
+      eventBus.subscribe('TaskTimeout', this.handleTaskTimeout.bind(this)),
     ];
 
     // Check if any subscription failed
@@ -61,23 +61,23 @@ export class PersistenceHandler extends BaseEventHandler {
   private async handleTaskDelegated(event: TaskDelegatedEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
       const result = await this.repository.save(event.task);
-      
+
       if (!result.ok) {
         this.logger.error('Failed to persist delegated task', result.error, {
-          taskId: event.task.id
+          taskId: event.task.id,
         });
         return result;
       }
 
       this.logger.debug('Task persisted to database', {
-        taskId: event.task.id
+        taskId: event.task.id,
       });
 
       // Emit TaskPersisted event with full task for queue handler
       if (this.eventBus) {
         await this.eventBus.emit('TaskPersisted', {
           taskId: event.task.id,
-          task: event.task
+          task: event.task,
         });
       }
 
@@ -98,14 +98,14 @@ export class PersistenceHandler extends BaseEventHandler {
 
       if (!result.ok) {
         this.logger.error('Failed to persist task start', result.error, {
-          taskId: event.taskId
+          taskId: event.taskId,
         });
         return result;
       }
 
       this.logger.debug('Task start persisted', {
         taskId: event.taskId,
-        workerId: event.workerId
+        workerId: event.workerId,
       });
 
       return ok(undefined);
@@ -126,7 +126,7 @@ export class PersistenceHandler extends BaseEventHandler {
 
       if (!result.ok) {
         this.logger.error('Failed to persist task completion', result.error, {
-          taskId: event.taskId
+          taskId: event.taskId,
         });
         return result;
       }
@@ -134,7 +134,7 @@ export class PersistenceHandler extends BaseEventHandler {
       this.logger.debug('Task completion persisted', {
         taskId: event.taskId,
         exitCode: event.exitCode,
-        duration: event.duration
+        duration: event.duration,
       });
 
       return ok(undefined);
@@ -154,14 +154,14 @@ export class PersistenceHandler extends BaseEventHandler {
 
       if (!result.ok) {
         this.logger.error('Failed to persist task failure', result.error, {
-          taskId: event.taskId
+          taskId: event.taskId,
         });
         return result;
       }
 
       this.logger.debug('Task failure persisted', {
         taskId: event.taskId,
-        error: event.error.message
+        error: event.error.message,
       });
 
       return ok(undefined);
@@ -180,14 +180,14 @@ export class PersistenceHandler extends BaseEventHandler {
 
       if (!result.ok) {
         this.logger.error('Failed to persist task cancellation', result.error, {
-          taskId: event.taskId
+          taskId: event.taskId,
         });
         return result;
       }
 
       this.logger.debug('Task cancellation persisted', {
         taskId: event.taskId,
-        reason: event.reason
+        reason: event.reason,
       });
 
       return ok(undefined);
@@ -206,14 +206,14 @@ export class PersistenceHandler extends BaseEventHandler {
 
       if (!result.ok) {
         this.logger.error('Failed to persist task timeout', result.error, {
-          taskId: event.taskId
+          taskId: event.taskId,
         });
         return result;
       }
 
       this.logger.debug('Task timeout persisted', {
         taskId: event.taskId,
-        error: event.error.message
+        error: event.error.message,
       });
 
       return ok(undefined);

@@ -1,0 +1,633 @@
+import { EventEmitter } from 'events';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Task } from '../../../src/core/domain';
+import { TaskId, WorkerId } from '../../../src/core/domain';
+import { ClaudineError, ErrorCode } from '../../../src/core/errors';
+import type { EventBus } from '../../../src/core/events/event-bus';
+import type {
+  Logger,
+  OutputCapture,
+  ProcessSpawner,
+  ResourceMonitor,
+  WorktreeManager,
+} from '../../../src/core/interfaces';
+import { err, ok } from '../../../src/core/result';
+import { EventDrivenWorkerPool } from '../../../src/implementations/event-driven-worker-pool';
+import { TaskFactory } from '../../fixtures/factories';
+import { createMockLogger } from '../../fixtures/mocks';
+
+// --- Mock Factories ---
+
+const createMockProcess = () => {
+  const proc = new EventEmitter() as EventEmitter & {
+    pid: number;
+    killed: boolean;
+    kill: ReturnType<typeof vi.fn>;
+    stdin: EventEmitter;
+    stdout: EventEmitter;
+    stderr: EventEmitter;
+  };
+  proc.pid = 12345;
+  proc.killed = false;
+  proc.kill = vi.fn((signal?: string) => {
+    proc.killed = true;
+  });
+  proc.stdin = new EventEmitter();
+  proc.stdout = new EventEmitter();
+  proc.stderr = new EventEmitter();
+  return proc;
+};
+
+const createMockSpawner = () => {
+  const proc = createMockProcess();
+  return {
+    spawner: {
+      spawn: vi.fn().mockReturnValue(ok({ process: proc, pid: proc.pid })),
+      kill: vi.fn().mockReturnValue(ok(undefined)),
+    } as unknown as ProcessSpawner,
+    process: proc,
+  };
+};
+
+const createMockMonitor = () =>
+  ({
+    getResources: vi.fn(),
+    canSpawnWorker: vi.fn().mockResolvedValue(ok(true)),
+    getThresholds: vi.fn().mockReturnValue({ maxCpuPercent: 80, minMemoryBytes: 1_000_000_000 }),
+    incrementWorkerCount: vi.fn(),
+    decrementWorkerCount: vi.fn(),
+    recordSpawn: vi.fn(),
+  }) as unknown as ResourceMonitor;
+
+const createMockWorktreeManager = () =>
+  ({
+    createWorktree: vi.fn().mockResolvedValue(ok({ path: '/tmp/worktree', branch: 'task-branch', baseBranch: 'main' })),
+    removeWorktree: vi.fn().mockResolvedValue(ok(undefined)),
+    completeTask: vi.fn().mockResolvedValue(ok({ merged: true })),
+    getWorktreeStatuses: vi.fn(),
+    getWorktreeStatus: vi.fn(),
+    cleanup: vi.fn(),
+    getCurrentBranch: vi.fn().mockResolvedValue('main'),
+  }) as unknown as WorktreeManager;
+
+const createMockOutputCapture = () =>
+  ({
+    capture: vi.fn().mockReturnValue(ok(undefined)),
+    getOutput: vi.fn().mockReturnValue(ok({ stdout: [], stderr: [], taskId: '', totalSize: 0 })),
+    clear: vi.fn().mockReturnValue(ok(undefined)),
+  }) as unknown as OutputCapture;
+
+const createTestEventBus = () =>
+  ({
+    emit: vi.fn().mockResolvedValue(ok(undefined)),
+    request: vi.fn(),
+    subscribe: vi.fn().mockReturnValue(ok('sub-1')),
+    unsubscribe: vi.fn().mockReturnValue(ok(undefined)),
+    subscribeAll: vi.fn().mockReturnValue(ok('global-1')),
+    unsubscribeAll: vi.fn(),
+    dispose: vi.fn(),
+  }) as unknown as EventBus;
+
+/**
+ * Helper to build a Task object without using withId() (which mutates a frozen object).
+ * Spreads the frozen task from the factory into a plain mutable object.
+ */
+const buildTask = (configure?: (factory: TaskFactory) => void): Task => {
+  const factory = new TaskFactory();
+  if (configure) configure(factory);
+  return { ...factory.build() };
+};
+
+describe('EventDrivenWorkerPool', () => {
+  let pool: EventDrivenWorkerPool;
+  let spawner: ProcessSpawner;
+  let mockProcess: ReturnType<typeof createMockProcess>;
+  let monitor: ResourceMonitor;
+  let logger: Logger;
+  let eventBus: EventBus;
+  let worktreeManager: WorktreeManager;
+  let outputCapture: OutputCapture;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    const spawnerMock = createMockSpawner();
+    spawner = spawnerMock.spawner;
+    mockProcess = spawnerMock.process;
+    monitor = createMockMonitor();
+    logger = createMockLogger();
+    eventBus = createTestEventBus();
+    worktreeManager = createMockWorktreeManager();
+    outputCapture = createMockOutputCapture();
+
+    pool = new EventDrivenWorkerPool(spawner, monitor, logger, eventBus, worktreeManager, outputCapture);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  // --- spawn ---
+
+  describe('spawn', () => {
+    it('should spawn successfully and return worker with correct fields', async () => {
+      const task = buildTask((f) => f.withPrompt('do stuff'));
+
+      const result = await pool.spawn(task);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      const worker = result.value;
+      expect(worker.id).toBe(WorkerId(`worker-${mockProcess.pid}`));
+      expect(worker.taskId).toBe(task.id);
+      expect(worker.pid).toBe(mockProcess.pid);
+      expect(worker.startedAt).toBeGreaterThan(0);
+      expect(worker.cpuUsage).toBe(0);
+      expect(worker.memoryUsage).toBe(0);
+    });
+
+    it('should return error when resources are insufficient (canSpawnWorker returns false)', async () => {
+      (monitor.canSpawnWorker as ReturnType<typeof vi.fn>).mockResolvedValue(ok(false));
+      const task = buildTask();
+
+      const result = await pool.spawn(task);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toBeInstanceOf(ClaudineError);
+      expect((result.error as ClaudineError).code).toBe(ErrorCode.INSUFFICIENT_RESOURCES);
+    });
+
+    it('should return error when canSpawnWorker returns err', async () => {
+      const monitorError = new ClaudineError(ErrorCode.RESOURCE_MONITORING_FAILED, 'monitor broken');
+      (monitor.canSpawnWorker as ReturnType<typeof vi.fn>).mockResolvedValue(err(monitorError));
+      const task = buildTask();
+
+      const result = await pool.spawn(task);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toBe(monitorError);
+    });
+
+    it('should use task.workingDirectory when no worktree is requested', async () => {
+      const task = buildTask((f) => f.withWorkingDirectory('/my/project'));
+
+      await pool.spawn(task);
+
+      expect(spawner.spawn as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task.prompt, '/my/project', task.id);
+    });
+
+    it('should fall back to process.cwd() when no workingDirectory and no worktree', async () => {
+      const task = { ...buildTask(), workingDirectory: undefined } as Task;
+
+      await pool.spawn(task);
+
+      expect(spawner.spawn as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task.prompt, process.cwd(), task.id);
+    });
+
+    it('should create worktree when task.useWorktree is true', async () => {
+      const task = buildTask((f) => f.withUseWorktree(true));
+
+      await pool.spawn(task);
+
+      expect(worktreeManager.createWorktree as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task);
+      expect(spawner.spawn as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task.prompt, '/tmp/worktree', task.id);
+    });
+
+    it('should fall back to normal execution when worktree creation fails', async () => {
+      (worktreeManager.createWorktree as ReturnType<typeof vi.fn>).mockResolvedValue(
+        err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'git worktree failed')),
+      );
+      const task = buildTask((f) => f.withUseWorktree(true).withWorkingDirectory('/fallback/dir'));
+
+      const result = await pool.spawn(task);
+
+      expect(result.ok).toBe(true);
+      expect(spawner.spawn as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task.prompt, '/fallback/dir', task.id);
+      expect(logger.warn as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+        'Failed to create worktree, falling back to normal execution',
+        expect.objectContaining({ taskId: task.id }),
+      );
+    });
+
+    it('should clean up worktree if spawn fails after worktree was created', async () => {
+      const spawnError = new Error('spawn failed');
+      (spawner.spawn as ReturnType<typeof vi.fn>).mockReturnValue(err(spawnError));
+      const task = buildTask((f) => f.withUseWorktree(true));
+
+      const result = await pool.spawn(task);
+
+      expect(result.ok).toBe(false);
+      expect(worktreeManager.removeWorktree as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task.id);
+    });
+
+    it('should increase worker count after successful spawn', async () => {
+      expect(pool.getWorkerCount()).toBe(0);
+
+      const task = buildTask();
+      await pool.spawn(task);
+
+      expect(pool.getWorkerCount()).toBe(1);
+    });
+
+    it('should map task to worker via getWorkerForTask', async () => {
+      const task = buildTask();
+      const result = await pool.spawn(task);
+      if (!result.ok) return;
+
+      const lookup = pool.getWorkerForTask(task.id);
+      expect(lookup.ok).toBe(true);
+      if (!lookup.ok) return;
+      expect(lookup.value).not.toBeNull();
+      expect(lookup.value!.id).toBe(result.value.id);
+    });
+  });
+
+  // --- kill ---
+
+  describe('kill', () => {
+    it('should return error for unknown worker', async () => {
+      const unknownId = WorkerId('worker-nonexistent');
+
+      const result = await pool.kill(unknownId);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect((result.error as ClaudineError).code).toBe(ErrorCode.WORKER_NOT_FOUND);
+    });
+
+    it('should kill process with SIGTERM', async () => {
+      const task = buildTask();
+      const spawnResult = await pool.spawn(task);
+      if (!spawnResult.ok) return;
+
+      await pool.kill(spawnResult.value.id);
+
+      expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
+    });
+
+    it('should clean up worker state (removed from getWorker and getWorkerForTask)', async () => {
+      const task = buildTask();
+      const spawnResult = await pool.spawn(task);
+      if (!spawnResult.ok) return;
+      const workerId = spawnResult.value.id;
+
+      await pool.kill(workerId);
+
+      const workerResult = pool.getWorker(workerId);
+      expect(workerResult.ok).toBe(true);
+      if (workerResult.ok) {
+        expect(workerResult.value).toBeNull();
+      }
+
+      const taskWorkerResult = pool.getWorkerForTask(task.id);
+      expect(taskWorkerResult.ok).toBe(true);
+      if (taskWorkerResult.ok) {
+        expect(taskWorkerResult.value).toBeNull();
+      }
+    });
+
+    it('should decrement monitor worker count', async () => {
+      const task = buildTask();
+      const spawnResult = await pool.spawn(task);
+      if (!spawnResult.ok) return;
+
+      await pool.kill(spawnResult.value.id);
+
+      expect(monitor.decrementWorkerCount as ReturnType<typeof vi.fn>).toHaveBeenCalledOnce();
+    });
+
+    it('should emit WorkerKilled event', async () => {
+      const task = buildTask();
+      const spawnResult = await pool.spawn(task);
+      if (!spawnResult.ok) return;
+
+      await pool.kill(spawnResult.value.id);
+
+      expect(eventBus.emit as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+        'WorkerKilled',
+        expect.objectContaining({
+          workerId: spawnResult.value.id,
+          taskId: task.id,
+          reason: 'Explicit kill request',
+        }),
+      );
+    });
+
+    it('should handle worktree cleanup on kill', async () => {
+      const task = buildTask((f) => f.withUseWorktree(true));
+      const spawnResult = await pool.spawn(task);
+      if (!spawnResult.ok) return;
+
+      await pool.kill(spawnResult.value.id);
+
+      // handleWorktreeCleanup is called; 'auto' cleanup (default) with mergeStrategy='pr' (default for useWorktree)
+      // auto + non-manual = should cleanup
+      expect(worktreeManager.removeWorktree as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task.id);
+    });
+  });
+
+  // --- killAll ---
+
+  describe('killAll', () => {
+    it('should kill all workers', async () => {
+      const task1 = buildTask();
+      await pool.spawn(task1);
+
+      // Create a second mock process for the second spawn
+      const proc2 = createMockProcess();
+      proc2.pid = 99999;
+      (spawner.spawn as ReturnType<typeof vi.fn>).mockReturnValue(ok({ process: proc2, pid: proc2.pid }));
+      const task2 = buildTask();
+      await pool.spawn(task2);
+
+      expect(pool.getWorkerCount()).toBe(2);
+
+      const result = await pool.killAll();
+
+      expect(result.ok).toBe(true);
+      expect(pool.getWorkerCount()).toBe(0);
+    });
+
+    it('should return ok even if some kills fail', async () => {
+      const task = buildTask();
+      await pool.spawn(task);
+
+      // Make the process.kill throw to simulate kill failure
+      mockProcess.kill = vi.fn(() => {
+        throw new Error('kill failed');
+      });
+
+      const result = await pool.killAll();
+
+      // killAll always returns ok (logs failures)
+      expect(result.ok).toBe(true);
+    });
+  });
+
+  // --- Getter methods ---
+
+  describe('getWorker', () => {
+    it('should return null for unknown worker ID', () => {
+      const result = pool.getWorker(WorkerId('worker-unknown'));
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBeNull();
+      }
+    });
+
+    it('should return the worker after spawn', async () => {
+      const task = buildTask();
+      const spawnResult = await pool.spawn(task);
+      if (!spawnResult.ok) return;
+
+      const result = pool.getWorker(spawnResult.value.id);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).not.toBeNull();
+        expect(result.value!.taskId).toBe(task.id);
+      }
+    });
+  });
+
+  describe('getWorkers', () => {
+    it('should return frozen array', async () => {
+      const task = buildTask();
+      await pool.spawn(task);
+
+      const result = pool.getWorkers();
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(Object.isFrozen(result.value)).toBe(true);
+        expect(result.value.length).toBe(1);
+      }
+    });
+
+    it('should return empty frozen array when no workers', () => {
+      const result = pool.getWorkers();
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(Object.isFrozen(result.value)).toBe(true);
+        expect(result.value.length).toBe(0);
+      }
+    });
+  });
+
+  describe('getWorkerCount', () => {
+    it('should return 0 initially', () => {
+      expect(pool.getWorkerCount()).toBe(0);
+    });
+
+    it('should reflect spawned workers', async () => {
+      const task = buildTask();
+      await pool.spawn(task);
+      expect(pool.getWorkerCount()).toBe(1);
+    });
+  });
+
+  describe('getWorkerForTask', () => {
+    it('should return null for unknown task', () => {
+      const result = pool.getWorkerForTask(TaskId('task-ghost'));
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBeNull();
+      }
+    });
+  });
+
+  // --- Timeout behavior ---
+
+  describe('timeout behavior', () => {
+    it('should not trigger timeout for tasks with undefined timeout', async () => {
+      const task = { ...buildTask(), timeout: undefined } as Task;
+
+      await pool.spawn(task);
+
+      // Advance time well past any reasonable timeout
+      vi.advanceTimersByTime(120_000);
+
+      // Worker should still exist (not killed by timeout)
+      expect(pool.getWorkerCount()).toBe(1);
+    });
+
+    it('should not trigger timeout for tasks with timeout=0', async () => {
+      const task = buildTask((f) => f.withTimeout(0));
+
+      await pool.spawn(task);
+
+      // Advance time significantly
+      vi.advanceTimersByTime(120_000);
+
+      // Worker should still exist
+      expect(pool.getWorkerCount()).toBe(1);
+    });
+
+    it('should trigger timeout and kill worker when timeout expires', async () => {
+      const task = buildTask((f) => f.withTimeout(5000));
+
+      await pool.spawn(task);
+      expect(pool.getWorkerCount()).toBe(1);
+
+      // Advance time past the timeout
+      await vi.advanceTimersByTimeAsync(5001);
+
+      // Worker should be killed
+      expect(pool.getWorkerCount()).toBe(0);
+      expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
+    });
+
+    it('should emit TaskTimeout event when timeout triggers', async () => {
+      const task = buildTask((f) => f.withTimeout(3000));
+
+      await pool.spawn(task);
+
+      await vi.advanceTimersByTimeAsync(3001);
+
+      expect(eventBus.emit as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+        'TaskTimeout',
+        expect.objectContaining({
+          taskId: task.id,
+        }),
+      );
+    });
+  });
+
+  // --- Worker completion (tested via process exit event) ---
+
+  describe('worker completion', () => {
+    it('should emit TaskCompleted event on exit code 0', async () => {
+      const task = buildTask();
+      await pool.spawn(task);
+
+      // Simulate process exit with code 0
+      mockProcess.emit('exit', 0);
+
+      // Allow async handlers to run
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(eventBus.emit as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+        'TaskCompleted',
+        expect.objectContaining({
+          taskId: task.id,
+          exitCode: 0,
+        }),
+      );
+    });
+
+    it('should emit TaskFailed event on non-zero exit code', async () => {
+      const task = buildTask();
+      await pool.spawn(task);
+
+      // Simulate process exit with non-zero code
+      mockProcess.emit('exit', 1);
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(eventBus.emit as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+        'TaskFailed',
+        expect.objectContaining({
+          taskId: task.id,
+          exitCode: 1,
+        }),
+      );
+    });
+
+    it('should clean up worker state on completion', async () => {
+      const task = buildTask();
+      const spawnResult = await pool.spawn(task);
+      if (!spawnResult.ok) return;
+
+      mockProcess.emit('exit', 0);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(pool.getWorkerCount()).toBe(0);
+      const workerResult = pool.getWorker(spawnResult.value.id);
+      expect(workerResult.ok).toBe(true);
+      if (workerResult.ok) {
+        expect(workerResult.value).toBeNull();
+      }
+    });
+
+    it('should decrement monitor worker count on completion', async () => {
+      const task = buildTask();
+      await pool.spawn(task);
+
+      mockProcess.emit('exit', 0);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(monitor.decrementWorkerCount as ReturnType<typeof vi.fn>).toHaveBeenCalled();
+    });
+  });
+
+  // --- Worktree cleanup strategy ---
+
+  describe('worktree cleanup strategy', () => {
+    it('should preserve worktree when cleanup is "keep"', async () => {
+      const task = { ...buildTask((f) => f.withUseWorktree(true)), worktreeCleanup: 'keep' as const };
+
+      const spawnResult = await pool.spawn(task);
+      if (!spawnResult.ok) return;
+
+      await pool.kill(spawnResult.value.id);
+
+      // removeWorktree should NOT be called for 'keep' strategy
+      expect(worktreeManager.removeWorktree as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+      expect(logger.info as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+        'Worktree preserved',
+        expect.objectContaining({ taskId: task.id }),
+      );
+    });
+
+    it('should delete worktree when cleanup is "delete"', async () => {
+      const task = { ...buildTask((f) => f.withUseWorktree(true)), worktreeCleanup: 'delete' as const };
+
+      const spawnResult = await pool.spawn(task);
+      if (!spawnResult.ok) return;
+
+      await pool.kill(spawnResult.value.id);
+
+      expect(worktreeManager.removeWorktree as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task.id);
+    });
+
+    it('should cleanup on "auto" when mergeStrategy is not "manual"', async () => {
+      const task = {
+        ...buildTask((f) => f.withUseWorktree(true)),
+        worktreeCleanup: 'auto' as const,
+        mergeStrategy: 'pr' as const,
+      };
+
+      const spawnResult = await pool.spawn(task);
+      if (!spawnResult.ok) return;
+
+      await pool.kill(spawnResult.value.id);
+
+      expect(worktreeManager.removeWorktree as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task.id);
+    });
+
+    it('should preserve on "auto" when mergeStrategy is "manual"', async () => {
+      const task = {
+        ...buildTask((f) => f.withUseWorktree(true)),
+        worktreeCleanup: 'auto' as const,
+        mergeStrategy: 'manual' as const,
+      };
+
+      const spawnResult = await pool.spawn(task);
+      if (!spawnResult.ok) return;
+
+      await pool.kill(spawnResult.value.id);
+
+      expect(worktreeManager.removeWorktree as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+      expect(logger.info as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+        'Worktree preserved',
+        expect.objectContaining({ taskId: task.id }),
+      );
+    });
+  });
+});

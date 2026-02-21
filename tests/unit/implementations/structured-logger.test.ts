@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { StructuredLogger, LogLevel } from '../../../src/implementations/logger';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { LogLevel, StructuredLogger } from '../../../src/implementations/logger';
 import { TEST_COUNTS } from '../../constants';
 
 describe('StructuredLogger - JSON Logging Behavior', () => {
@@ -25,7 +25,7 @@ describe('StructuredLogger - JSON Logging Behavior', () => {
       expect(entry).toMatchObject({
         level: 'info',
         message: 'Test message',
-        context: { userId: '123' }
+        context: { userId: '123' },
       });
       expect(entry.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     });
@@ -46,7 +46,7 @@ describe('StructuredLogger - JSON Logging Behavior', () => {
     it('should include global context in all logs', () => {
       const globalContext = {
         service: 'api',
-        version: '1.0.0'
+        version: '1.0.0',
       };
       const logger = new StructuredLogger(globalContext, LogLevel.DEBUG, mockOutput);
 
@@ -55,7 +55,7 @@ describe('StructuredLogger - JSON Logging Behavior', () => {
       expect(capturedLogs[0].context).toEqual({
         service: 'api',
         version: '1.0.0',
-        requestId: 'abc123'
+        requestId: 'abc123',
       });
     });
 
@@ -67,7 +67,7 @@ describe('StructuredLogger - JSON Logging Behavior', () => {
       expect(capturedLogs[0]).toMatchObject({
         level: 'info',
         message: 'Simple message',
-        context: {}
+        context: {},
       });
     });
   });
@@ -98,11 +98,7 @@ describe('StructuredLogger - JSON Logging Behavior', () => {
 
   describe('Child logger creation', () => {
     it('should create child with additional context', () => {
-      const parent = new StructuredLogger(
-        { service: 'api' },
-        LogLevel.DEBUG,
-        mockOutput
-      );
+      const parent = new StructuredLogger({ service: 'api' }, LogLevel.DEBUG, mockOutput);
 
       const child = parent.child({ module: 'auth' });
 
@@ -111,7 +107,7 @@ describe('StructuredLogger - JSON Logging Behavior', () => {
       expect(capturedLogs[0].context).toEqual({
         service: 'api',
         module: 'auth',
-        userId: '123'
+        userId: '123',
       });
     });
 
@@ -140,11 +136,7 @@ describe('StructuredLogger - JSON Logging Behavior', () => {
     });
 
     it('should handle nested child creation', () => {
-      const root = new StructuredLogger(
-        { app: 'myapp' },
-        LogLevel.DEBUG,
-        mockOutput
-      );
+      const root = new StructuredLogger({ app: 'myapp' }, LogLevel.DEBUG, mockOutput);
 
       const service = root.child({ service: 'api' });
       const module = service.child({ module: 'auth' });
@@ -154,7 +146,7 @@ describe('StructuredLogger - JSON Logging Behavior', () => {
       expect(capturedLogs[0].context).toEqual({
         app: 'myapp',
         service: 'api',
-        module: 'auth'
+        module: 'auth',
       });
     });
   });
@@ -164,7 +156,7 @@ describe('StructuredLogger - JSON Logging Behavior', () => {
       { method: 'debug' as const, level: LogLevel.DEBUG },
       { method: 'info' as const, level: LogLevel.INFO },
       { method: 'warn' as const, level: LogLevel.WARN },
-      { method: 'error' as const, level: LogLevel.ERROR }
+      { method: 'error' as const, level: LogLevel.ERROR },
     ];
 
     levels.forEach(({ method, level }) => {
@@ -177,12 +169,12 @@ describe('StructuredLogger - JSON Logging Behavior', () => {
         logger.error('Error message');
 
         // Count how many logs should appear
-        const expectedCount = levels.filter(l => l.level >= level).length;
+        const expectedCount = levels.filter((l) => l.level >= level).length;
         expect(capturedLogs).toHaveLength(expectedCount);
 
         // Verify minimum level
         if (capturedLogs.length > 0) {
-          const minLevel = levels.find(l => l.level === level)?.method;
+          const minLevel = levels.find((l) => l.level === level)?.method;
           expect(capturedLogs[0].level).toBe(minLevel);
         }
       });

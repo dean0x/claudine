@@ -3,28 +3,28 @@
  * Validates task retry behavior and tracking
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { Configuration } from '../../src/core/configuration.js';
 import {
+  createTask,
+  DelegateRequest,
+  isTerminalState,
+  Priority,
   Task,
   TaskId,
   TaskStatus,
-  Priority,
-  DelegateRequest,
-  createTask,
-  isTerminalState,
 } from '../../src/core/domain.js';
-import { TaskManagerService } from '../../src/services/task-manager.js';
+import { ErrorCode } from '../../src/core/errors.js';
 import { InMemoryEventBus } from '../../src/core/events/event-bus.js';
-import { SQLiteTaskRepository } from '../../src/implementations/task-repository.js';
+import { err, ok } from '../../src/core/result.js';
 import { Database } from '../../src/implementations/database.js';
-import { TestLogger } from '../fixtures/test-doubles.js';
-import { Configuration } from '../../src/core/configuration.js';
 import { BufferedOutputCapture } from '../../src/implementations/output-capture.js';
+import { SQLiteTaskRepository } from '../../src/implementations/task-repository.js';
 import { PersistenceHandler } from '../../src/services/handlers/persistence-handler.js';
 import { QueryHandler } from '../../src/services/handlers/query-handler.js';
-import { ok, err } from '../../src/core/result.js';
-import { ErrorCode } from '../../src/core/errors.js';
+import { TaskManagerService } from '../../src/services/task-manager.js';
 import { BUFFER_SIZES, TIMEOUTS } from '../constants.js';
+import { TestLogger } from '../fixtures/test-doubles.js';
 
 describe('Retry Functionality', () => {
   let taskManager: TaskManagerService;
@@ -44,7 +44,7 @@ describe('Retry Functionality', () => {
       memoryReserve: 1073741824,
       logLevel: 'info',
       maxListenersPerEvent: 100,
-      maxTotalSubscriptions: 1000
+      maxTotalSubscriptions: 1000,
     };
 
     // FIX: EventBus constructor expects (config, logger) not (logger)
@@ -55,11 +55,7 @@ describe('Retry Functionality', () => {
     const outputCapture = new BufferedOutputCapture(BUFFER_SIZES.MEDIUM, eventBus);
 
     // Initialize task manager with new signature: (eventBus, logger, config)
-    taskManager = new TaskManagerService(
-      eventBus,
-      logger,
-      config
-    );
+    taskManager = new TaskManagerService(eventBus, logger, config);
 
     // Set up event handlers (MUST include QueryHandler for pure event-driven architecture)
     const persistenceHandler = new PersistenceHandler(repository, logger);

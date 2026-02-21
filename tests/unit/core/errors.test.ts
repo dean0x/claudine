@@ -1,27 +1,24 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   ClaudineError,
   ErrorCode,
-  taskNotFound,
-  taskAlreadyRunning,
-  taskTimeout,
   insufficientResources,
-  processSpawnFailed,
-  invalidInput,
   invalidDirectory,
-  systemError,
+  invalidInput,
   isClaudineError,
-  toClaudineError
+  processSpawnFailed,
+  systemError,
+  taskAlreadyRunning,
+  taskNotFound,
+  taskTimeout,
+  toClaudineError,
 } from '../../../src/core/errors';
-import { TIMEOUTS, TEST_COUNTS } from '../../constants';
+import { TEST_COUNTS, TIMEOUTS } from '../../constants';
 
 describe('ClaudineError - REAL Error Behavior', () => {
   describe('Error creation and properties', () => {
     it('should create error with code and message', () => {
-      const error = new ClaudineError(
-        ErrorCode.TASK_NOT_FOUND,
-        'Task task-123 not found'
-      );
+      const error = new ClaudineError(ErrorCode.TASK_NOT_FOUND, 'Task task-123 not found');
 
       expect(error).toBeInstanceOf(Error);
       expect(error).toBeInstanceOf(ClaudineError);
@@ -41,11 +38,7 @@ describe('ClaudineError - REAL Error Behavior', () => {
     });
 
     it('should include context', () => {
-      const error = new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        'Connection failed',
-        { host: 'localhost', port: 5432 }
-      );
+      const error = new ClaudineError(ErrorCode.SYSTEM_ERROR, 'Connection failed', { host: 'localhost', port: 5432 });
 
       expect(error.context).toEqual({ host: 'localhost', port: 5432 });
 
@@ -61,10 +54,7 @@ describe('ClaudineError - REAL Error Behavior', () => {
     });
 
     it('should preserve stack trace', () => {
-      const error = new ClaudineError(
-        ErrorCode.PROCESS_SPAWN_FAILED,
-        'Failed to spawn process'
-      );
+      const error = new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Failed to spawn process');
 
       expect(error.stack).toBeDefined();
       expect(error.stack).toContain('ClaudineError');
@@ -73,11 +63,9 @@ describe('ClaudineError - REAL Error Behavior', () => {
 
     it('should include error in context', () => {
       const cause = new Error('Original error');
-      const error = new ClaudineError(
-        ErrorCode.PROCESS_SPAWN_FAILED,
-        'Process spawn failed',
-        { originalError: cause.message }
-      );
+      const error = new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Process spawn failed', {
+        originalError: cause.message,
+      });
 
       expect(error.context?.originalError).toBe('Original error');
     });
@@ -149,7 +137,6 @@ describe('ClaudineError - REAL Error Behavior', () => {
       expect(error.message).toBe('Wrapped error');
       expect(error.context).toEqual({ originalError: 'Original' });
     });
-
   });
 
   describe('Error type guards and helpers', () => {
@@ -250,11 +237,10 @@ describe('ClaudineError - REAL Error Behavior', () => {
 
   describe('Error serialization', () => {
     it('should serialize to JSON correctly', () => {
-      const error = new ClaudineError(
-        ErrorCode.PROCESS_SPAWN_FAILED,
-        'Spawn failed',
-        { taskId: 'task-123', attempts: 3 }
-      );
+      const error = new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {
+        taskId: 'task-123',
+        attempts: 3,
+      });
 
       const json = JSON.stringify(error);
       const parsed = JSON.parse(json);
@@ -269,11 +255,7 @@ describe('ClaudineError - REAL Error Behavior', () => {
       const context: any = { key: 'value' };
       context.circular = context;
 
-      const error = new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        'System error',
-        context
-      );
+      const error = new ClaudineError(ErrorCode.SYSTEM_ERROR, 'System error', context);
 
       // Should not throw when accessing context
       expect(error.context?.key).toBe('value');
@@ -296,10 +278,10 @@ describe('ClaudineError - REAL Error Behavior', () => {
         taskNotFound('task'),
         taskAlreadyRunning('task'),
         processSpawnFailed('reason'),
-        systemError('failure')
+        systemError('failure'),
       ];
 
-      errors.forEach(error => {
+      errors.forEach((error) => {
         expect(error).toBeInstanceOf(Error);
         expect(error).toBeInstanceOf(ClaudineError);
       });
@@ -311,11 +293,7 @@ describe('ClaudineError - REAL Error Behavior', () => {
       const originalError = new Error('SQLITE_BUSY: database is locked');
       const appError = systemError(originalError.message, originalError);
 
-      const finalError = new ClaudineError(
-        ErrorCode.TASK_NOT_FOUND,
-        'Could not fetch task',
-        { taskId: 'task-123' }
-      );
+      const finalError = new ClaudineError(ErrorCode.TASK_NOT_FOUND, 'Could not fetch task', { taskId: 'task-123' });
 
       expect(finalError.context?.taskId).toBe('task-123');
       expect(finalError.message).toBe('Could not fetch task');
@@ -342,7 +320,7 @@ describe('ClaudineError - REAL Error Behavior', () => {
       const success: Result<string> = { ok: true, value: 'data' };
       const failure: Result<string> = {
         ok: false,
-        error: taskNotFound('task-404')
+        error: taskNotFound('task-404'),
       };
 
       if (!failure.ok) {
@@ -374,7 +352,7 @@ describe('ClaudineError - REAL Error Behavior', () => {
       }
 
       expect(errors).toHaveLength(2);
-      expect(errors.every(e => e.code === ErrorCode.TASK_TIMEOUT)).toBe(true);
+      expect(errors.every((e) => e.code === ErrorCode.TASK_TIMEOUT)).toBe(true);
     });
   });
 
@@ -387,10 +365,7 @@ describe('ClaudineError - REAL Error Behavior', () => {
       // Create in batches to allow GC to run
       const batchSize = 500;
       for (let i = 0; i < count; i += batchSize) {
-        const batch = Array.from(
-          { length: Math.min(batchSize, count - i) },
-          (_, j) => taskNotFound(`task-${i + j}`)
-        );
+        const batch = Array.from({ length: Math.min(batchSize, count - i) }, (_, j) => taskNotFound(`task-${i + j}`));
         errors.push(...batch);
       }
 
@@ -405,11 +380,10 @@ describe('ClaudineError - REAL Error Behavior', () => {
 
       // Create deep chain by wrapping errors in context
       for (let i = 0; i < 100; i++) {
-        error = new ClaudineError(
-          ErrorCode.SYSTEM_ERROR,
-          `Layer ${i}: ${error.message}`,
-          { previousError: error.message, layer: i }
-        );
+        error = new ClaudineError(ErrorCode.SYSTEM_ERROR, `Layer ${i}: ${error.message}`, {
+          previousError: error.message,
+          layer: i,
+        });
       }
 
       // Should handle deep chain without stack overflow

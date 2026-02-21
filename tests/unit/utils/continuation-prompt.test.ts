@@ -5,9 +5,9 @@
  * Pattern: Pure function tests - no mocks needed
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { createTask, type TaskCheckpoint, TaskId } from '../../../src/core/domain.js';
 import { buildContinuationPrompt } from '../../../src/utils/continuation-prompt.js';
-import { createTask, TaskId, type TaskCheckpoint } from '../../../src/core/domain.js';
 
 describe('buildContinuationPrompt', () => {
   const makeCheckpoint = (overrides?: Partial<TaskCheckpoint>): TaskCheckpoint => ({

@@ -3,20 +3,20 @@
  * Tests dependency injection, service bootstrap, and configuration validation
  */
 
-import { describe, it, expect } from 'vitest';
-import { bootstrap } from '../../src/bootstrap.js';
-import { InMemoryEventBus } from '../../src/core/events/event-bus.js';
-import { Container } from '../../src/core/container.js';
-import { Configuration, loadConfiguration } from '../../src/core/configuration.js';
 import { mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { describe, expect, it } from 'vitest';
+import { bootstrap } from '../../src/bootstrap.js';
+import { Configuration, loadConfiguration } from '../../src/core/configuration.js';
+import { Container } from '../../src/core/container.js';
+import { InMemoryEventBus } from '../../src/core/events/event-bus.js';
 import { Database } from '../../src/implementations/database.js';
-import { SQLiteTaskRepository } from '../../src/implementations/task-repository.js';
 import { EventDrivenWorkerPool } from '../../src/implementations/event-driven-worker-pool.js';
-import { TaskManagerService } from '../../src/services/task-manager.js';
 import { SystemResourceMonitor } from '../../src/implementations/resource-monitor.js';
 import { PriorityTaskQueue } from '../../src/implementations/task-queue.js';
+import { SQLiteTaskRepository } from '../../src/implementations/task-repository.js';
+import { TaskManagerService } from '../../src/services/task-manager.js';
 import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
 import { flushEventLoop } from '../utils/event-helpers.js';
 
@@ -31,7 +31,7 @@ describe('Integration: Service initialization', () => {
       // Bootstrap returns Result<Container>
       const result = await bootstrap({
         processSpawner: new NoOpProcessSpawner(),
-        skipResourceMonitoring: true
+        skipResourceMonitoring: true,
       });
 
       // Verify bootstrap succeeded
@@ -98,7 +98,6 @@ describe('Integration: Service initialization', () => {
 
       // Cleanup - CRITICAL: Use dispose() to clear setInterval timers
       await container.dispose();
-
     } finally {
       delete process.env.CLAUDINE_DATABASE_PATH;
       await rm(tempDir, { recursive: true, force: true });
@@ -136,7 +135,6 @@ describe('Integration: Service initialization', () => {
       const config3 = loadConfiguration();
       expect(config3.timeout).toBe(config2.timeout);
       expect(config3.logLevel).toBe(config2.logLevel);
-
     } finally {
       // Cleanup env vars
       delete process.env.TASK_TIMEOUT;
@@ -158,7 +156,7 @@ describe('Integration: Service initialization', () => {
       // Bootstrap the system
       const result = await bootstrap({
         processSpawner: new NoOpProcessSpawner(),
-        skipResourceMonitoring: true
+        skipResourceMonitoring: true,
       });
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error('Bootstrap failed');
@@ -191,7 +189,7 @@ describe('Integration: Service initialization', () => {
         // Delegate a task
         const request = {
           prompt: 'Test task',
-          priority: 'P1' as const
+          priority: 'P1' as const,
         };
 
         const result = await taskManager.delegate(request);
@@ -210,7 +208,6 @@ describe('Integration: Service initialization', () => {
 
       // Cleanup - CRITICAL: Use dispose() to clear setInterval timers
       await container.dispose();
-
     } finally {
       delete process.env.CLAUDINE_DATABASE_PATH;
       await rm(tempDir, { recursive: true, force: true });
@@ -225,7 +222,7 @@ describe('Integration: Service initialization', () => {
 
       const result = await bootstrap({
         processSpawner: new NoOpProcessSpawner(),
-        skipResourceMonitoring: true
+        skipResourceMonitoring: true,
       });
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error('Bootstrap failed');
@@ -283,7 +280,6 @@ describe('Integration: Service initialization', () => {
 
       // Cleanup - CRITICAL: Use dispose() to clear setInterval timers
       await container.dispose();
-
     } finally {
       delete process.env.CLAUDINE_DATABASE_PATH;
       await rm(tempDir, { recursive: true, force: true });
@@ -298,7 +294,7 @@ describe('Integration: Service initialization', () => {
 
       const result = await bootstrap({
         processSpawner: new NoOpProcessSpawner(),
-        skipResourceMonitoring: true
+        skipResourceMonitoring: true,
       });
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error('Bootstrap failed');
@@ -349,7 +345,7 @@ describe('Integration: Service initialization', () => {
             prompt: 'Should fail',
             priority: 'P0' as const,
             status: 'queued' as const,
-            createdAt: Date.now()
+            createdAt: Date.now(),
           };
 
           // This should fail or return an error
@@ -368,7 +364,7 @@ describe('Integration: Service initialization', () => {
           prompt: 'Should not spawn',
           priority: 'P0',
           status: 'queued',
-          createdAt: Date.now()
+          createdAt: Date.now(),
         } as Task);
 
         // Should either fail or return an error
@@ -380,7 +376,6 @@ describe('Integration: Service initialization', () => {
           expect(spawnResult.error).toBeDefined();
         }
       }
-
     } finally {
       delete process.env.CLAUDINE_DATABASE_PATH;
       await rm(tempDir, { recursive: true, force: true });

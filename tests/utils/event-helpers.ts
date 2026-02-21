@@ -20,11 +20,7 @@ type EventBus = TestableEventBus;
 /**
  * Wait for a specific event to be emitted
  */
-export function waitForEvent<T = any>(
-  eventBus: EventBus,
-  eventType: string,
-  timeout = 5000
-): Promise<T> {
+export function waitForEvent<T = any>(eventBus: EventBus, eventType: string, timeout = 5000): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error(`Timeout waiting for event '${eventType}' after ${timeout}ms`));
@@ -45,13 +41,13 @@ export function waitForEvent<T = any>(
 export async function waitForEvents(
   eventBus: EventBus,
   eventTypes: string[],
-  timeout = 5000
+  timeout = 5000,
 ): Promise<Map<string, any>> {
   const results = new Map<string, any>();
-  const promises = eventTypes.map(eventType =>
-    waitForEvent(eventBus, eventType, timeout).then(data => {
+  const promises = eventTypes.map((eventType) =>
+    waitForEvent(eventBus, eventType, timeout).then((data) => {
       results.set(eventType, data);
-    })
+    }),
   );
 
   await Promise.all(promises);
@@ -61,12 +57,7 @@ export async function waitForEvents(
 /**
  * Collect events over a period of time
  */
-export function collectEvents(
-  eventBus: EventBus,
-  eventType: string,
-  count: number,
-  timeout = 5000
-): Promise<any[]> {
+export function collectEvents(eventBus: EventBus, eventType: string, count: number, timeout = 5000): Promise<any[]> {
   return new Promise((resolve, reject) => {
     const events: any[] = [];
     const timer = setTimeout(() => {
@@ -95,7 +86,7 @@ export function waitForCondition<T = any>(
   eventBus: EventBus,
   eventType: string,
   condition: (data: T) => boolean,
-  timeout = 5000
+  timeout = 5000,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -123,7 +114,7 @@ export async function emitAndWait<T = any>(
   emitType: string,
   emitData: any,
   waitType: string,
-  timeout = 5000
+  timeout = 5000,
 ): Promise<T> {
   const waitPromise = waitForEvent<T>(eventBus, waitType, timeout);
   eventBus.emit(emitType, emitData);
@@ -134,5 +125,5 @@ export async function emitAndWait<T = any>(
  * Process microtasks and event loop
  */
 export function flushEventLoop(): Promise<void> {
-  return new Promise(resolve => setImmediate(resolve));
+  return new Promise((resolve) => setImmediate(resolve));
 }

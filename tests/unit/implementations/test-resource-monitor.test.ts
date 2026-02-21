@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { TestResourceMonitor } from '../../../src/implementations/resource-monitor';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryEventBus } from '../../../src/core/events/event-bus';
 import { TestLogger } from '../../../src/implementations/logger';
+import { TestResourceMonitor } from '../../../src/implementations/resource-monitor';
 
 describe('TestResourceMonitor', () => {
   let monitor: TestResourceMonitor;
@@ -25,7 +25,7 @@ describe('TestResourceMonitor', () => {
           availableMemory: 8_000_000_000,
           totalMemory: 16_000_000_000,
           loadAverage: [1.2, 1.0, 0.8],
-          workerCount: 0
+          workerCount: 0,
         });
       }
     });
@@ -36,7 +36,7 @@ describe('TestResourceMonitor', () => {
         availableMemory: 2_000_000_000,
         totalMemory: 8_000_000_000,
         loadAverage: [3.0, 2.5, 2.0],
-        workerCount: 3
+        workerCount: 3,
       });
 
       const result = await monitor.getResources();
@@ -130,7 +130,7 @@ describe('TestResourceMonitor', () => {
         availableMemory: 4_000_000_000,
         totalMemory: 16_000_000_000,
         loadAverage: [2.0, 1.5, 1.0],
-        workerCount: 2
+        workerCount: 2,
       });
 
       let result = await monitor.canSpawnWorker();
@@ -142,7 +142,7 @@ describe('TestResourceMonitor', () => {
         availableMemory: 900_000_000,
         totalMemory: 16_000_000_000,
         loadAverage: [3.4, 3.0, 2.5],
-        workerCount: 4
+        workerCount: 4,
       });
 
       monitor.setCanSpawn(false); // Simulate high pressure
@@ -171,7 +171,7 @@ describe('TestResourceMonitor', () => {
         availableMemory: 5_000_000_000,
         totalMemory: 8_000_000_000,
         loadAverage: [1.6, 1.4, 1.2],
-        workerCount: 2
+        workerCount: 2,
       });
 
       expect(await checkScaling()).toBe(true);
@@ -182,7 +182,7 @@ describe('TestResourceMonitor', () => {
         availableMemory: 1_000_000_000,
         totalMemory: 8_000_000_000,
         loadAverage: [3.4, 3.0, 2.8],
-        workerCount: 4
+        workerCount: 4,
       });
 
       expect(await checkScaling()).toBe(false);

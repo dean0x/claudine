@@ -4,12 +4,12 @@
  */
 
 import * as os from 'os';
-import { ResourceMonitor, Logger } from '../core/interfaces.js';
-import { EventBus } from '../core/events/event-bus.js';
-import { SystemResources } from '../core/domain.js';
-import { Result, ok, err, tryCatchAsync } from '../core/result.js';
-import { ClaudineError, ErrorCode } from '../core/errors.js';
 import { Configuration } from '../core/configuration.js';
+import { SystemResources } from '../core/domain.js';
+import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { EventBus } from '../core/events/event-bus.js';
+import { Logger, ResourceMonitor } from '../core/interfaces.js';
+import { err, ok, Result, tryCatchAsync } from '../core/result.js';
 
 export class SystemResourceMonitor implements ResourceMonitor {
   private readonly cpuCoresReserved: number;
@@ -33,7 +33,7 @@ export class SystemResourceMonitor implements ResourceMonitor {
   constructor(
     config: Configuration,
     private readonly eventBus?: EventBus,
-    private readonly logger?: Logger
+    private readonly logger?: Logger,
   ) {
     this.cpuCoresReserved = config.cpuCoresReserved;
     this.memoryReserve = config.memoryReserve;
@@ -56,11 +56,7 @@ export class SystemResourceMonitor implements ResourceMonitor {
         const totalMemory = os.totalmem();
         const freeMemory = os.freemem();
         const loadAvgArray = os.loadavg();
-        const loadAverage: readonly [number, number, number] = [
-          loadAvgArray[0],
-          loadAvgArray[1],
-          loadAvgArray[2]
-        ];
+        const loadAverage: readonly [number, number, number] = [loadAvgArray[0], loadAvgArray[1], loadAvgArray[2]];
 
         return {
           cpuUsage,
@@ -70,19 +66,14 @@ export class SystemResourceMonitor implements ResourceMonitor {
           workerCount: this.workerCount,
         };
       },
-      (error) => new ClaudineError(
-        ErrorCode.RESOURCE_MONITORING_FAILED,
-        `Failed to get system resources: ${error}`
-      )
+      (error) => new ClaudineError(ErrorCode.RESOURCE_MONITORING_FAILED, `Failed to get system resources: ${error}`),
     );
   }
 
   async canSpawnWorker(): Promise<Result<boolean>> {
     // Clean up old spawn timestamps (outside settling window)
     const now = Date.now();
-    this.recentSpawnTimestamps = this.recentSpawnTimestamps.filter(
-      t => now - t < this.settlingWindowMs
-    );
+    this.recentSpawnTimestamps = this.recentSpawnTimestamps.filter((t) => now - t < this.settlingWindowMs);
     const settlingWorkers = this.recentSpawnTimestamps.length;
 
     // Check max workers limit first (include settling workers)
@@ -92,7 +83,7 @@ export class SystemResourceMonitor implements ResourceMonitor {
         currentWorkers: this.workerCount,
         settlingWorkers,
         effectiveWorkerCount,
-        maxWorkers: this.maxWorkers
+        maxWorkers: this.maxWorkers,
       });
       return ok(false);
     }
@@ -124,14 +115,14 @@ export class SystemResourceMonitor implements ResourceMonitor {
         reservedCores: this.cpuCoresReserved,
         availableCores: availableCores.toFixed(2),
         requiredCores: this.CORES_PER_WORKER,
-        settlingWorkers
+        settlingWorkers,
       });
       return ok(false);
     }
 
     // Check if we have enough memory for another worker (including settling workers)
     const projectedAvailableMemory = resources.availableMemory - projectedMemoryUsed;
-    const requiredMemory = this.memoryReserve + (this.MEMORY_PER_WORKER_MB * 1024 * 1024);
+    const requiredMemory = this.memoryReserve + this.MEMORY_PER_WORKER_MB * 1024 * 1024;
     if (projectedAvailableMemory <= requiredMemory) {
       this.logger?.debug('Cannot spawn: Insufficient memory for new worker', {
         availableMemory: resources.availableMemory,
@@ -139,7 +130,7 @@ export class SystemResourceMonitor implements ResourceMonitor {
         projectedAvailableMemory,
         requiredMemory,
         memoryPerWorkerMB: this.MEMORY_PER_WORKER_MB,
-        settlingWorkers
+        settlingWorkers,
       });
       return ok(false);
     }
@@ -152,7 +143,7 @@ export class SystemResourceMonitor implements ResourceMonitor {
         maxLoad,
         totalCores,
         reservedCores: this.cpuCoresReserved,
-        settlingWorkers
+        settlingWorkers,
       });
       return ok(false);
     }
@@ -164,7 +155,7 @@ export class SystemResourceMonitor implements ResourceMonitor {
       availableMemoryGB: (projectedAvailableMemory / 1e9).toFixed(2),
       workerCount: this.workerCount,
       settlingWorkers,
-      maxWorkers: this.maxWorkers
+      maxWorkers: this.maxWorkers,
     });
     return ok(true);
   }
@@ -176,13 +167,11 @@ export class SystemResourceMonitor implements ResourceMonitor {
   recordSpawn(): void {
     const now = Date.now();
     // Clean up expired timestamps to prevent unbounded array growth
-    this.recentSpawnTimestamps = this.recentSpawnTimestamps.filter(
-      t => now - t < this.settlingWindowMs
-    );
+    this.recentSpawnTimestamps = this.recentSpawnTimestamps.filter((t) => now - t < this.settlingWindowMs);
     this.recentSpawnTimestamps.push(now);
     this.logger?.debug('Recorded spawn for settling tracking', {
       settlingWorkers: this.recentSpawnTimestamps.length,
-      settlingWindowMs: this.settlingWindowMs
+      settlingWindowMs: this.settlingWindowMs,
     });
   }
 
@@ -228,7 +217,7 @@ export class SystemResourceMonitor implements ResourceMonitor {
     this.logger?.info('Starting resource monitoring', {
       intervalMs: this.monitoringIntervalMs,
       cpuCoresReserved: this.cpuCoresReserved,
-      memoryReserve: this.memoryReserve
+      memoryReserve: this.memoryReserve,
     });
 
     this.scheduleResourceCheck();
@@ -243,7 +232,7 @@ export class SystemResourceMonitor implements ResourceMonitor {
     }
 
     this.isMonitoring = false;
-    
+
     if (this.monitoringInterval) {
       clearTimeout(this.monitoringInterval);
       this.monitoringInterval = null;
@@ -260,10 +249,7 @@ export class SystemResourceMonitor implements ResourceMonitor {
       return;
     }
 
-    this.monitoringInterval = setTimeout(
-      () => this.performResourceCheck(),
-      this.monitoringIntervalMs
-    );
+    this.monitoringInterval = setTimeout(() => this.performResourceCheck(), this.monitoringIntervalMs);
   }
 
   /**
@@ -276,15 +262,15 @@ export class SystemResourceMonitor implements ResourceMonitor {
 
     try {
       const resourcesResult = await this.getResources();
-      
+
       if (resourcesResult.ok) {
         const resources = resourcesResult.value;
-        
+
         // Emit SystemResourcesUpdated event
         const eventResult = await this.eventBus.emit('SystemResourcesUpdated', {
           cpuPercent: resources.cpuUsage,
           memoryUsed: resources.totalMemory - resources.availableMemory,
-          workerCount: resources.workerCount
+          workerCount: resources.workerCount,
         });
 
         if (!eventResult.ok) {
@@ -293,13 +279,12 @@ export class SystemResourceMonitor implements ResourceMonitor {
           this.logger?.debug('Resource status published', {
             cpuPercent: resources.cpuUsage,
             memoryUsed: resources.totalMemory - resources.availableMemory,
-            workerCount: resources.workerCount
+            workerCount: resources.workerCount,
           });
         }
       } else {
         this.logger?.error('Failed to get system resources for monitoring', resourcesResult.error);
       }
-
     } catch (error) {
       this.logger?.error('Resource monitoring check failed', error as Error);
     } finally {
@@ -343,7 +328,7 @@ export class TestResourceMonitor implements ResourceMonitor {
     private readonly eventBus?: EventBus,
     private readonly logger?: Logger,
     cpuThreshold = 80,
-    memoryReserve = 1_000_000_000
+    memoryReserve = 1_000_000_000,
   ) {
     this.cpuThreshold = cpuThreshold;
     this.memoryReserve = memoryReserve;
@@ -364,10 +349,7 @@ export class TestResourceMonitor implements ResourceMonitor {
     if (!this.canSpawn) {
       return ok(false);
     }
-    return ok(
-      this.cpuUsage < this.cpuThreshold &&
-      this.availableMemory > this.memoryReserve
-    );
+    return ok(this.cpuUsage < this.cpuThreshold && this.availableMemory > this.memoryReserve);
   }
 
   getThresholds() {

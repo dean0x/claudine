@@ -6,20 +6,20 @@
  */
 
 import {
+  createSchedule,
+  MissedRunPolicy,
+  Priority,
   Schedule,
+  ScheduleCreateRequest,
   ScheduleId,
   ScheduleStatus,
   ScheduleType,
-  MissedRunPolicy,
-  ScheduleCreateRequest,
-  Priority,
-  createSchedule,
 } from '../core/domain.js';
-import { ScheduleService, ScheduleRepository, Logger, ScheduleExecution } from '../core/interfaces.js';
-import { EventBus } from '../core/events/event-bus.js';
-import { Result, ok, err } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
-import { validateCronExpression, isValidTimezone, getNextRunTime } from '../utils/cron.js';
+import { EventBus } from '../core/events/event-bus.js';
+import { Logger, ScheduleExecution, ScheduleRepository, ScheduleService } from '../core/interfaces.js';
+import { err, ok, Result } from '../core/result.js';
+import { getNextRunTime, isValidTimezone, validateCronExpression } from '../utils/cron.js';
 import { validatePath } from '../utils/validation.js';
 
 /**
@@ -41,7 +41,7 @@ export class ScheduleManagerService implements ScheduleService {
   constructor(
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
-    private readonly scheduleRepository: ScheduleRepository
+    private readonly scheduleRepository: ScheduleRepository,
   ) {
     this.logger.debug('ScheduleManagerService initialized');
   }
@@ -49,18 +49,18 @@ export class ScheduleManagerService implements ScheduleService {
   async createSchedule(request: ScheduleCreateRequest): Promise<Result<Schedule>> {
     // Validate schedule type requirements
     if (request.scheduleType === ScheduleType.CRON && !request.cronExpression) {
-      return err(new ClaudineError(
-        ErrorCode.INVALID_INPUT,
-        'cronExpression is required for cron schedules',
-        { scheduleType: request.scheduleType }
-      ));
+      return err(
+        new ClaudineError(ErrorCode.INVALID_INPUT, 'cronExpression is required for cron schedules', {
+          scheduleType: request.scheduleType,
+        }),
+      );
     }
     if (request.scheduleType === ScheduleType.ONE_TIME && !request.scheduledAt) {
-      return err(new ClaudineError(
-        ErrorCode.INVALID_INPUT,
-        'scheduledAt is required for one-time schedules',
-        { scheduleType: request.scheduleType }
-      ));
+      return err(
+        new ClaudineError(ErrorCode.INVALID_INPUT, 'scheduledAt is required for one-time schedules', {
+          scheduleType: request.scheduleType,
+        }),
+      );
     }
 
     // Validate cron expression
@@ -74,11 +74,7 @@ export class ScheduleManagerService implements ScheduleService {
     // Validate timezone
     const tz = request.timezone ?? 'UTC';
     if (!isValidTimezone(tz)) {
-      return err(new ClaudineError(
-        ErrorCode.INVALID_INPUT,
-        `Invalid timezone: ${tz}`,
-        { timezone: tz }
-      ));
+      return err(new ClaudineError(ErrorCode.INVALID_INPUT, `Invalid timezone: ${tz}`, { timezone: tz }));
     }
 
     // Parse scheduledAt if provided
@@ -86,18 +82,18 @@ export class ScheduleManagerService implements ScheduleService {
     if (request.scheduledAt) {
       scheduledAtMs = Date.parse(request.scheduledAt);
       if (isNaN(scheduledAtMs)) {
-        return err(new ClaudineError(
-          ErrorCode.INVALID_INPUT,
-          `Invalid scheduledAt datetime: ${request.scheduledAt}`,
-          { scheduledAt: request.scheduledAt }
-        ));
+        return err(
+          new ClaudineError(ErrorCode.INVALID_INPUT, `Invalid scheduledAt datetime: ${request.scheduledAt}`, {
+            scheduledAt: request.scheduledAt,
+          }),
+        );
       }
       if (scheduledAtMs <= Date.now()) {
-        return err(new ClaudineError(
-          ErrorCode.INVALID_INPUT,
-          'scheduledAt must be in the future',
-          { scheduledAt: request.scheduledAt }
-        ));
+        return err(
+          new ClaudineError(ErrorCode.INVALID_INPUT, 'scheduledAt must be in the future', {
+            scheduledAt: request.scheduledAt,
+          }),
+        );
       }
     }
 
@@ -106,11 +102,11 @@ export class ScheduleManagerService implements ScheduleService {
     if (request.expiresAt) {
       expiresAtMs = Date.parse(request.expiresAt);
       if (isNaN(expiresAtMs)) {
-        return err(new ClaudineError(
-          ErrorCode.INVALID_INPUT,
-          `Invalid expiresAt datetime: ${request.expiresAt}`,
-          { expiresAt: request.expiresAt }
-        ));
+        return err(
+          new ClaudineError(ErrorCode.INVALID_INPUT, `Invalid expiresAt datetime: ${request.expiresAt}`, {
+            expiresAt: request.expiresAt,
+          }),
+        );
       }
     }
 
@@ -124,11 +120,11 @@ export class ScheduleManagerService implements ScheduleService {
       nextRunAt = nextResult.value;
     } else {
       if (scheduledAtMs === undefined) {
-        return err(new ClaudineError(
-          ErrorCode.INVALID_INPUT,
-          'scheduledAt must be provided for one-time schedules',
-          { scheduleType: request.scheduleType }
-        ));
+        return err(
+          new ClaudineError(ErrorCode.INVALID_INPUT, 'scheduledAt must be provided for one-time schedules', {
+            scheduleType: request.scheduleType,
+          }),
+        );
       }
       nextRunAt = scheduledAtMs;
     }
@@ -138,11 +134,11 @@ export class ScheduleManagerService implements ScheduleService {
     if (request.workingDirectory) {
       const pathValidation = validatePath(request.workingDirectory);
       if (!pathValidation.ok) {
-        return err(new ClaudineError(
-          ErrorCode.INVALID_DIRECTORY,
-          `Invalid working directory: ${pathValidation.error.message}`,
-          { workingDirectory: request.workingDirectory }
-        ));
+        return err(
+          new ClaudineError(ErrorCode.INVALID_DIRECTORY, `Invalid working directory: ${pathValidation.error.message}`, {
+            workingDirectory: request.workingDirectory,
+          }),
+        );
       }
       validatedWorkingDirectory = pathValidation.value;
     }
@@ -182,11 +178,7 @@ export class ScheduleManagerService implements ScheduleService {
     return ok(schedule);
   }
 
-  async listSchedules(
-    status?: ScheduleStatus,
-    limit?: number,
-    offset?: number
-  ): Promise<Result<readonly Schedule[]>> {
+  async listSchedules(status?: ScheduleStatus, limit?: number, offset?: number): Promise<Result<readonly Schedule[]>> {
     if (status) {
       return this.scheduleRepository.findByStatus(status, limit, offset);
     }
@@ -196,7 +188,7 @@ export class ScheduleManagerService implements ScheduleService {
   async getSchedule(
     scheduleId: ScheduleId,
     includeHistory?: boolean,
-    historyLimit?: number
+    historyLimit?: number,
   ): Promise<Result<{ schedule: Schedule; history?: readonly ScheduleExecution[] }>> {
     const lookupResult = await this.fetchScheduleOrError(scheduleId);
     if (!lookupResult.ok) {
@@ -207,10 +199,7 @@ export class ScheduleManagerService implements ScheduleService {
     let history: readonly ScheduleExecution[] | undefined;
 
     if (includeHistory) {
-      const historyResult = await this.scheduleRepository.getExecutionHistory(
-        scheduleId,
-        historyLimit
-      );
+      const historyResult = await this.scheduleRepository.getExecutionHistory(scheduleId, historyLimit);
       if (historyResult.ok) {
         history = historyResult.value;
       }
@@ -293,31 +282,27 @@ export class ScheduleManagerService implements ScheduleService {
    */
   private async fetchScheduleOrError(
     scheduleId: ScheduleId,
-    expectedStatus?: ScheduleStatus
+    expectedStatus?: ScheduleStatus,
   ): Promise<Result<Schedule>> {
     const result = await this.scheduleRepository.findById(scheduleId);
     if (!result.ok) {
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to get schedule: ${result.error.message}`,
-        { scheduleId }
-      ));
+      return err(
+        new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to get schedule: ${result.error.message}`, { scheduleId }),
+      );
     }
 
     if (!result.value) {
-      return err(new ClaudineError(
-        ErrorCode.TASK_NOT_FOUND,
-        `Schedule ${scheduleId} not found`,
-        { scheduleId }
-      ));
+      return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`, { scheduleId }));
     }
 
     if (expectedStatus !== undefined && result.value.status !== expectedStatus) {
-      return err(new ClaudineError(
-        ErrorCode.INVALID_OPERATION,
-        `Schedule ${scheduleId} is not ${expectedStatus} (status: ${result.value.status})`,
-        { scheduleId, expectedStatus, actualStatus: result.value.status }
-      ));
+      return err(
+        new ClaudineError(
+          ErrorCode.INVALID_OPERATION,
+          `Schedule ${scheduleId} is not ${expectedStatus} (status: ${result.value.status})`,
+          { scheduleId, expectedStatus, actualStatus: result.value.status },
+        ),
+      );
     }
 
     return ok(result.value);

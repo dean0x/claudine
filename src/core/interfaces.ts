@@ -3,10 +3,24 @@
  * All implementations should be injected, not instantiated directly
  */
 
-import { Result } from './result.js';
-import { Task, TaskId, Worker, WorkerId, SystemResources, TaskOutput, DelegateRequest, Schedule, ScheduleId, ScheduleStatus, ScheduleCreateRequest, TaskCheckpoint, ResumeTaskRequest } from './domain.js';
 import { ChildProcess } from 'child_process';
-import { ClaudineEvent, EventHandler, BaseEvent } from './events/events.js';
+import {
+  DelegateRequest,
+  ResumeTaskRequest,
+  Schedule,
+  ScheduleCreateRequest,
+  ScheduleId,
+  ScheduleStatus,
+  SystemResources,
+  Task,
+  TaskCheckpoint,
+  TaskId,
+  TaskOutput,
+  Worker,
+  WorkerId,
+} from './domain.js';
+import { BaseEvent, ClaudineEvent, EventHandler } from './events/events.js';
+import { Result } from './result.js';
 
 /**
  * Task queue management
@@ -27,11 +41,7 @@ export interface TaskQueue {
  * Process spawning abstraction
  */
 export interface ProcessSpawner {
-  spawn(
-    prompt: string,
-    workingDirectory: string,
-    taskId?: string
-  ): Result<{ process: ChildProcess; pid: number }>;
+  spawn(prompt: string, workingDirectory: string, taskId?: string): Result<{ process: ChildProcess; pid: number }>;
   kill(pid: number): Result<void>;
 }
 
@@ -163,7 +173,11 @@ export interface DependencyRepository {
    * Mark a dependency as resolved with given resolution state
    * @returns Result<void> - Success or error. Use resolveDependenciesBatch() if you need the count of resolved dependencies.
    */
-  resolveDependency(taskId: TaskId, dependsOnTaskId: TaskId, resolution: 'completed' | 'failed' | 'cancelled'): Promise<Result<void>>;
+  resolveDependency(
+    taskId: TaskId,
+    dependsOnTaskId: TaskId,
+    resolution: 'completed' | 'failed' | 'cancelled',
+  ): Promise<Result<void>>;
 
   /**
    * Batch resolve all dependencies that depend on a completed task
@@ -172,7 +186,10 @@ export interface DependencyRepository {
    * @param resolution The resolution state to apply to all dependents
    * @returns Result<number> - Count of dependencies resolved (useful for logging and metrics)
    */
-  resolveDependenciesBatch(dependsOnTaskId: TaskId, resolution: 'completed' | 'failed' | 'cancelled'): Promise<Result<number>>;
+  resolveDependenciesBatch(
+    dependsOnTaskId: TaskId,
+    resolution: 'completed' | 'failed' | 'cancelled',
+  ): Promise<Result<number>>;
 
   /**
    * Get all unresolved dependencies for a task
@@ -224,11 +241,11 @@ export interface DependencyRepository {
 export interface ScheduleExecution {
   readonly id: number;
   readonly scheduleId: ScheduleId;
-  readonly taskId?: TaskId;               // ID of created task (if execution succeeded in creating one)
-  readonly scheduledFor: number;          // Epoch ms - when execution was scheduled to run
-  readonly executedAt?: number;           // Epoch ms - when execution actually started
+  readonly taskId?: TaskId; // ID of created task (if execution succeeded in creating one)
+  readonly scheduledFor: number; // Epoch ms - when execution was scheduled to run
+  readonly executedAt?: number; // Epoch ms - when execution actually started
   readonly status: 'pending' | 'triggered' | 'completed' | 'failed' | 'missed' | 'skipped';
-  readonly errorMessage?: string;         // Error details if status is 'failed' or 'missed'
+  readonly errorMessage?: string; // Error details if status is 'failed' or 'missed'
   readonly createdAt: number;
 }
 
@@ -348,8 +365,10 @@ export interface TaskEventEmitter {
   on(event: 'task:cancelled', listener: (task: Task) => void): void;
   on(event: 'worker:spawned', listener: (worker: Worker) => void): void;
   on(event: 'worker:killed', listener: (worker: Worker) => void): void;
-  
+
+  // biome-ignore lint/suspicious/noExplicitAny: EventEmitter-compatible variadic signatures
   emit(event: string, ...args: any[]): void;
+  // biome-ignore lint/suspicious/noExplicitAny: EventEmitter-compatible variadic signatures
   off(event: string, listener: (...args: any[]) => void): void;
 }
 
@@ -371,7 +390,11 @@ export interface TaskManager {
   // Worktree management methods (event-driven)
   listWorktrees(includeStale?: boolean, olderThanDays?: number): Promise<Result<readonly WorktreeStatus[]>>;
   getWorktreeStatus(taskId: TaskId): Promise<Result<WorktreeStatus>>;
-  cleanupWorktrees(strategy?: 'safe' | 'interactive' | 'force', olderThanDays?: number, taskIds?: TaskId[]): Promise<Result<WorktreeCleanupResult>>;
+  cleanupWorktrees(
+    strategy?: 'safe' | 'interactive' | 'force',
+    olderThanDays?: number,
+    taskIds?: TaskId[],
+  ): Promise<Result<WorktreeCleanupResult>>;
 }
 
 /**
@@ -395,9 +418,9 @@ export interface WorktreeStatus {
 }
 
 export interface WorktreeManagerConfig {
-  maxWorktreeAgeDays: number;        // Default: 7
-  requireSafetyCheck: boolean;       // Default: true
-  allowForceRemoval: boolean;        // Default: false
+  maxWorktreeAgeDays: number; // Default: 7
+  requireSafetyCheck: boolean; // Default: true
+  allowForceRemoval: boolean; // Default: false
 }
 
 export interface CompletionResult {
@@ -483,7 +506,11 @@ export interface WorktreeCleanupResult {
 export interface ScheduleService {
   createSchedule(request: ScheduleCreateRequest): Promise<Result<Schedule>>;
   listSchedules(status?: ScheduleStatus, limit?: number, offset?: number): Promise<Result<readonly Schedule[]>>;
-  getSchedule(scheduleId: ScheduleId, includeHistory?: boolean, historyLimit?: number): Promise<Result<{ schedule: Schedule; history?: readonly ScheduleExecution[] }>>;
+  getSchedule(
+    scheduleId: ScheduleId,
+    includeHistory?: boolean,
+    historyLimit?: number,
+  ): Promise<Result<{ schedule: Schedule; history?: readonly ScheduleExecution[] }>>;
   cancelSchedule(scheduleId: ScheduleId, reason?: string): Promise<Result<void>>;
   pauseSchedule(scheduleId: ScheduleId): Promise<Result<void>>;
   resumeSchedule(scheduleId: ScheduleId): Promise<Result<void>>;

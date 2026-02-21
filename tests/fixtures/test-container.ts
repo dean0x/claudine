@@ -2,26 +2,26 @@
  * Test container helper for dependency injection in tests
  */
 
-import { Container } from '../../src/core/container';
-import { InMemoryEventBus } from '../../src/core/events/event-bus';
-import { TaskManagerService } from '../../src/services/task-manager';
-import { SQLiteTaskRepository } from '../../src/implementations/task-repository';
-import { EventDrivenWorkerPool } from '../../src/implementations/event-driven-worker-pool';
-import { ClaudeProcessSpawner } from '../../src/implementations/process-spawner';
-import { BufferedOutputCapture } from '../../src/implementations/output-capture';
-import { ResourceMonitor } from '../../src/implementations/resource-monitor';
-import { AutoscalingManager } from '../../src/services/autoscaling-manager';
-import { RecoveryManager } from '../../src/services/recovery-manager';
-import { ConsoleLogger } from '../../src/implementations/logger';
-import { Configuration } from '../../src/core/configuration';
-import { EventBus, Logger } from '../../src/core/interfaces';
-import { Result, ok } from '../../src/core/result';
-import { Database } from '../../src/implementations/database';
-import { PriorityTaskQueue } from '../../src/implementations/task-queue';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { Configuration } from '../../src/core/configuration';
+import { Container } from '../../src/core/container';
+import { InMemoryEventBus } from '../../src/core/events/event-bus';
+import { EventBus, Logger } from '../../src/core/interfaces';
+import { ok, Result } from '../../src/core/result';
+import { Database } from '../../src/implementations/database';
+import { EventDrivenWorkerPool } from '../../src/implementations/event-driven-worker-pool';
+import { ConsoleLogger } from '../../src/implementations/logger';
+import { BufferedOutputCapture } from '../../src/implementations/output-capture';
+import { ClaudeProcessSpawner } from '../../src/implementations/process-spawner';
+import { ResourceMonitor } from '../../src/implementations/resource-monitor';
+import { PriorityTaskQueue } from '../../src/implementations/task-queue';
+import { SQLiteTaskRepository } from '../../src/implementations/task-repository';
+import { AutoscalingManager } from '../../src/services/autoscaling-manager';
+import { RecoveryManager } from '../../src/services/recovery-manager';
+import { TaskManagerService } from '../../src/services/task-manager';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,13 +43,7 @@ export interface TestContainer {
 }
 
 export async function createTestContainer(options: TestContainerOptions = {}): Promise<TestContainer> {
-  const {
-    testMode = true,
-    database = ':memory:',
-    maxWorkers = 2,
-    logLevel = 'error',
-    silent = true
-  } = options;
+  const { testMode = true, database = ':memory:', maxWorkers = 2, logLevel = 'error', silent = true } = options;
 
   // Create test config
   const config: Configuration = {
@@ -59,12 +53,13 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
     memoryReserve: 536870912, // 512MB for tests
     logLevel,
     maxListenersPerEvent: 100,
-    maxTotalSubscriptions: 1000
+    maxTotalSubscriptions: 1000,
   };
 
   // Create test-specific paths
   const logDirectory = path.join(__dirname, '..', '..', 'test-logs', randomUUID());
-  const databasePath = database === ':memory:' ? ':memory:' : path.join(__dirname, '..', '..', 'test-db', `${randomUUID()}.db`);
+  const databasePath =
+    database === ':memory:' ? ':memory:' : path.join(__dirname, '..', '..', 'test-db', `${randomUUID()}.db`);
 
   // Ensure directories exist for non-memory databases
   if (database !== ':memory:') {
@@ -76,9 +71,7 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
   const container = new Container();
 
   // Register logger
-  const logger = silent
-    ? new SilentLogger()
-    : new ConsoleLogger(logLevel);
+  const logger = silent ? new SilentLogger() : new ConsoleLogger(logLevel);
   container.registerValue('logger', logger);
 
   // Register configuration
@@ -99,9 +92,7 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
     if (!dbResult.ok || !loggerResult.ok) {
       return undefined;
     }
-    const repo = new SQLiteTaskRepository(
-      dbResult.value as Database
-    );
+    const repo = new SQLiteTaskRepository(dbResult.value as Database);
     return repo;
   });
 
@@ -113,9 +104,7 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
   // Register services
   container.registerSingleton('processSpawner', async () => {
     const configResult = await container.resolve('config');
-    return configResult.ok
-      ? new ClaudeProcessSpawner(configResult.value as Configuration)
-      : undefined;
+    return configResult.ok ? new ClaudeProcessSpawner(configResult.value as Configuration) : undefined;
   });
 
   container.registerSingleton('outputCapture', async () => {
@@ -124,17 +113,12 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
     if (!loggerResult.ok || !configResult.ok) {
       return undefined;
     }
-    return new BufferedOutputCapture(
-      loggerResult.value as Logger,
-      configResult.value as Configuration
-    );
+    return new BufferedOutputCapture(loggerResult.value as Logger, configResult.value as Configuration);
   });
 
   container.registerSingleton('resourceMonitor', async () => {
     const loggerResult = await container.resolve('logger');
-    return loggerResult.ok
-      ? new ResourceMonitor(loggerResult.value as Logger)
-      : undefined;
+    return loggerResult.ok ? new ResourceMonitor(loggerResult.value as Logger) : undefined;
   });
 
   container.registerSingleton('workerPool', async () => {
@@ -142,7 +126,7 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
       container.resolve('processSpawner'),
       container.resolve('logger'),
       container.resolve('eventBus'),
-      container.resolve('outputCapture')
+      container.resolve('outputCapture'),
     ]);
 
     const [spawnerResult, loggerResult, eventBusResult, captureResult] = results;
@@ -155,7 +139,7 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
       spawnerResult.value as any,
       loggerResult.value as Logger,
       eventBusResult.value as EventBus,
-      captureResult.value as any
+      captureResult.value as any,
     );
   });
 
@@ -165,7 +149,7 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
       container.resolve('taskRepository'),
       container.resolve('logger'),
       container.resolve('config'),
-      container.resolve('outputCapture')
+      container.resolve('outputCapture'),
     ]);
 
     const [eventBusResult, repoResult, loggerResult, configResult, captureResult] = results;
@@ -176,10 +160,10 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
 
     return new TaskManagerService(
       eventBusResult.value as EventBus,
-      repoResult.ok ? repoResult.value as any : undefined,
+      repoResult.ok ? (repoResult.value as any) : undefined,
       loggerResult.value as Logger,
       configResult.value as Configuration,
-      captureResult.ok ? captureResult.value as any : undefined
+      captureResult.ok ? (captureResult.value as any) : undefined,
     );
   });
 
@@ -191,7 +175,7 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
         container.resolve('resourceMonitor'),
         container.resolve('logger'),
         container.resolve('config'),
-        container.resolve('eventBus')
+        container.resolve('eventBus'),
       ]);
 
       const [poolResult, monitorResult, loggerResult, configResult, eventBusResult] = results;
@@ -205,7 +189,7 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
         monitorResult.value as any,
         loggerResult.value as Logger,
         configResult.value as Configuration,
-        eventBusResult.value as EventBus
+        eventBusResult.value as EventBus,
       );
       await manager.start();
       return manager;
@@ -261,7 +245,7 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
     eventBus: eventBusResult.value as EventBus,
     taskManager: taskManagerResult.value as TaskManagerService,
     logger: loggerResult.value as Logger,
-    cleanup
+    cleanup,
   };
 }
 

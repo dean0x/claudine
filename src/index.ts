@@ -6,12 +6,11 @@
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import pkg from '../package.json' with { type: 'json' };
-import { bootstrap } from './bootstrap.js';
-import { AutoscalingManager } from './services/autoscaling-manager.js';
-import { WorkerPool } from './core/interfaces.js';
 import { MCPAdapter } from './adapters/mcp-adapter.js';
-import { Logger } from './core/interfaces.js';
+import { bootstrap } from './bootstrap.js';
 import { Container } from './core/container.js';
+import { Logger, WorkerPool } from './core/interfaces.js';
+import { AutoscalingManager } from './services/autoscaling-manager.js';
 
 // Handle errors gracefully
 process.on('uncaughtException', (error) => {
@@ -27,7 +26,7 @@ process.on('unhandledRejection', (error) => {
 async function main() {
   // Set process title for easy identification in ps/pgrep/pkill
   process.title = 'claudine-mcp';
-  
+
   let container: Container | null = null;
   let autoscaler: AutoscalingManager | null = null;
 
@@ -112,15 +111,14 @@ async function main() {
 
     // Keep process alive
     process.stdin.resume();
-
   } catch (error) {
     console.error('Failed to start server:', error);
-    
+
     // Clean up if startup failed
     if (autoscaler) {
       autoscaler.stop();
     }
-    
+
     process.exit(1);
   }
 }

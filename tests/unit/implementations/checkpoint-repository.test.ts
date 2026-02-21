@@ -4,12 +4,12 @@
  * Pattern: Behavior-driven testing with Result pattern validation
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { Database } from '../../../src/implementations/database';
-import { SQLiteCheckpointRepository } from '../../../src/implementations/checkpoint-repository';
-import { TaskId } from '../../../src/core/domain';
-import type { TaskCheckpoint } from '../../../src/core/domain';
 import type SQLite from 'better-sqlite3';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { TaskCheckpoint } from '../../../src/core/domain';
+import { TaskId } from '../../../src/core/domain';
+import { SQLiteCheckpointRepository } from '../../../src/implementations/checkpoint-repository';
+import { Database } from '../../../src/implementations/database';
 
 describe('SQLiteCheckpointRepository - Unit Tests', () => {
   let db: Database;
@@ -31,15 +31,15 @@ describe('SQLiteCheckpointRepository - Unit Tests', () => {
    * ARCHITECTURE: Minimal row insertion - only required fields for FK satisfaction
    */
   function ensureTaskExists(taskId: string): void {
-    rawDb.prepare(
-      `INSERT OR IGNORE INTO tasks (id, prompt, status, priority, created_at)
-       VALUES (?, 'stub', 'completed', 'P2', ?)`
-    ).run(taskId, Date.now());
+    rawDb
+      .prepare(
+        `INSERT OR IGNORE INTO tasks (id, prompt, status, priority, created_at)
+       VALUES (?, 'stub', 'completed', 'P2', ?)`,
+      )
+      .run(taskId, Date.now());
   }
 
-  function createTestCheckpoint(
-    overrides: Partial<Omit<TaskCheckpoint, 'id'>> = {}
-  ): Omit<TaskCheckpoint, 'id'> {
+  function createTestCheckpoint(overrides: Partial<Omit<TaskCheckpoint, 'id'>> = {}): Omit<TaskCheckpoint, 'id'> {
     const data = {
       taskId: TaskId('test-task-1'),
       checkpointType: 'completed' as const,
@@ -301,7 +301,7 @@ describe('SQLiteCheckpointRepository - Unit Tests', () => {
       if (!result.ok) return;
 
       expect(result.value).toHaveLength(2);
-      expect(result.value.every(cp => cp.taskId === taskA)).toBe(true);
+      expect(result.value.every((cp) => cp.taskId === taskA)).toBe(true);
     });
   });
 
@@ -491,24 +491,30 @@ describe('SQLiteCheckpointRepository - Unit Tests', () => {
       ensureTaskExists(taskId);
       const now = Date.now();
 
-      await repo.save(createTestCheckpoint({
-        taskId,
-        checkpointType: 'failed',
-        errorSummary: 'First attempt failed',
-        createdAt: now - 20000,
-      }));
-      await repo.save(createTestCheckpoint({
-        taskId,
-        checkpointType: 'failed',
-        errorSummary: 'Second attempt failed',
-        createdAt: now - 10000,
-      }));
-      await repo.save(createTestCheckpoint({
-        taskId,
-        checkpointType: 'completed',
-        outputSummary: 'Third attempt succeeded',
-        createdAt: now,
-      }));
+      await repo.save(
+        createTestCheckpoint({
+          taskId,
+          checkpointType: 'failed',
+          errorSummary: 'First attempt failed',
+          createdAt: now - 20000,
+        }),
+      );
+      await repo.save(
+        createTestCheckpoint({
+          taskId,
+          checkpointType: 'failed',
+          errorSummary: 'Second attempt failed',
+          createdAt: now - 10000,
+        }),
+      );
+      await repo.save(
+        createTestCheckpoint({
+          taskId,
+          checkpointType: 'completed',
+          outputSummary: 'Third attempt succeeded',
+          createdAt: now,
+        }),
+      );
 
       // Act
       const latestResult = await repo.findLatest(taskId);

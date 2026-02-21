@@ -1,4 +1,4 @@
-import type { Task, Worker, WorkerOptions, TaskSpecification } from '../../src/core/domain';
+import type { Task, TaskSpecification, Worker, WorkerOptions } from '../../src/core/domain';
 
 // Re-export test fixtures
 export { NoOpProcessSpawner } from './no-op-spawner.js';
@@ -46,4 +46,4 @@ export const createMockWorkerOptions = (overrides?: Partial<WorkerOptions>): Wor
   ...overrides,
 });
 
-export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

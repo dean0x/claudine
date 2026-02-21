@@ -10,26 +10,26 @@
  * Trade-offs: Slight performance overhead vs direct reads (< 1ms)
  */
 
-import { TaskRepository, Logger, OutputCapture } from '../../core/interfaces.js';
 import { Task } from '../../core/domain.js';
-import { Result, ok, err } from '../../core/result.js';
-import { BaseEventHandler } from '../../core/events/handlers.js';
+import { taskNotFound } from '../../core/errors.js';
 import { EventBus, InMemoryEventBus } from '../../core/events/event-bus.js';
 import {
-  TaskStatusQueryEvent,
-  TaskStatusResponseEvent,
+  createEvent,
   TaskLogsQueryEvent,
   TaskLogsResponseEvent,
-  createEvent
+  TaskStatusQueryEvent,
+  TaskStatusResponseEvent,
 } from '../../core/events/events.js';
-import { taskNotFound } from '../../core/errors.js';
+import { BaseEventHandler } from '../../core/events/handlers.js';
+import { Logger, OutputCapture, TaskRepository } from '../../core/interfaces.js';
+import { err, ok, Result } from '../../core/result.js';
 
 export class QueryHandler extends BaseEventHandler {
   constructor(
     private readonly repository: TaskRepository,
     private readonly outputCapture: OutputCapture | undefined,
     private readonly eventBus: EventBus,
-    logger: Logger
+    logger: Logger,
   ) {
     super(logger, 'QueryHandler');
   }
@@ -40,7 +40,7 @@ export class QueryHandler extends BaseEventHandler {
   async setup(eventBus: EventBus): Promise<Result<void>> {
     const subscriptions = [
       eventBus.subscribe('TaskStatusQuery', this.handleTaskStatusQuery.bind(this)),
-      eventBus.subscribe('TaskLogsQuery', this.handleTaskLogsQuery.bind(this))
+      eventBus.subscribe('TaskLogsQuery', this.handleTaskLogsQuery.bind(this)),
     ];
 
     // Check if any subscription failed
@@ -65,7 +65,7 @@ export class QueryHandler extends BaseEventHandler {
     this.logger.debug('Processing task status query', {
       taskId: event.taskId,
       isAllTasks: !event.taskId,
-      correlationId
+      correlationId,
     });
 
     let queryResult: Result<Task | readonly Task[] | null>;
@@ -101,7 +101,7 @@ export class QueryHandler extends BaseEventHandler {
       } else {
         this.logger.error('Task status query failed', queryResult.error, {
           taskId: event.taskId,
-          correlationId
+          correlationId,
         });
         (this.eventBus as InMemoryEventBus).respondError(correlationId, queryResult.error);
       }
@@ -118,7 +118,7 @@ export class QueryHandler extends BaseEventHandler {
     this.logger.debug('Processing task logs query', {
       taskId: event.taskId,
       tail: event.tail,
-      correlationId
+      correlationId,
     });
 
     // First verify task exists
@@ -127,7 +127,7 @@ export class QueryHandler extends BaseEventHandler {
     if (!taskResult.ok) {
       this.logger.error('Task logs query failed - repository error', taskResult.error, {
         taskId: event.taskId,
-        correlationId
+        correlationId,
       });
 
       if (correlationId && 'respondError' in this.eventBus) {
@@ -140,7 +140,7 @@ export class QueryHandler extends BaseEventHandler {
       const notFoundError = taskNotFound(event.taskId);
       this.logger.error('Task logs query failed - task not found', notFoundError, {
         taskId: event.taskId,
-        correlationId
+        correlationId,
       });
 
       if (correlationId && 'respondError' in this.eventBus) {
@@ -168,7 +168,7 @@ export class QueryHandler extends BaseEventHandler {
       taskId: event.taskId,
       stdout,
       stderr,
-      totalSize
+      totalSize,
     };
 
     // Send response back via event bus

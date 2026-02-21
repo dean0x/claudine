@@ -1,16 +1,16 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { bootstrap } from '../../src/bootstrap.js';
-import { Container } from '../../src/core/container.js';
-import { TaskManager, DependencyRepository } from '../../src/core/interfaces.js';
-import { Task, TaskId, Priority } from '../../src/core/domain.js';
-import { EventBus, TaskDependencyFailedEvent } from '../../src/core/events/events.js';
-import { Database } from '../../src/implementations/database.js';
-import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
-import { TestResourceMonitor } from '../../src/implementations/resource-monitor.js';
-import { flushEventLoop } from '../utils/event-helpers.js';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { bootstrap } from '../../src/bootstrap.js';
+import { Container } from '../../src/core/container.js';
+import { Priority, Task, TaskId } from '../../src/core/domain.js';
+import { EventBus, TaskDependencyFailedEvent } from '../../src/core/events/events.js';
+import { DependencyRepository, TaskManager } from '../../src/core/interfaces.js';
+import { Database } from '../../src/implementations/database.js';
+import { TestResourceMonitor } from '../../src/implementations/resource-monitor.js';
+import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
+import { flushEventLoop } from '../utils/event-helpers.js';
 
 describe('Integration: Task Dependencies - End-to-End Flow', () => {
   let container: Container;
@@ -28,7 +28,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
     const result = await bootstrap({
       processSpawner: new NoOpProcessSpawner(),
       resourceMonitor: new TestResourceMonitor(),
-      skipResourceMonitoring: true
+      skipResourceMonitoring: true,
     });
     if (!result.ok) {
       throw new Error(`Bootstrap failed: ${result.error.message}`);
@@ -77,7 +77,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       // Create Task A (no dependencies)
       const taskAResult = await taskManager.delegate({
         prompt: 'Task A - independent',
-        priority: Priority.P2
+        priority: Priority.P2,
       });
 
       expect(taskAResult.ok).toBe(true);
@@ -92,7 +92,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       const taskBResult = await taskManager.delegate({
         prompt: 'Task B - depends on A',
         priority: Priority.P2,
-        dependsOn: [taskA.id]
+        dependsOn: [taskA.id],
       });
 
       expect(taskBResult.ok).toBe(true);
@@ -124,7 +124,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
     it('should allow task with no dependencies to execute immediately', async () => {
       const taskResult = await taskManager.delegate({
         prompt: 'Independent task',
-        priority: Priority.P2
+        priority: Priority.P2,
       });
 
       expect(taskResult.ok).toBe(true);
@@ -175,7 +175,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       const taskResult = await taskManager.delegate({
         prompt: 'Task with invalid dependency',
         priority: Priority.P2,
-        dependsOn: ['non-existent-task-id' as TaskId]
+        dependsOn: ['non-existent-task-id' as TaskId],
       });
 
       // Task creation succeeds (task is created before dependency validation)
@@ -194,7 +194,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       // Create Task A first (no dependencies)
       const taskAResult = await taskManager.delegate({
         prompt: 'Task A - base task',
-        priority: Priority.P2
+        priority: Priority.P2,
       });
 
       expect(taskAResult.ok).toBe(true);
@@ -209,7 +209,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       const taskBResult = await taskManager.delegate({
         prompt: 'Task B - depends on A',
         priority: Priority.P2,
-        dependsOn: [taskA.id]
+        dependsOn: [taskA.id],
       });
 
       expect(taskBResult.ok).toBe(true);
@@ -233,12 +233,12 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       // Create Tasks A and B (independent)
       const taskAResult = await taskManager.delegate({
         prompt: 'Task A',
-        priority: Priority.P2
+        priority: Priority.P2,
       });
 
       const taskBResult = await taskManager.delegate({
         prompt: 'Task B',
-        priority: Priority.P2
+        priority: Priority.P2,
       });
 
       expect(taskAResult.ok).toBe(true);
@@ -255,7 +255,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       const taskCResult = await taskManager.delegate({
         prompt: 'Task C - depends on A and B',
         priority: Priority.P2,
-        dependsOn: [taskA.id, taskB.id]
+        dependsOn: [taskA.id, taskB.id],
       });
 
       expect(taskCResult.ok).toBe(true);
@@ -273,7 +273,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
       expect(depsResult.value).toHaveLength(2);
 
-      const depTaskIds = depsResult.value.map(d => d.dependsOnTaskId);
+      const depTaskIds = depsResult.value.map((d) => d.dependsOnTaskId);
       expect(depTaskIds).toContain(taskA.id);
       expect(depTaskIds).toContain(taskB.id);
 
@@ -291,7 +291,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       // Create Task D (base)
       const taskDResult = await taskManager.delegate({
         prompt: 'Task D - base',
-        priority: Priority.P2
+        priority: Priority.P2,
       });
 
       expect(taskDResult.ok).toBe(true);
@@ -305,13 +305,13 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       const taskBResult = await taskManager.delegate({
         prompt: 'Task B - depends on D',
         priority: Priority.P2,
-        dependsOn: [taskD.id]
+        dependsOn: [taskD.id],
       });
 
       const taskCResult = await taskManager.delegate({
         prompt: 'Task C - depends on D',
         priority: Priority.P2,
-        dependsOn: [taskD.id]
+        dependsOn: [taskD.id],
       });
 
       expect(taskBResult.ok).toBe(true);
@@ -328,7 +328,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       const taskAResult = await taskManager.delegate({
         prompt: 'Task A - depends on B and C',
         priority: Priority.P2,
-        dependsOn: [taskB.id, taskC.id]
+        dependsOn: [taskB.id, taskC.id],
       });
 
       expect(taskAResult.ok).toBe(true);
@@ -358,7 +358,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       // Create Task A (base)
       const taskAResult = await taskManager.delegate({
         prompt: 'Task A',
-        priority: Priority.P2
+        priority: Priority.P2,
       });
 
       expect(taskAResult.ok).toBe(true);
@@ -372,13 +372,13 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       const taskBResult = await taskManager.delegate({
         prompt: 'Task B - depends on A',
         priority: Priority.P2,
-        dependsOn: [taskA.id]
+        dependsOn: [taskA.id],
       });
 
       const taskCResult = await taskManager.delegate({
         prompt: 'Task C - depends on A',
         priority: Priority.P2,
-        dependsOn: [taskA.id]
+        dependsOn: [taskA.id],
       });
 
       expect(taskBResult.ok && taskCResult.ok).toBe(true);
@@ -398,7 +398,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
       expect(dependentsResult.value).toHaveLength(2);
 
-      const dependentTaskIds = dependentsResult.value.map(d => d.taskId);
+      const dependentTaskIds = dependentsResult.value.map((d) => d.taskId);
       expect(dependentTaskIds).toContain(taskB.id);
       expect(dependentTaskIds).toContain(taskC.id);
     });
@@ -412,7 +412,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       // Create Task A (no dependencies)
       const taskAResult = await taskManager.delegate({
         prompt: 'Task A - independent',
-        priority: Priority.P2
+        priority: Priority.P2,
       });
 
       expect(taskAResult.ok).toBe(true);
@@ -427,7 +427,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       const taskBResult = await taskManager.delegate({
         prompt: 'Task B - depends on A',
         priority: Priority.P2,
-        dependsOn: [taskA.id]
+        dependsOn: [taskA.id],
       });
 
       expect(taskBResult.ok).toBe(true);
@@ -459,11 +459,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
       // Mark Task A's dependencies as resolved (simulating completion)
       // In production, this happens through DependencyHandler when TaskCompleted is emitted
-      const resolveResult = await dependencyRepo.resolveDependency(
-        taskB.id,
-        taskA.id,
-        'completed'
-      );
+      const resolveResult = await dependencyRepo.resolveDependency(taskB.id, taskA.id, 'completed');
 
       expect(resolveResult.ok).toBe(true);
 
@@ -509,12 +505,12 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       // Create Tasks A and B (independent)
       const taskAResult = await taskManager.delegate({
         prompt: 'Task A',
-        priority: Priority.P2
+        priority: Priority.P2,
       });
 
       const taskBResult = await taskManager.delegate({
         prompt: 'Task B',
-        priority: Priority.P2
+        priority: Priority.P2,
       });
 
       expect(taskAResult.ok && taskBResult.ok).toBe(true);
@@ -529,7 +525,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       const taskCResult = await taskManager.delegate({
         prompt: 'Task C - depends on A and B',
         priority: Priority.P2,
-        dependsOn: [taskA.id, taskB.id]
+        dependsOn: [taskA.id, taskB.id],
       });
 
       expect(taskCResult.ok).toBe(true);

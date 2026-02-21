@@ -11,13 +11,13 @@
  * Quality: 3-5 assertions per test, AAA pattern, behavioral testing
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MCPAdapter } from '../../../src/adapters/mcp-adapter';
-import { TaskFactory } from '../../fixtures/factories';
-import type { TaskManager, Logger, ScheduleRepository } from '../../../src/core/interfaces';
-import type { EventBus } from '../../../src/core/events/event-bus';
-import { ok, err } from '../../../src/core/result';
 import { ClaudineError, ErrorCode, taskNotFound } from '../../../src/core/errors';
+import type { EventBus } from '../../../src/core/events/event-bus';
+import type { Logger, ScheduleRepository, TaskManager } from '../../../src/core/interfaces';
+import { err, ok } from '../../../src/core/result';
+import { TaskFactory } from '../../fixtures/factories';
 
 // Test constants
 const VALID_PROMPT = 'analyze the codebase';
@@ -41,11 +41,7 @@ class MockTaskManager implements TaskManager {
     this.delegateCalls.push(request);
 
     if (this.shouldFailDelegate) {
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        'Failed to delegate task',
-        {}
-      ));
+      return err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'Failed to delegate task', {}));
     }
 
     const task = new TaskFactory()
@@ -60,11 +56,7 @@ class MockTaskManager implements TaskManager {
     this.statusCalls.push(taskId);
 
     if (this.shouldFailStatus) {
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        'Failed to get status',
-        {}
-      ));
+      return err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'Failed to get status', {}));
     }
 
     if (taskId) {
@@ -84,7 +76,7 @@ class MockTaskManager implements TaskManager {
       taskId,
       stdout: ['output line 1', 'output line 2', 'output line 3'],
       stderr: ['error line 1'],
-      totalSize: 1024
+      totalSize: 1024,
     });
   }
 
@@ -104,9 +96,7 @@ class MockTaskManager implements TaskManager {
     if (!oldTask) {
       return err(taskNotFound(taskId));
     }
-    const newTask = new TaskFactory()
-      .withPrompt(oldTask.prompt)
-      .build();
+    const newTask = new TaskFactory().withPrompt(oldTask.prompt).build();
     this.taskStorage.set(newTask.id, newTask);
     return ok(newTask);
   }
@@ -173,7 +163,9 @@ const stubScheduleRepository: ScheduleRepository = {
   findDue: vi.fn().mockResolvedValue(ok([])),
   delete: vi.fn().mockResolvedValue(ok(undefined)),
   count: vi.fn().mockResolvedValue(ok(0)),
-  recordExecution: vi.fn().mockResolvedValue(ok({ id: 1, scheduleId: '', scheduledFor: 0, status: 'pending', createdAt: 0 })),
+  recordExecution: vi
+    .fn()
+    .mockResolvedValue(ok({ id: 1, scheduleId: '', scheduledFor: 0, status: 'pending', createdAt: 0 })),
   getExecutionHistory: vi.fn().mockResolvedValue(ok([])),
 };
 
@@ -236,7 +228,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
         mockTaskManager.reset();
         const result = await simulateDelegateTask(adapter, mockTaskManager, {
           prompt: VALID_PROMPT,
-          priority
+          priority,
         });
 
         expect(result.isError).toBeFalsy();
@@ -251,7 +243,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
         mockTaskManager.reset();
         const result = await simulateDelegateTask(adapter, mockTaskManager, {
           prompt: VALID_PROMPT,
-          mergeStrategy
+          mergeStrategy,
         });
 
         expect(result.isError).toBeFalsy();
@@ -267,7 +259,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
         const result = await simulateDelegateTask(adapter, mockTaskManager, {
           prompt: VALID_PROMPT,
           useWorktree: true,
-          worktreeCleanup
+          worktreeCleanup,
         });
 
         expect(result.isError).toBeFalsy();
@@ -282,7 +274,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
         mockTaskManager.reset();
         const result = await simulateDelegateTask(adapter, mockTaskManager, {
           prompt: VALID_PROMPT,
-          timeout
+          timeout,
         });
 
         expect(result.isError).toBeFalsy();
@@ -297,7 +289,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
         mockTaskManager.reset();
         const result = await simulateDelegateTask(adapter, mockTaskManager, {
           prompt: VALID_PROMPT,
-          maxOutputBuffer
+          maxOutputBuffer,
         });
 
         expect(result.isError).toBeFalsy();
@@ -312,7 +304,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
     it('should successfully delegate with minimal parameters', async () => {
       const result = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
 
       expect(result.isError).toBeFalsy();
@@ -322,7 +314,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
     it('should accept task with only prompt provided', async () => {
       const result = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
 
       expect(result.isError).toBeFalsy();
@@ -332,7 +324,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
     it('should handle delegation without priority specified', async () => {
       const result = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
 
       expect(result.isError).toBeFalsy();
@@ -341,7 +333,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
     it('should handle delegation without worktree options', async () => {
       const result = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
 
       expect(result.isError).toBeFalsy();
@@ -350,7 +342,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
     it('should handle delegation without timeout or buffer limits', async () => {
       const result = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
 
       expect(result.isError).toBeFalsy();
@@ -361,7 +353,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
   describe('DelegateTask Tool - Success Cases', () => {
     it('should delegate task and return task ID in response', async () => {
       const result = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
 
       expect(result.isError).toBeFalsy();
@@ -384,7 +376,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
         prTitle: 'Test PR',
         prBody: 'Test description',
         timeout: 60000,
-        maxOutputBuffer: 5242880
+        maxOutputBuffer: 5242880,
       });
 
       const call = mockTaskManager.delegateCalls[0];
@@ -420,7 +412,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
     it('should return formatted success response with task details', async () => {
       const result = await simulateDelegateTask(adapter, mockTaskManager, {
         prompt: VALID_PROMPT,
-        priority: 'P1'
+        priority: 'P1',
       });
 
       expect(result.isError).toBeFalsy();
@@ -436,7 +428,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
       mockTaskManager.setFailDelegate(true);
 
       const result = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
 
       expect(result.isError).toBe(true);
@@ -447,7 +439,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
       mockTaskManager.setFailDelegate(true);
 
       const result = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
 
       expect(result.isError).toBe(true);
@@ -459,7 +451,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
     it('should fetch status for specific task ID', async () => {
       // First delegate a task
       const delegateResult = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
       const taskId = JSON.parse(delegateResult.content[0].text).taskId;
 
@@ -473,7 +465,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
     it('should return all task fields in status response', async () => {
       const delegateResult = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
       const taskId = JSON.parse(delegateResult.content[0].text).taskId;
 
@@ -502,7 +494,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
     it('should return error for non-existent task ID', async () => {
       const result = await simulateTaskStatus(adapter, mockTaskManager, {
-        taskId: 'non-existent-task'
+        taskId: 'non-existent-task',
       });
 
       expect(result.isError).toBe(true);
@@ -521,7 +513,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
   describe('TaskLogs Tool', () => {
     it('should fetch logs for specific task ID', async () => {
       const delegateResult = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
       const taskId = JSON.parse(delegateResult.content[0].text).taskId;
 
@@ -534,7 +526,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
     it('should return stdout and stderr arrays', async () => {
       const delegateResult = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
       const taskId = JSON.parse(delegateResult.content[0].text).taskId;
 
@@ -549,7 +541,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
     it('should support tail parameter to limit output', async () => {
       const delegateResult = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
       const taskId = JSON.parse(delegateResult.content[0].text).taskId;
 
@@ -560,7 +552,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
     it('should default tail to 100 if not specified', async () => {
       const delegateResult = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
       const taskId = JSON.parse(delegateResult.content[0].text).taskId;
 
@@ -571,7 +563,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
     it('should return error for non-existent task', async () => {
       const result = await simulateTaskLogs(adapter, mockTaskManager, {
-        taskId: 'non-existent-task'
+        taskId: 'non-existent-task',
       });
 
       expect(result.isError).toBe(true);
@@ -588,7 +580,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
   describe('CancelTask Tool', () => {
     it('should cancel task with provided task ID', async () => {
       const delegateResult = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
       const taskId = JSON.parse(delegateResult.content[0].text).taskId;
 
@@ -601,7 +593,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
     it('should accept optional cancellation reason', async () => {
       const delegateResult = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
       const taskId = JSON.parse(delegateResult.content[0].text).taskId;
       const reason = 'User requested cancellation';
@@ -613,7 +605,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
     it('should return success response after cancellation', async () => {
       const delegateResult = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
       const taskId = JSON.parse(delegateResult.content[0].text).taskId;
 
@@ -625,7 +617,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
     it('should return error for non-existent task', async () => {
       const result = await simulateCancelTask(adapter, mockTaskManager, {
-        taskId: 'non-existent-task'
+        taskId: 'non-existent-task',
       });
 
       expect(result.isError).toBe(true);
@@ -642,7 +634,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
   describe('RetryTask Tool', () => {
     it('should retry task with provided task ID', async () => {
       const delegateResult = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
       const taskId = JSON.parse(delegateResult.content[0].text).taskId;
 
@@ -655,12 +647,12 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
     it('should return new task ID in response', async () => {
       const delegateResult = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT
+        prompt: VALID_PROMPT,
       });
       const originalTaskId = JSON.parse(delegateResult.content[0].text).taskId;
 
       const result = await simulateRetryTask(adapter, mockTaskManager, {
-        taskId: originalTaskId
+        taskId: originalTaskId,
       });
 
       expect(result.isError).toBeFalsy();
@@ -671,7 +663,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
     it('should return error for non-existent task', async () => {
       const result = await simulateRetryTask(adapter, mockTaskManager, {
-        taskId: 'non-existent-task'
+        taskId: 'non-existent-task',
       });
 
       expect(result.isError).toBe(true);
@@ -690,11 +682,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 // Helper Functions - Simulate MCP tool calls
 // ============================================================================
 
-async function simulateDelegateTask(
-  adapter: MCPAdapter,
-  taskManager: MockTaskManager,
-  args: any
-): Promise<any> {
+async function simulateDelegateTask(adapter: MCPAdapter, taskManager: MockTaskManager, args: any): Promise<any> {
   // Simulate MCP tool call by directly calling the handler
   // In real MCP, this would go through the protocol layer
   try {
@@ -703,77 +691,81 @@ async function simulateDelegateTask(
     if (!result.ok) {
       return {
         isError: true,
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ error: result.error.message })
-        }]
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ error: result.error.message }),
+          },
+        ],
       };
     }
 
     return {
       isError: false,
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          taskId: result.value.id,
-          status: result.value.status,
-          priority: result.value.priority,
-          prompt: result.value.prompt
-        })
-      }]
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            taskId: result.value.id,
+            status: result.value.status,
+            priority: result.value.priority,
+            prompt: result.value.prompt,
+          }),
+        },
+      ],
     };
   } catch (error: any) {
     return {
       isError: true,
-      content: [{
-        type: 'text',
-        text: JSON.stringify({ error: error.message })
-      }]
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ error: error.message }),
+        },
+      ],
     };
   }
 }
 
-async function simulateTaskStatus(
-  adapter: MCPAdapter,
-  taskManager: MockTaskManager,
-  args: any
-): Promise<any> {
+async function simulateTaskStatus(adapter: MCPAdapter, taskManager: MockTaskManager, args: any): Promise<any> {
   try {
     const result = await taskManager.getStatus(args.taskId);
 
     if (!result.ok) {
       return {
         isError: true,
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ error: result.error.message })
-        }]
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ error: result.error.message }),
+          },
+        ],
       };
     }
 
     return {
       isError: false,
-      content: [{
-        type: 'text',
-        text: JSON.stringify(result.value)
-      }]
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(result.value),
+        },
+      ],
     };
   } catch (error: any) {
     return {
       isError: true,
-      content: [{
-        type: 'text',
-        text: JSON.stringify({ error: error.message })
-      }]
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ error: error.message }),
+        },
+      ],
     };
   }
 }
 
-async function simulateTaskLogs(
-  adapter: MCPAdapter,
-  taskManager: MockTaskManager,
-  args: any
-): Promise<any> {
+async function simulateTaskLogs(adapter: MCPAdapter, taskManager: MockTaskManager, args: any): Promise<any> {
   try {
     if (!args.taskId) {
       throw new Error('taskId is required');
@@ -784,36 +776,38 @@ async function simulateTaskLogs(
     if (!result.ok) {
       return {
         isError: true,
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ error: result.error.message })
-        }]
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ error: result.error.message }),
+          },
+        ],
       };
     }
 
     return {
       isError: false,
-      content: [{
-        type: 'text',
-        text: JSON.stringify(result.value)
-      }]
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(result.value),
+        },
+      ],
     };
   } catch (error: any) {
     return {
       isError: true,
-      content: [{
-        type: 'text',
-        text: JSON.stringify({ error: error.message })
-      }]
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ error: error.message }),
+        },
+      ],
     };
   }
 }
 
-async function simulateCancelTask(
-  adapter: MCPAdapter,
-  taskManager: MockTaskManager,
-  args: any
-): Promise<any> {
+async function simulateCancelTask(adapter: MCPAdapter, taskManager: MockTaskManager, args: any): Promise<any> {
   try {
     if (!args.taskId) {
       throw new Error('taskId is required');
@@ -824,39 +818,41 @@ async function simulateCancelTask(
     if (!result.ok) {
       return {
         isError: true,
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ error: result.error.message })
-        }]
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ error: result.error.message }),
+          },
+        ],
       };
     }
 
     return {
       isError: false,
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          message: `Task ${args.taskId} cancelled successfully`,
-          taskId: args.taskId
-        })
-      }]
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            message: `Task ${args.taskId} cancelled successfully`,
+            taskId: args.taskId,
+          }),
+        },
+      ],
     };
   } catch (error: any) {
     return {
       isError: true,
-      content: [{
-        type: 'text',
-        text: JSON.stringify({ error: error.message })
-      }]
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ error: error.message }),
+        },
+      ],
     };
   }
 }
 
-async function simulateRetryTask(
-  adapter: MCPAdapter,
-  taskManager: MockTaskManager,
-  args: any
-): Promise<any> {
+async function simulateRetryTask(adapter: MCPAdapter, taskManager: MockTaskManager, args: any): Promise<any> {
   try {
     if (!args.taskId) {
       throw new Error('taskId is required');
@@ -867,31 +863,37 @@ async function simulateRetryTask(
     if (!result.ok) {
       return {
         isError: true,
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ error: result.error.message })
-        }]
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ error: result.error.message }),
+          },
+        ],
       };
     }
 
     return {
       isError: false,
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          message: `Task ${args.taskId} retried successfully`,
-          newTaskId: result.value.id,
-          originalTaskId: args.taskId
-        })
-      }]
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            message: `Task ${args.taskId} retried successfully`,
+            newTaskId: result.value.id,
+            originalTaskId: args.taskId,
+          }),
+        },
+      ],
     };
   } catch (error: any) {
     return {
       isError: true,
-      content: [{
-        type: 'text',
-        text: JSON.stringify({ error: error.message })
-      }]
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ error: error.message }),
+        },
+      ],
     };
   }
 }

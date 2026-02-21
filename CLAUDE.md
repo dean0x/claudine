@@ -25,6 +25,7 @@ npm run dev
 # Test - Smart Grouping (v0.3.2+)
 npm run test:core           # Core domain logic (~3s) - SAFE in Claude Code
 npm run test:handlers       # Service handlers (~3s) - SAFE in Claude Code
+npm run test:services       # Service-layer tests (~2s) - SAFE in Claude Code
 npm run test:repositories   # Data layer (~2s) - SAFE in Claude Code
 npm run test:adapters       # MCP adapter (~2s) - SAFE in Claude Code
 npm run test:implementations # Other implementations (~2s) - SAFE in Claude Code

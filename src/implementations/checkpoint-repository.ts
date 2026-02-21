@@ -7,10 +7,10 @@
 
 import SQLite from 'better-sqlite3';
 import { z } from 'zod';
-import { CheckpointRepository } from '../core/interfaces.js';
 import { TaskCheckpoint, TaskId } from '../core/domain.js';
-import { Result, ok, tryCatchAsync } from '../core/result.js';
 import { operationErrorHandler } from '../core/errors.js';
+import { CheckpointRepository } from '../core/interfaces.js';
+import { ok, Result, tryCatchAsync } from '../core/result.js';
 import { Database } from './database.js';
 
 /**
@@ -109,13 +109,13 @@ export class SQLiteCheckpointRepository implements CheckpointRepository {
           checkpoint.gitCommitSha ?? null,
           checkpoint.gitDirtyFiles ? JSON.stringify(checkpoint.gitDirtyFiles) : null,
           checkpoint.contextNote ?? null,
-          checkpoint.createdAt
+          checkpoint.createdAt,
         );
 
         const row = this.getByIdStmt.get(result.lastInsertRowid) as CheckpointRow;
         return this.rowToCheckpoint(row);
       },
-      operationErrorHandler('save checkpoint', { taskId: checkpoint.taskId })
+      operationErrorHandler('save checkpoint', { taskId: checkpoint.taskId }),
     );
   }
 
@@ -136,7 +136,7 @@ export class SQLiteCheckpointRepository implements CheckpointRepository {
 
         return this.rowToCheckpoint(row);
       },
-      operationErrorHandler('find latest checkpoint', { taskId })
+      operationErrorHandler('find latest checkpoint', { taskId }),
     );
   }
 
@@ -152,9 +152,9 @@ export class SQLiteCheckpointRepository implements CheckpointRepository {
       async () => {
         const effectiveLimit = limit ?? SQLiteCheckpointRepository.DEFAULT_LIMIT;
         const rows = this.findAllStmt.all(taskId, effectiveLimit) as CheckpointRow[];
-        return rows.map(row => this.rowToCheckpoint(row));
+        return rows.map((row) => this.rowToCheckpoint(row));
       },
-      operationErrorHandler('find all checkpoints', { taskId })
+      operationErrorHandler('find all checkpoints', { taskId }),
     );
   }
 
@@ -169,7 +169,7 @@ export class SQLiteCheckpointRepository implements CheckpointRepository {
       async () => {
         this.deleteByTaskStmt.run(taskId);
       },
-      operationErrorHandler('delete checkpoints by task', { taskId })
+      operationErrorHandler('delete checkpoints by task', { taskId }),
     );
   }
 

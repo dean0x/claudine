@@ -12,7 +12,7 @@
 export async function waitFor(
   condition: () => boolean | Promise<boolean>,
   timeout = 5000,
-  interval = 10
+  interval = 10,
 ): Promise<void> {
   const startTime = Date.now();
 
@@ -21,7 +21,7 @@ export async function waitFor(
     if (result) {
       return;
     }
-    await new Promise(resolve => setTimeout(resolve, interval));
+    await new Promise((resolve) => setTimeout(resolve, interval));
   }
 
   throw new Error(`Timeout waiting for condition after ${timeout}ms`);
@@ -33,11 +33,7 @@ export async function waitFor(
  * @param eventName Name of the event to wait for
  * @param timeout Maximum time to wait
  */
-export function waitForEvent<T = any>(
-  eventEmitter: any,
-  eventName: string,
-  timeout = 5000
-): Promise<T> {
+export function waitForEvent<T = any>(eventEmitter: any, eventName: string, timeout = 5000): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       cleanup();
@@ -63,7 +59,7 @@ export function waitForEvent<T = any>(
  * Useful for ensuring async operations have completed
  */
 export async function flushPromises(): Promise<void> {
-  return new Promise(resolve => setImmediate(resolve));
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 /**
@@ -90,14 +86,11 @@ export function createDeferred<T = void>(): {
  * @param fn Async function to run
  * @param timeout Maximum execution time
  */
-export async function withTimeout<T>(
-  fn: () => Promise<T>,
-  timeout: number
-): Promise<T> {
+export async function withTimeout<T>(fn: () => Promise<T>, timeout: number): Promise<T> {
   return Promise.race([
     fn(),
     new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`Operation timed out after ${timeout}ms`)), timeout)
-    )
+      setTimeout(() => reject(new Error(`Operation timed out after ${timeout}ms`)), timeout),
+    ),
   ]);
 }

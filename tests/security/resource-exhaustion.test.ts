@@ -8,7 +8,7 @@
  * - Output flooding (buffer overflow attacks)
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ConfigurationSchema } from '../../src/core/configuration';
 
 describe('Security: Configuration Schema Attack Prevention', () => {
@@ -147,7 +147,7 @@ describe('Security: Configuration Schema Attack Prevention', () => {
         cpuCoresReserved: 999,
         memoryReserve: 999 * 1024 * 1024 * 1024 * 1024,
         timeout: 999 * 60 * 60 * 1000,
-        maxOutputBuffer: 999 * 1024 * 1024 * 1024
+        maxOutputBuffer: 999 * 1024 * 1024 * 1024,
       };
       const result = ConfigurationSchema.safeParse(multiAttack);
 
@@ -164,7 +164,7 @@ describe('Security: Configuration Schema Attack Prevention', () => {
         cpuCoresReserved: 32,
         memoryReserve: 64 * 1024 * 1024 * 1024,
         timeout: 60 * 60 * 1000,
-        maxOutputBuffer: 1024 * 1024 * 1024
+        maxOutputBuffer: 1024 * 1024 * 1024,
       };
       const result = ConfigurationSchema.safeParse(maxSafeConfig);
 
@@ -201,7 +201,7 @@ describe('Security: Configuration Schema Attack Prevention', () => {
       const invalidConfig = {
         timeout: -1,
         cpuCoresReserved: -999,
-        memoryReserve: -1
+        memoryReserve: -1,
       };
       const result = ConfigurationSchema.safeParse(invalidConfig);
 
@@ -236,7 +236,7 @@ describe('Security: Configuration Schema Attack Prevention', () => {
     it('should accept maximum safe event system limits', () => {
       const maxSafe = {
         maxListenersPerEvent: 10000,
-        maxTotalSubscriptions: 100000
+        maxTotalSubscriptions: 100000,
       };
       const result = ConfigurationSchema.safeParse(maxSafe);
 
@@ -264,7 +264,7 @@ describe('Security: Configuration Schema Attack Prevention', () => {
     it('should accept maximum safe worktree limits', () => {
       const maxSafe = {
         maxWorktrees: 1000,
-        maxWorktreeAgeDays: 365
+        maxWorktreeAgeDays: 365,
       };
       const result = ConfigurationSchema.safeParse(maxSafe);
 
@@ -293,7 +293,7 @@ describe('Security: Configuration Schema Attack Prevention', () => {
       const maxSafe = {
         killGracePeriodMs: 60000, // 60 seconds
         resourceMonitorIntervalMs: 60000,
-        minSpawnDelayMs: 10000
+        minSpawnDelayMs: 10000,
       };
       const result = ConfigurationSchema.safeParse(maxSafe);
 

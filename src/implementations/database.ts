@@ -5,8 +5,8 @@
 
 import SQLite from 'better-sqlite3';
 import fs from 'fs';
-import path from 'path';
 import os from 'os';
+import path from 'path';
 import { Logger } from '../core/interfaces.js';
 
 /**
@@ -75,7 +75,7 @@ export class Database {
     } catch (error) {
       // WAL mode failed (common in CI environments), use DELETE mode
       this.logger.warn('WAL mode failed, falling back to DELETE mode', {
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
       this.db.pragma('journal_mode = DELETE');
     }
@@ -125,7 +125,7 @@ export class Database {
 
     // Platform-specific defaults
     const homeDir = os.homedir();
-    
+
     if (process.platform === 'win32') {
       // Windows: %APPDATA%/claudine
       const appData = process.env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
@@ -167,13 +167,15 @@ export class Database {
   }
 
   getTables(): string[] {
-    const result = this.db.prepare(`
+    const result = this.db
+      .prepare(`
       SELECT name FROM sqlite_master 
       WHERE type='table' 
       ORDER BY name
-    `).all() as Array<{ name: string }>;
-    
-    return result.map(row => row.name);
+    `)
+      .all() as Array<{ name: string }>;
+
+    return result.map((row) => row.name);
   }
 
   getJournalMode(): string {
@@ -191,15 +193,17 @@ export class Database {
    */
   private getCurrentSchemaVersion(): number {
     try {
-      const result = this.db.prepare(`
+      const result = this.db
+        .prepare(`
         SELECT MAX(version) as version FROM schema_migrations
-      `).get() as { version: number | null };
+      `)
+        .get() as { version: number | null };
 
       return result?.version || 0;
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Only return 0 if the table doesn't exist (fresh database)
       // Re-throw all other errors (permissions, corruption, connection issues)
-      if (error.message && error.message.includes('no such table')) {
+      if (error instanceof Error && error.message.includes('no such table')) {
         return 0;
       }
       throw error;
@@ -219,7 +223,7 @@ export class Database {
       if (migration.version > currentVersion) {
         this.logger.info('Applying database migration', {
           version: migration.version,
-          description: migration.description
+          description: migration.description,
         });
 
         // Run migration in transaction for safety
@@ -228,15 +232,17 @@ export class Database {
           migration.up(this.db);
 
           // Record migration as applied
-          this.db.prepare(`
+          this.db
+            .prepare(`
             INSERT INTO schema_migrations (version, applied_at, description)
             VALUES (?, ?, ?)
-          `).run(migration.version, Date.now(), migration.description);
+          `)
+            .run(migration.version, Date.now(), migration.description);
         });
 
         applyMigration();
         this.logger.info('Database migration applied successfully', {
-          version: migration.version
+          version: migration.version,
         });
       }
     }
@@ -332,7 +338,7 @@ export class Database {
             CREATE INDEX IF NOT EXISTS idx_task_dependencies_blocked ON task_dependencies(task_id, resolution);
             CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on_resolution ON task_dependencies(depends_on_task_id, resolution);
           `);
-        }
+        },
       },
       {
         version: 2,
@@ -373,7 +379,7 @@ export class Database {
             CREATE INDEX IF NOT EXISTS idx_task_dependencies_blocked ON task_dependencies(task_id, resolution);
             CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on_resolution ON task_dependencies(depends_on_task_id, resolution);
           `);
-        }
+        },
       },
       {
         version: 3,
@@ -426,7 +432,7 @@ export class Database {
             CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
             CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
           `);
-        }
+        },
       },
       {
         version: 4,
@@ -482,7 +488,7 @@ export class Database {
             CREATE INDEX IF NOT EXISTS idx_schedule_executions_schedule_time ON schedule_executions(schedule_id, scheduled_for DESC);
             CREATE INDEX IF NOT EXISTS idx_schedule_executions_status ON schedule_executions(status);
           `);
-        }
+        },
       },
       {
         version: 5,
@@ -516,15 +522,15 @@ export class Database {
           db.exec(`
             ALTER TABLE schedules ADD COLUMN after_schedule_id TEXT
           `);
-        }
+        },
       },
       {
         version: 6,
         description: 'Add continue_from column for session continuation through dependency chains',
         up: (db) => {
           db.exec(`ALTER TABLE tasks ADD COLUMN continue_from TEXT`);
-        }
-      }
+        },
+      },
     ];
   }
 

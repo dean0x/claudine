@@ -1,9 +1,9 @@
 import { Database } from 'better-sqlite3';
-import { SQLiteTaskRepository } from '@/implementations/sqlite-task-repository';
-import { SQLiteOutputRepository } from '@/implementations/sqlite-output-repository';
-import path from 'path';
-import fs from 'fs';
 import { randomUUID } from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import { SQLiteOutputRepository } from '@/implementations/sqlite-output-repository';
+import { SQLiteTaskRepository } from '@/implementations/sqlite-task-repository';
 
 export class TestDatabase {
   private db: Database | null = null;

@@ -5,11 +5,11 @@
  * ARCHITECTURE: These tests validate proper handling of network-related failures
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { TaskFactory, WorkerFactory } from '../../fixtures/factories';
-import { TestProcessSpawner, TestEventBus } from '../../fixtures/test-doubles';
-import { TIMEOUTS, ERROR_MESSAGES, WAIT_FOR, BUFFER_SIZES } from '../../constants';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Task, Worker } from '../../../src/core/domain';
+import { BUFFER_SIZES, ERROR_MESSAGES, TIMEOUTS, WAIT_FOR } from '../../constants';
+import { TaskFactory, WorkerFactory } from '../../fixtures/factories';
+import { TestEventBus, TestProcessSpawner } from '../../fixtures/test-doubles';
 
 describe('Network Failure Scenarios', () => {
   let taskFactory: TaskFactory;
@@ -95,7 +95,7 @@ describe('Network Failure Scenarios', () => {
     it('should handle event emission timeout', async () => {
       // Subscribe with slow handler
       const slowHandler = async (event: any) => {
-        await new Promise(resolve => setTimeout(resolve, TIMEOUTS.LONG));
+        await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.LONG));
       };
 
       eventBus.subscribe('TestEvent', slowHandler);
@@ -170,7 +170,7 @@ describe('Network Failure Scenarios', () => {
       const heartbeatTimeout = TIMEOUTS.LONG * 2;
 
       // Check if worker is unresponsive
-      const isUnresponsive = (now - lastHeartbeat) > heartbeatTimeout;
+      const isUnresponsive = now - lastHeartbeat > heartbeatTimeout;
 
       // After timeout, worker should be considered unresponsive
       if (now - lastHeartbeat > heartbeatTimeout) {
@@ -230,7 +230,7 @@ describe('Network Failure Scenarios', () => {
             return await fn();
           } catch (error) {
             if (i === maxAttempts - 1) throw error;
-            await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, i)));
+            await new Promise((resolve) => setTimeout(resolve, 100 * Math.pow(2, i)));
           }
         }
       };
@@ -243,7 +243,9 @@ describe('Network Failure Scenarios', () => {
 
     it('should reconnect event bus subscriptions after failure', async () => {
       let handlerCalls = 0;
-      const handler = async () => { handlerCalls++; };
+      const handler = async () => {
+        handlerCalls++;
+      };
 
       // Subscribe
       const subResult = eventBus.subscribe('TestEvent', handler);
@@ -272,15 +274,13 @@ describe('Network Failure Scenarios', () => {
       // Send multiple events
       const events = Array.from({ length: 5 }, (_, i) => ({
         id: i,
-        data: `event-${i}`
+        data: `event-${i}`,
       }));
 
-      const results = await Promise.allSettled(
-        events.map(event => eventBus.emit('TestEvent', event))
-      );
+      const results = await Promise.allSettled(events.map((event) => eventBus.emit('TestEvent', event)));
 
       // Check partial success
-      const successful = results.filter(r => r.status === 'fulfilled').length;
+      const successful = results.filter((r) => r.status === 'fulfilled').length;
       expect(successful).toBeGreaterThan(0);
       expect(receivedEvents.length).toBe(successful);
     });
@@ -291,14 +291,14 @@ describe('Network Failure Scenarios', () => {
       const latency = 200; // 200ms latency
 
       const simulateLatency = async <T>(operation: () => Promise<T>): Promise<T> => {
-        await new Promise(resolve => setTimeout(resolve, latency));
+        await new Promise((resolve) => setTimeout(resolve, latency));
         return operation();
       };
 
       const startTime = Date.now();
       const result = await simulateLatency(async () => ({
         ok: true,
-        value: 'completed'
+        value: 'completed',
       }));
       const elapsed = Date.now() - startTime;
 
@@ -344,7 +344,7 @@ describe('Network Failure Scenarios', () => {
       const simulateBandwidthLimit = async (data: string) => {
         const chunks = Math.ceil(data.length / bandwidthLimit);
         for (let i = 0; i < chunks; i++) {
-          await new Promise(resolve => setTimeout(resolve, TIMEOUTS.MEDIUM));
+          await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.MEDIUM));
         }
         return { ok: true, value: data.length };
       };

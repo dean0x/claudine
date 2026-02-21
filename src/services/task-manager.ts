@@ -13,43 +13,43 @@
  * - All state changes MUST go through events
  */
 
+import { Configuration } from '../core/configuration.js';
 import {
-  TaskManager,
-  TaskRepository,
+  canCancel,
+  createTask,
+  DelegateRequest,
+  isTerminalState,
+  ResumeTaskRequest,
+  Task,
+  TaskId,
+  TaskOutput,
+} from '../core/domain.js';
+import { ClaudineError, ErrorCode, taskNotFound } from '../core/errors.js';
+import { EventBus } from '../core/events/event-bus.js';
+import {
+  TaskLogsQueryEvent,
+  TaskStatusQueryEvent,
+  WorktreeCleanupRequestedEvent,
+  WorktreeListQueryEvent,
+  WorktreeStatusQueryEvent,
+} from '../core/events/events.js';
+import {
   CheckpointRepository,
   Logger,
   OutputCapture,
+  TaskManager,
+  TaskRepository,
+  WorktreeCleanupResult,
   WorktreeStatus,
-  WorktreeCleanupResult
 } from '../core/interfaces.js';
-import { EventBus } from '../core/events/event-bus.js';
-import {
-  TaskStatusQueryEvent,
-  TaskLogsQueryEvent,
-  WorktreeListQueryEvent,
-  WorktreeStatusQueryEvent,
-  WorktreeCleanupRequestedEvent
-} from '../core/events/events.js';
-import {
-  Task,
-  TaskId,
-  DelegateRequest,
-  TaskOutput,
-  ResumeTaskRequest,
-  createTask,
-  canCancel,
-  isTerminalState
-} from '../core/domain.js';
-import { Result, ok, err } from '../core/result.js';
-import { taskNotFound, ClaudineError, ErrorCode } from '../core/errors.js';
-import { Configuration } from '../core/configuration.js';
+import { err, ok, Result } from '../core/result.js';
 
 export class TaskManagerService implements TaskManager {
   constructor(
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
     private readonly config: Configuration,
-    private readonly checkpointRepo?: CheckpointRepository
+    private readonly checkpointRepo?: CheckpointRepository,
   ) {
     // ARCHITECTURE: Pure event-driven - ALL operations go through EventBus
     this.logger.debug('TaskManager initialized with pure event-driven architecture');
@@ -76,13 +76,10 @@ export class TaskManagerService implements TaskManager {
       // Validate referenced task exists
       const lookupResult = await this.eventBus.request<TaskStatusQueryEvent, Task | null | readonly Task[]>(
         'TaskStatusQuery',
-        { taskId: continueFromId }
+        { taskId: continueFromId },
       );
       if (!lookupResult.ok || lookupResult.value === null) {
-        return err(new ClaudineError(
-          ErrorCode.TASK_NOT_FOUND,
-          `continueFrom task not found: ${continueFromId}`
-        ));
+        return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `continueFrom task not found: ${continueFromId}`));
       }
 
       // Auto-add to dependsOn if missing
@@ -97,7 +94,7 @@ export class TaskManagerService implements TaskManager {
 
     // Create task using pure function with defaults applied
     const task = createTask(requestWithDefaults);
-    
+
     this.logger.info('Delegating task', {
       taskId: task.id,
       priority: task.priority,
@@ -106,10 +103,10 @@ export class TaskManagerService implements TaskManager {
 
     // Emit event - all state management happens in event handlers
     const result = await this.eventBus.emit('TaskDelegated', { task });
-    
+
     if (!result.ok) {
       this.logger.error('Task delegation failed', result.error, {
-        taskId: task.id
+        taskId: task.id,
       });
       return err(result.error);
     }
@@ -120,10 +117,9 @@ export class TaskManagerService implements TaskManager {
   async getStatus(taskId?: TaskId): Promise<Result<Task | readonly Task[]>> {
     // ARCHITECTURE: Pure event-driven query - no direct repository access
     // FIXED: QueryHandler returns Task | null for single task, readonly Task[] for all tasks
-    const result = await this.eventBus.request<TaskStatusQueryEvent, Task | null | readonly Task[]>(
-      'TaskStatusQuery',
-      { taskId }
-    );
+    const result = await this.eventBus.request<TaskStatusQueryEvent, Task | null | readonly Task[]>('TaskStatusQuery', {
+      taskId,
+    });
 
     if (!result.ok) {
       this.logger.error('Task status query failed', result.error, { taskId });
@@ -140,10 +136,7 @@ export class TaskManagerService implements TaskManager {
 
   async getLogs(taskId: TaskId, tail?: number): Promise<Result<TaskOutput>> {
     // ARCHITECTURE: Pure event-driven query for logs
-    const result = await this.eventBus.request<TaskLogsQueryEvent, TaskOutput>(
-      'TaskLogsQuery',
-      { taskId, tail }
-    );
+    const result = await this.eventBus.request<TaskLogsQueryEvent, TaskOutput>('TaskLogsQuery', { taskId, tail });
 
     if (!result.ok) {
       this.logger.error('Task logs query failed', result.error, { taskId });
@@ -218,10 +211,12 @@ export class TaskManagerService implements TaskManager {
 
     // Only retry tasks that are in terminal states
     if (!isTerminalState(originalTask.status)) {
-      return err(new ClaudineError(
-        ErrorCode.INVALID_OPERATION,
-        `Task ${taskId} cannot be retried in state ${originalTask.status}`
-      ));
+      return err(
+        new ClaudineError(
+          ErrorCode.INVALID_OPERATION,
+          `Task ${taskId} cannot be retried in state ${originalTask.status}`,
+        ),
+      );
     }
 
     this.logger.info('Retrying task', {
@@ -298,10 +293,7 @@ export class TaskManagerService implements TaskManager {
     const { taskId, additionalContext } = request;
 
     // Fetch original task via event bus
-    const taskResult = await this.eventBus.request<TaskStatusQueryEvent, Task | null>(
-      'TaskStatusQuery',
-      { taskId }
-    );
+    const taskResult = await this.eventBus.request<TaskStatusQueryEvent, Task | null>('TaskStatusQuery', { taskId });
 
     if (!taskResult.ok) {
       return err(taskResult.error);
@@ -315,10 +307,12 @@ export class TaskManagerService implements TaskManager {
 
     // Only resume tasks in terminal states
     if (!isTerminalState(originalTask.status)) {
-      return err(new ClaudineError(
-        ErrorCode.INVALID_OPERATION,
-        `Task ${taskId} cannot be resumed in state ${originalTask.status}`
-      ));
+      return err(
+        new ClaudineError(
+          ErrorCode.INVALID_OPERATION,
+          `Task ${taskId} cannot be resumed in state ${originalTask.status}`,
+        ),
+      );
     }
 
     this.logger.info('Resuming task', {
@@ -408,7 +402,7 @@ export class TaskManagerService implements TaskManager {
   private buildEnrichedPrompt(
     originalTask: Task,
     checkpoint: import('../core/domain.js').TaskCheckpoint | null,
-    additionalContext?: string
+    additionalContext?: string,
   ): string {
     const parts: string[] = [];
 
@@ -439,7 +433,7 @@ export class TaskManagerService implements TaskManager {
     }
 
     parts.push('');
-    parts.push('Please continue or retry the task, taking into account the previous attempt\'s results.');
+    parts.push("Please continue or retry the task, taking into account the previous attempt's results.");
 
     return parts.join('\n');
   }
@@ -451,10 +445,10 @@ export class TaskManagerService implements TaskManager {
   async listWorktrees(includeStale = false, olderThanDays?: number): Promise<Result<readonly WorktreeStatus[]>> {
     this.logger.debug('Listing worktrees', { includeStale, olderThanDays });
 
-    const result = await this.eventBus.request<WorktreeListQueryEvent, readonly WorktreeStatus[]>(
-      'WorktreeListQuery',
-      { includeStale, olderThanDays }
-    );
+    const result = await this.eventBus.request<WorktreeListQueryEvent, readonly WorktreeStatus[]>('WorktreeListQuery', {
+      includeStale,
+      olderThanDays,
+    });
 
     if (!result.ok) {
       this.logger.error('Worktree list query failed', result.error);
@@ -471,10 +465,9 @@ export class TaskManagerService implements TaskManager {
   async getWorktreeStatus(taskId: TaskId): Promise<Result<WorktreeStatus>> {
     this.logger.debug('Getting worktree status', { taskId });
 
-    const result = await this.eventBus.request<WorktreeStatusQueryEvent, WorktreeStatus>(
-      'WorktreeStatusQuery',
-      { taskId }
-    );
+    const result = await this.eventBus.request<WorktreeStatusQueryEvent, WorktreeStatus>('WorktreeStatusQuery', {
+      taskId,
+    });
 
     if (!result.ok) {
       this.logger.error('Worktree status query failed', result.error, { taskId });
@@ -491,13 +484,13 @@ export class TaskManagerService implements TaskManager {
   async cleanupWorktrees(
     strategy: 'safe' | 'interactive' | 'force' = 'safe',
     olderThanDays = 7,
-    taskIds?: TaskId[]
+    taskIds?: TaskId[],
   ): Promise<Result<WorktreeCleanupResult>> {
     this.logger.info('Cleaning up worktrees', { strategy, olderThanDays, taskIds });
 
     const result = await this.eventBus.request<WorktreeCleanupRequestedEvent, WorktreeCleanupResult>(
       'WorktreeCleanupRequested',
-      { strategy, olderThanDays, taskIds }
+      { strategy, olderThanDays, taskIds },
     );
 
     if (!result.ok) {
@@ -507,5 +500,4 @@ export class TaskManagerService implements TaskManager {
 
     return ok(result.value);
   }
-
 }

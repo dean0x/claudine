@@ -1,5 +1,5 @@
-import { Task, TaskStatus, TaskPriority, WorkerInfo, WorkerStatus } from '@/core/domain';
 import { randomUUID } from 'crypto';
+import { Task, TaskPriority, TaskStatus, WorkerInfo, WorkerStatus } from '@/core/domain';
 
 export function createMockTask(overrides?: Partial<Task>): Task {
   return {
@@ -18,7 +18,7 @@ export function createMockTask(overrides?: Partial<Task>): Task {
     baseBranch: 'main',
     autoCommit: false,
     pushToRemote: false,
-    ...overrides
+    ...overrides,
   };
 }
 
@@ -31,7 +31,7 @@ export function createMockWorkerInfo(overrides?: Partial<WorkerInfo>): WorkerInf
     startedAt: Date.now(),
     cpuUsage: 10,
     memoryUsage: 100 * 1024 * 1024, // 100MB
-    ...overrides
+    ...overrides,
   };
 }
 
@@ -39,8 +39,8 @@ export function createTaskBatch(count: number, overrides?: Partial<Task>): Task[
   return Array.from({ length: count }, (_, i) =>
     createMockTask({
       prompt: `Test task ${i + 1}`,
-      ...overrides
-    })
+      ...overrides,
+    }),
   );
 }
 
@@ -48,8 +48,8 @@ export function createWorkerBatch(count: number, overrides?: Partial<WorkerInfo>
   return Array.from({ length: count }, (_, i) =>
     createMockWorkerInfo({
       pid: 10000 + i,
-      ...overrides
-    })
+      ...overrides,
+    }),
   );
 }
 
@@ -72,6 +72,6 @@ export function createMockEnvironment() {
     MAX_WORKERS: '2',
     MAX_QUEUE_SIZE: '10',
     DATABASE_PATH: ':memory:',
-    LOG_LEVEL: 'error'
+    LOG_LEVEL: 'error',
   };
 }

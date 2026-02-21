@@ -10,18 +10,17 @@
  * Trade-offs: Slight overhead vs direct calls (< 1ms)
  */
 
-import { WorktreeManager, Logger } from '../../core/interfaces.js';
-import { WorktreeStatus } from '../../core/interfaces.js';
 import { TaskId } from '../../core/domain.js';
-import { Result, ok, err } from '../../core/result.js';
-import { BaseEventHandler } from '../../core/events/handlers.js';
+import { ClaudineError, ErrorCode } from '../../core/errors.js';
 import { EventBus, InMemoryEventBus } from '../../core/events/event-bus.js';
 import {
+  WorktreeCleanupRequestedEvent,
   WorktreeListQueryEvent,
   WorktreeStatusQueryEvent,
-  WorktreeCleanupRequestedEvent
 } from '../../core/events/events.js';
-import { ClaudineError, ErrorCode } from '../../core/errors.js';
+import { BaseEventHandler } from '../../core/events/handlers.js';
+import { Logger, WorktreeManager, WorktreeStatus } from '../../core/interfaces.js';
+import { err, ok, Result } from '../../core/result.js';
 
 /**
  * Result type for worktree cleanup operations
@@ -36,7 +35,7 @@ export class WorktreeHandler extends BaseEventHandler {
   constructor(
     private readonly worktreeManager: WorktreeManager,
     private readonly eventBus: EventBus,
-    logger: Logger
+    logger: Logger,
   ) {
     super(logger, 'WorktreeHandler');
   }
@@ -48,7 +47,7 @@ export class WorktreeHandler extends BaseEventHandler {
     const subscriptions = [
       eventBus.subscribe('WorktreeListQuery', this.handleWorktreeListQuery.bind(this)),
       eventBus.subscribe('WorktreeStatusQuery', this.handleWorktreeStatusQuery.bind(this)),
-      eventBus.subscribe('WorktreeCleanupRequested', this.handleWorktreeCleanupRequested.bind(this))
+      eventBus.subscribe('WorktreeCleanupRequested', this.handleWorktreeCleanupRequested.bind(this)),
     ];
 
     // Check if any subscription failed
@@ -73,7 +72,7 @@ export class WorktreeHandler extends BaseEventHandler {
     this.logger.debug('Processing worktree list query', {
       includeStale: event.includeStale,
       olderThanDays: event.olderThanDays,
-      correlationId
+      correlationId,
     });
 
     // Get all worktree statuses
@@ -81,7 +80,7 @@ export class WorktreeHandler extends BaseEventHandler {
 
     if (!statusesResult.ok) {
       this.logger.error('Worktree list query failed', statusesResult.error, {
-        correlationId
+        correlationId,
       });
 
       if (correlationId && 'respondError' in this.eventBus) {
@@ -94,11 +93,11 @@ export class WorktreeHandler extends BaseEventHandler {
 
     // Filter based on includeStale and olderThanDays
     if (!event.includeStale) {
-      statuses = statuses.filter(s => s.exists && s.safeToRemove === false);
+      statuses = statuses.filter((s) => s.exists && s.safeToRemove === false);
     }
 
     if (event.olderThanDays !== undefined) {
-      statuses = statuses.filter(s => s.ageInDays >= event.olderThanDays!);
+      statuses = statuses.filter((s) => s.ageInDays >= event.olderThanDays!);
     }
 
     // Send response back via event bus
@@ -108,7 +107,7 @@ export class WorktreeHandler extends BaseEventHandler {
 
     this.logger.debug('Worktree list query completed', {
       totalWorktrees: statuses.length,
-      correlationId
+      correlationId,
     });
   }
 
@@ -116,12 +115,14 @@ export class WorktreeHandler extends BaseEventHandler {
    * Handle worktree status query for specific task
    * ARCHITECTURE: Uses Result pattern instead of throwing
    */
-  private async handleWorktreeStatusQuery(event: WorktreeStatusQueryEvent & { __correlationId?: string }): Promise<void> {
+  private async handleWorktreeStatusQuery(
+    event: WorktreeStatusQueryEvent & { __correlationId?: string },
+  ): Promise<void> {
     const correlationId = event.__correlationId;
 
     this.logger.debug('Processing worktree status query', {
       taskId: event.taskId,
-      correlationId
+      correlationId,
     });
 
     const statusResult = await this.worktreeManager.getWorktreeStatus(event.taskId);
@@ -129,7 +130,7 @@ export class WorktreeHandler extends BaseEventHandler {
     if (!statusResult.ok) {
       this.logger.error('Worktree status query failed', statusResult.error, {
         taskId: event.taskId,
-        correlationId
+        correlationId,
       });
 
       if (correlationId && 'respondError' in this.eventBus) {
@@ -145,7 +146,7 @@ export class WorktreeHandler extends BaseEventHandler {
 
     this.logger.debug('Worktree status query completed', {
       taskId: event.taskId,
-      correlationId
+      correlationId,
     });
   }
 
@@ -158,7 +159,9 @@ export class WorktreeHandler extends BaseEventHandler {
    * - 'interactive': Not implemented (returns error)
    * - 'force': Remove all worktrees regardless of safety status
    */
-  private async handleWorktreeCleanupRequested(event: WorktreeCleanupRequestedEvent & { __correlationId?: string }): Promise<void> {
+  private async handleWorktreeCleanupRequested(
+    event: WorktreeCleanupRequestedEvent & { __correlationId?: string },
+  ): Promise<void> {
     const correlationId = event.__correlationId;
     const strategy = event.strategy ?? 'safe';
 
@@ -166,14 +169,14 @@ export class WorktreeHandler extends BaseEventHandler {
       strategy,
       olderThanDays: event.olderThanDays,
       taskIds: event.taskIds,
-      correlationId
+      correlationId,
     });
 
     // Interactive mode not supported in event-driven architecture
     if (strategy === 'interactive') {
       const error = new ClaudineError(
         ErrorCode.INVALID_OPERATION,
-        'Interactive cleanup strategy not supported in event-driven mode. Use "safe" or "force".'
+        'Interactive cleanup strategy not supported in event-driven mode. Use "safe" or "force".',
       );
 
       this.logger.error('Worktree cleanup failed', error, { correlationId });
@@ -189,7 +192,7 @@ export class WorktreeHandler extends BaseEventHandler {
 
     if (!statusesResult.ok) {
       this.logger.error('Failed to get worktree statuses for cleanup', statusesResult.error, {
-        correlationId
+        correlationId,
       });
 
       if (correlationId && 'respondError' in this.eventBus) {
@@ -204,15 +207,15 @@ export class WorktreeHandler extends BaseEventHandler {
     // Filter by specific task IDs if provided
     if (event.taskIds && event.taskIds.length > 0) {
       // Convert TaskId[] to Set<string> for efficient lookup
-      const taskIdsSet = new Set(event.taskIds.map(id => id as string));
-      worktreesToClean = allWorktrees.filter(w => taskIdsSet.has(w.taskId));
+      const taskIdsSet = new Set(event.taskIds.map((id) => id as string));
+      worktreesToClean = allWorktrees.filter((w) => taskIdsSet.has(w.taskId));
 
       // Log any requested taskIds that were not found
       for (const taskId of event.taskIds) {
-        if (!worktreesToClean.some(w => w.taskId === (taskId as string))) {
+        if (!worktreesToClean.some((w) => w.taskId === (taskId as string))) {
           this.logger.warn('Worktree for requested taskId not found during cleanup', {
             taskId,
-            correlationId
+            correlationId,
           });
         }
       }
@@ -220,12 +223,12 @@ export class WorktreeHandler extends BaseEventHandler {
 
     // Filter by age if specified
     if (event.olderThanDays !== undefined) {
-      worktreesToClean = worktreesToClean.filter(w => w.ageInDays >= event.olderThanDays!);
+      worktreesToClean = worktreesToClean.filter((w) => w.ageInDays >= event.olderThanDays!);
     }
 
     // Filter by safety unless force mode
     if (strategy === 'safe') {
-      worktreesToClean = worktreesToClean.filter(w => w.safeToRemove);
+      worktreesToClean = worktreesToClean.filter((w) => w.safeToRemove);
     }
 
     // Remove worktrees
@@ -234,14 +237,11 @@ export class WorktreeHandler extends BaseEventHandler {
     const result: WorktreeCleanupResult = {
       removed: 0,
       skipped: allWorktrees.length - worktreesToClean.length,
-      errors: []
+      errors: [],
     };
 
     for (const worktree of worktreesToClean) {
-      const removeResult = await this.worktreeManager.removeWorktree(
-        TaskId(worktree.taskId),
-        strategy === 'force'
-      );
+      const removeResult = await this.worktreeManager.removeWorktree(TaskId(worktree.taskId), strategy === 'force');
 
       if (removeResult.ok) {
         result.removed++;
@@ -249,11 +249,11 @@ export class WorktreeHandler extends BaseEventHandler {
       } else {
         result.errors.push({
           taskId: worktree.taskId,
-          error: removeResult.error.message
+          error: removeResult.error.message,
         });
         this.logger.warn('Failed to remove worktree', {
           taskId: worktree.taskId,
-          error: removeResult.error.message
+          error: removeResult.error.message,
         });
       }
     }
@@ -267,7 +267,7 @@ export class WorktreeHandler extends BaseEventHandler {
       removed: result.removed,
       skipped: result.skipped,
       errors: result.errors.length,
-      correlationId
+      correlationId,
     });
   }
 }

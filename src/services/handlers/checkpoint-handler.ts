@@ -5,17 +5,13 @@
  * Rationale: Captures task state snapshots for "smart retry" enrichment
  */
 
-import { CheckpointRepository, TaskRepository, OutputCapture, Logger } from '../../core/interfaces.js';
-import { Result, ok, err } from '../../core/result.js';
-import { BaseEventHandler } from '../../core/events/handlers.js';
-import { EventBus } from '../../core/events/event-bus.js';
 import type { TaskCheckpoint, TaskId } from '../../core/domain.js';
-import type {
-  TaskCompletedEvent,
-  TaskFailedEvent,
-  TaskCancelledEvent,
-} from '../../core/events/events.js';
 import { ClaudineError, ErrorCode } from '../../core/errors.js';
+import { EventBus } from '../../core/events/event-bus.js';
+import type { TaskCancelledEvent, TaskCompletedEvent, TaskFailedEvent } from '../../core/events/events.js';
+import { BaseEventHandler } from '../../core/events/handlers.js';
+import { CheckpointRepository, Logger, OutputCapture, TaskRepository } from '../../core/interfaces.js';
+import { err, ok, Result } from '../../core/result.js';
 import { captureGitState } from '../../utils/git-state.js';
 
 /** Maximum characters for output/error summaries stored in checkpoints */
@@ -34,7 +30,7 @@ export class CheckpointHandler extends BaseEventHandler {
     private readonly outputCapture: OutputCapture,
     private readonly taskRepo: TaskRepository,
     private readonly eventBus: EventBus,
-    logger: Logger
+    logger: Logger,
   ) {
     super(logger, 'CheckpointHandler');
   }
@@ -48,17 +44,11 @@ export class CheckpointHandler extends BaseEventHandler {
     outputCapture: OutputCapture,
     taskRepo: TaskRepository,
     eventBus: EventBus,
-    logger: Logger
+    logger: Logger,
   ): Promise<Result<CheckpointHandler, ClaudineError>> {
     const handlerLogger = logger.child ? logger.child({ module: 'CheckpointHandler' }) : logger;
 
-    const handler = new CheckpointHandler(
-      checkpointRepo,
-      outputCapture,
-      taskRepo,
-      eventBus,
-      handlerLogger
-    );
+    const handler = new CheckpointHandler(checkpointRepo, outputCapture, taskRepo, eventBus, handlerLogger);
 
     const subscribeResult = handler.subscribeToEvents();
     if (!subscribeResult.ok) {
@@ -83,11 +73,11 @@ export class CheckpointHandler extends BaseEventHandler {
 
     for (const result of subscriptions) {
       if (!result.ok) {
-        return err(new ClaudineError(
-          ErrorCode.SYSTEM_ERROR,
-          `Failed to subscribe to events: ${result.error.message}`,
-          { error: result.error }
-        ));
+        return err(
+          new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to subscribe to events: ${result.error.message}`, {
+            error: result.error,
+          }),
+        );
       }
     }
 
@@ -127,7 +117,7 @@ export class CheckpointHandler extends BaseEventHandler {
   private async createCheckpoint(
     taskId: TaskId,
     checkpointType: TaskCheckpoint['checkpointType'],
-    errorMessage?: string
+    errorMessage?: string,
   ): Promise<Result<void>> {
     this.logger.info('Creating checkpoint', { taskId, checkpointType });
 
@@ -169,9 +159,8 @@ export class CheckpointHandler extends BaseEventHandler {
 
     // Use event error message as errorSummary if stderr is empty
     if (!errorSummary && errorMessage) {
-      errorSummary = errorMessage.length > MAX_SUMMARY_LENGTH
-        ? errorMessage.substring(0, MAX_SUMMARY_LENGTH)
-        : errorMessage;
+      errorSummary =
+        errorMessage.length > MAX_SUMMARY_LENGTH ? errorMessage.substring(0, MAX_SUMMARY_LENGTH) : errorMessage;
     }
 
     // Capture git state if task has a working directory
@@ -188,7 +177,7 @@ export class CheckpointHandler extends BaseEventHandler {
       } else if (!gitResult.ok) {
         this.logger.warn('Failed to capture git state for checkpoint', {
           taskId,
-          error: gitResult.error.message
+          error: gitResult.error.message,
         });
       }
     }
@@ -214,10 +203,15 @@ export class CheckpointHandler extends BaseEventHandler {
     const savedCheckpoint = saveResult.value;
 
     // Emit CheckpointCreated event
-    await this.emitEvent(this.eventBus, 'CheckpointCreated', {
-      taskId,
-      checkpoint: savedCheckpoint,
-    }, { context: { taskId, checkpointType } });
+    await this.emitEvent(
+      this.eventBus,
+      'CheckpointCreated',
+      {
+        taskId,
+        checkpoint: savedCheckpoint,
+      },
+      { context: { taskId, checkpointType } },
+    );
 
     this.logger.info('Checkpoint created', {
       taskId,

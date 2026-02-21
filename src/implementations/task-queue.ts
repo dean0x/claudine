@@ -6,18 +6,23 @@
  * and Map index for O(1) lookups instead of O(n) array scans
  */
 
-import { TaskQueue } from '../core/interfaces.js';
-import { Task, TaskId, comparePriority } from '../core/domain.js';
-import { Result, ok, err } from '../core/result.js';
+import { comparePriority, Task, TaskId } from '../core/domain.js';
 import { ClaudineError, ErrorCode, taskNotFound } from '../core/errors.js';
+import { TaskQueue } from '../core/interfaces.js';
+import { err, ok, Result } from '../core/result.js';
 
 const DEFAULT_MAX_QUEUE_SIZE = 1000;
+
+/** Internal heap node extending Task with insertion order for FIFO within same priority */
+interface HeapNode extends Task {
+  __insertionOrder: number;
+}
 
 /**
  * Min-heap based priority queue for O(log n) operations
  */
 export class PriorityTaskQueue implements TaskQueue {
-  private readonly heap: Task[] = [];
+  private readonly heap: HeapNode[] = [];
   private readonly taskIndex: Map<TaskId, number> = new Map();
   private readonly maxQueueSize: number;
   private insertionCounter = 0; // For FIFO within same priority
@@ -29,18 +34,20 @@ export class PriorityTaskQueue implements TaskQueue {
   enqueue(task: Task): Result<void> {
     // SECURITY: Prevent unbounded queue growth (DoS protection)
     if (this.heap.length >= this.maxQueueSize) {
-      return err(new ClaudineError(
-        ErrorCode.RESOURCE_EXHAUSTED,
-        `Queue is full (max size: ${this.maxQueueSize}). Cannot enqueue more tasks.`,
-        { taskId: task.id, queueSize: this.heap.length, maxQueueSize: this.maxQueueSize }
-      ));
+      return err(
+        new ClaudineError(
+          ErrorCode.RESOURCE_EXHAUSTED,
+          `Queue is full (max size: ${this.maxQueueSize}). Cannot enqueue more tasks.`,
+          { taskId: task.id, queueSize: this.heap.length, maxQueueSize: this.maxQueueSize },
+        ),
+      );
     }
 
     // Add insertion order for FIFO within same priority
-    const taskWithOrder = { ...task, __insertionOrder: this.insertionCounter++ };
+    const taskWithOrder: HeapNode = { ...task, __insertionOrder: this.insertionCounter++ };
 
     // PERFORMANCE: O(log n) heap insertion
-    this.heap.push(taskWithOrder as Task);
+    this.heap.push(taskWithOrder);
     this.taskIndex.set(task.id, this.heap.length - 1);
     this.bubbleUp(this.heap.length - 1);
 
@@ -63,8 +70,8 @@ export class PriorityTaskQueue implements TaskQueue {
     }
 
     // Remove insertion order metadata
-    const { __insertionOrder, ...cleanTask } = task as any;
-    return ok(cleanTask);
+    const { __insertionOrder: _, ...cleanTask } = task;
+    return ok(cleanTask as Task);
   }
 
   peek(): Result<Task | null> {
@@ -72,8 +79,8 @@ export class PriorityTaskQueue implements TaskQueue {
       return ok(null);
     }
 
-    const { __insertionOrder, ...cleanTask } = this.heap[0] as any;
-    return ok(cleanTask);
+    const { __insertionOrder: _, ...cleanTask } = this.heap[0];
+    return ok(cleanTask as Task);
   }
 
   remove(taskId: TaskId): Result<boolean> {
@@ -104,10 +111,10 @@ export class PriorityTaskQueue implements TaskQueue {
     const sorted = [...this.heap].sort((a, b) => {
       const priorityComparison = comparePriority(a.priority, b.priority);
       if (priorityComparison !== 0) return priorityComparison;
-      return ((a as any).__insertionOrder || 0) - ((b as any).__insertionOrder || 0);
+      return (a.__insertionOrder || 0) - (b.__insertionOrder || 0);
     });
 
-    const clean = sorted.map(({ __insertionOrder, ...task }: any) => task);
+    const clean = sorted.map(({ __insertionOrder: _, ...task }) => task as Task);
     return ok(Object.freeze(clean));
   }
 
@@ -176,7 +183,7 @@ export class PriorityTaskQueue implements TaskQueue {
    * Determine if parent should be swapped with child
    * Returns true if parent has lower priority than child
    */
-  private shouldSwap(parent: Task, child: Task): boolean {
+  private shouldSwap(parent: HeapNode, child: HeapNode): boolean {
     const priorityComparison = comparePriority(parent.priority, child.priority);
 
     if (priorityComparison > 0) {
@@ -186,8 +193,8 @@ export class PriorityTaskQueue implements TaskQueue {
 
     if (priorityComparison === 0) {
       // Same priority, use FIFO order
-      const parentOrder = (parent as any).__insertionOrder || 0;
-      const childOrder = (child as any).__insertionOrder || 0;
+      const parentOrder = parent.__insertionOrder || 0;
+      const childOrder = child.__insertionOrder || 0;
       return parentOrder > childOrder;
     }
 
@@ -222,11 +229,13 @@ export class FIFOTaskQueue implements TaskQueue {
   enqueue(task: Task): Result<void> {
     // SECURITY: Prevent unbounded queue growth (DoS protection)
     if (this.tasks.length >= this.maxQueueSize) {
-      return err(new ClaudineError(
-        ErrorCode.RESOURCE_EXHAUSTED,
-        `Queue is full (max size: ${this.maxQueueSize}). Cannot enqueue more tasks.`,
-        { taskId: task.id, queueSize: this.tasks.length, maxQueueSize: this.maxQueueSize }
-      ));
+      return err(
+        new ClaudineError(
+          ErrorCode.RESOURCE_EXHAUSTED,
+          `Queue is full (max size: ${this.maxQueueSize}). Cannot enqueue more tasks.`,
+          { taskId: task.id, queueSize: this.tasks.length, maxQueueSize: this.maxQueueSize },
+        ),
+      );
     }
 
     this.tasks.push(task);
@@ -243,7 +252,7 @@ export class FIFOTaskQueue implements TaskQueue {
   }
 
   remove(taskId: TaskId): Result<boolean> {
-    const index = this.tasks.findIndex(t => t.id === taskId);
+    const index = this.tasks.findIndex((t) => t.id === taskId);
 
     if (index === -1) {
       return ok(false);
@@ -258,7 +267,7 @@ export class FIFOTaskQueue implements TaskQueue {
   }
 
   contains(taskId: TaskId): boolean {
-    return this.tasks.some(t => t.id === taskId);
+    return this.tasks.some((t) => t.id === taskId);
   }
 
   size(): number {

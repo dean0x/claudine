@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  type Configuration,
   ConfigurationSchema,
   loadConfiguration,
-  type Configuration,
-  type TaskConfiguration
+  type TaskConfiguration,
 } from '../../../src/core/configuration';
-import { BUFFER_SIZES, TIMEOUTS, TEST_COUNTS } from '../../constants';
+import { BUFFER_SIZES, TEST_COUNTS, TIMEOUTS } from '../../constants';
 
 describe('ConfigurationSchema - REAL Validation Behavior', () => {
   describe('Valid configurations', () => {
@@ -15,7 +15,7 @@ describe('ConfigurationSchema - REAL Validation Behavior', () => {
         maxOutputBuffer: BUFFER_SIZES.SMALL,
         cpuCoresReserved: 2,
         memoryReserve: 1000000000,
-        logLevel: 'info' as const
+        logLevel: 'info' as const,
       };
 
       const result = ConfigurationSchema.safeParse(config);
@@ -43,9 +43,9 @@ describe('ConfigurationSchema - REAL Validation Behavior', () => {
       const config = {
         timeout: TIMEOUTS.MEDIUM,
         maxOutputBuffer: 1024,
-        cpuCoresReserved: 1,  // Minimum is 1 core
+        cpuCoresReserved: 1, // Minimum is 1 core
         memoryReserve: 0,
-        logLevel: 'debug' as const
+        logLevel: 'debug' as const,
       };
 
       const result = ConfigurationSchema.safeParse(config);
@@ -57,11 +57,11 @@ describe('ConfigurationSchema - REAL Validation Behavior', () => {
       const config = {
         // FIX: Max timeout is 1 hour (3,600,000ms), not 24 hours
         timeout: 60 * 60 * 1000, // 1 hour (max allowed)
-        maxOutputBuffer: 1073741824,   // 1GB
+        maxOutputBuffer: 1073741824, // 1GB
         cpuCoresReserved: 32,
         // FIX: Max memory reserve is 64GB, not MAX_SAFE_INTEGER
         memoryReserve: 64 * 1024 * 1024 * 1024,
-        logLevel: 'error' as const
+        logLevel: 'error' as const,
       };
 
       const result = ConfigurationSchema.safeParse(config);
@@ -72,13 +72,13 @@ describe('ConfigurationSchema - REAL Validation Behavior', () => {
     it('should accept all valid log levels', () => {
       const logLevels = ['debug', 'info', 'warn', 'error'] as const;
 
-      logLevels.forEach(level => {
+      logLevels.forEach((level) => {
         const config = {
           timeout: 30000,
           maxOutputBuffer: BUFFER_SIZES.SMALL,
           cpuCoresReserved: 2,
           memoryReserve: 1000000000,
-          logLevel: level
+          logLevel: level,
         };
 
         const result = ConfigurationSchema.safeParse(config);
@@ -94,7 +94,7 @@ describe('ConfigurationSchema - REAL Validation Behavior', () => {
         maxOutputBuffer: BUFFER_SIZES.SMALL,
         cpuCoresReserved: 2,
         memoryReserve: 1000000000,
-        logLevel: 'info' as const
+        logLevel: 'info' as const,
       };
 
       const result = ConfigurationSchema.safeParse(config);
@@ -112,7 +112,7 @@ describe('ConfigurationSchema - REAL Validation Behavior', () => {
         maxOutputBuffer: BUFFER_SIZES.SMALL,
         cpuCoresReserved: 2,
         memoryReserve: 1000000000,
-        logLevel: 'info' as const
+        logLevel: 'info' as const,
       };
 
       const result = ConfigurationSchema.safeParse(config);
@@ -135,19 +135,19 @@ describe('ConfigurationSchema - REAL Validation Behavior', () => {
 
     it('should reject invalid maxOutputBuffer', () => {
       const invalidBuffers = [
-        1023,         // Below minimum
-        1073741825,   // Above maximum
-        -1,           // Negative
-        0             // Zero
+        1023, // Below minimum
+        1073741825, // Above maximum
+        -1, // Negative
+        0, // Zero
       ];
 
-      invalidBuffers.forEach(buffer => {
+      invalidBuffers.forEach((buffer) => {
         const config = {
           timeout: 30000,
           maxOutputBuffer: buffer,
           cpuCoresReserved: 2,
           memoryReserve: 1000000000,
-          logLevel: 'info' as const
+          logLevel: 'info' as const,
         };
 
         const result = ConfigurationSchema.safeParse(config);
@@ -165,13 +165,13 @@ describe('ConfigurationSchema - REAL Validation Behavior', () => {
       const invalidThresholds = [0, -1, 33, 100]; // Below 1 or above 32 are invalid
       const validHighValues = [16, 32]; // FIX: Max is 32, not unlimited
 
-      invalidThresholds.forEach(threshold => {
+      invalidThresholds.forEach((threshold) => {
         const config = {
           timeout: 30000,
           maxOutputBuffer: BUFFER_SIZES.SMALL,
           cpuCoresReserved: threshold,
           memoryReserve: 1000000000,
-          logLevel: 'info' as const
+          logLevel: 'info' as const,
         };
 
         const result = ConfigurationSchema.safeParse(config);
@@ -185,13 +185,13 @@ describe('ConfigurationSchema - REAL Validation Behavior', () => {
       });
 
       // FIX: Valid values are 1-32, not unlimited
-      validHighValues.forEach(threshold => {
+      validHighValues.forEach((threshold) => {
         const config = {
           timeout: 30000,
           maxOutputBuffer: BUFFER_SIZES.SMALL,
           cpuCoresReserved: threshold,
           memoryReserve: 1000000000,
-          logLevel: 'info' as const
+          logLevel: 'info' as const,
         };
 
         const result = ConfigurationSchema.safeParse(config);
@@ -212,7 +212,7 @@ describe('ConfigurationSchema - REAL Validation Behavior', () => {
         maxOutputBuffer: BUFFER_SIZES.SMALL,
         cpuCoresReserved: 2,
         memoryReserve: -1,
-        logLevel: 'info' as const
+        logLevel: 'info' as const,
       };
 
       const result = ConfigurationSchema.safeParse(config);
@@ -223,13 +223,13 @@ describe('ConfigurationSchema - REAL Validation Behavior', () => {
     it('should reject invalid log levels', () => {
       const invalidLevels = ['trace', 'verbose', 'DEBUG', 'INFO', 'invalid', ''];
 
-      invalidLevels.forEach(level => {
+      invalidLevels.forEach((level) => {
         const config = {
           timeout: 30000,
           maxOutputBuffer: BUFFER_SIZES.SMALL,
           cpuCoresReserved: 2,
           memoryReserve: 1000000000,
-          logLevel: level
+          logLevel: level,
         };
 
         const result = ConfigurationSchema.safeParse(config);
@@ -243,7 +243,7 @@ describe('ConfigurationSchema - REAL Validation Behavior', () => {
         maxOutputBuffer: 'large' as unknown as number,
         cpuCoresReserved: true as unknown as number,
         memoryReserve: null as unknown as number,
-        logLevel: 'info'
+        logLevel: 'info',
       };
 
       const result = ConfigurationSchema.safeParse(config);
@@ -259,10 +259,10 @@ describe('ConfigurationSchema - REAL Validation Behavior', () => {
         { cpuCoresReserved: 16 },
         { memoryReserve: 1000000000 },
         { logLevel: 'info' as const },
-        {}
+        {},
       ];
 
-      partialConfigs.forEach(partial => {
+      partialConfigs.forEach((partial) => {
         const result = ConfigurationSchema.safeParse(partial);
         // FIX: Schema provides defaults, so these succeed
         expect(result.success).toBe(true);
@@ -282,8 +282,8 @@ describe('ConfigurationSchema - REAL Validation Behavior', () => {
         timeout: 30000,
         maxOutputBuffer: BUFFER_SIZES.SMALL,
         cpuCoresReserved: 2,
-        memoryReserve: 2684354560,  // 2.5GB to match default
-        logLevel: 'info'
+        memoryReserve: 2684354560, // 2.5GB to match default
+        logLevel: 'info',
       };
 
       // Type checks (these would fail compilation if types were wrong)
@@ -295,7 +295,7 @@ describe('ConfigurationSchema - REAL Validation Behavior', () => {
 
       expect(timeout).toBe(30000);
       expect(buffer).toBe(BUFFER_SIZES.SMALL);
-      expect(cpu).toBe(2);  // cpuCoresReserved default is 2
+      expect(cpu).toBe(2); // cpuCoresReserved default is 2
       expect(memory).toBe(2684354560); // 2.5GB default
       expect(level).toBe('info');
     });
@@ -324,7 +324,7 @@ describe('loadConfiguration - REAL Configuration Loading', () => {
       const config = loadConfiguration();
 
       // FIX: loadConfiguration returns 20+ fields, check core fields only
-      expect(config.timeout).toBe(1800000);        // 30 minutes
+      expect(config.timeout).toBe(1800000); // 30 minutes
       expect(config.maxOutputBuffer).toBe(BUFFER_SIZES.MEDIUM); // 10MB
       expect(config.cpuCoresReserved).toBe(2);
       expect(config.memoryReserve).toBe(2684354560); // 2.5GB default
@@ -366,8 +366,8 @@ describe('loadConfiguration - REAL Configuration Loading', () => {
       expect(config.timeout).toBe(120000);
       expect(config.logLevel).toBe('warn');
       expect(config.maxOutputBuffer).toBe(BUFFER_SIZES.MEDIUM); // Default
-      expect(config.cpuCoresReserved).toBe(2);          // Default
-      expect(config.memoryReserve).toBe(2684354560);  // Default (2.5GB)  // Default
+      expect(config.cpuCoresReserved).toBe(2); // Default
+      expect(config.memoryReserve).toBe(2684354560); // Default (2.5GB)  // Default
     });
 
     it('should handle invalid number parsing', () => {
@@ -382,7 +382,7 @@ describe('loadConfiguration - REAL Configuration Loading', () => {
       expect(config.timeout).toBe(1800000);
       expect(config.maxOutputBuffer).toBe(BUFFER_SIZES.MEDIUM);
       expect(config.cpuCoresReserved).toBe(2);
-      expect(config.memoryReserve).toBe(2684354560);  // Default (2.5GB)
+      expect(config.memoryReserve).toBe(2684354560); // Default (2.5GB)
     });
 
     it('should handle invalid log level', () => {
@@ -430,10 +430,10 @@ describe('loadConfiguration - REAL Configuration Loading', () => {
 
     it('should fallback to all defaults on any validation failure', () => {
       // One invalid value causes entire config to fallback
-      process.env.TASK_TIMEOUT = '30000';     // Valid
-      process.env.CPU_CORES_RESERVED = '2';       // Valid
-      process.env.MEMORY_RESERVE = '-1';      // Invalid!
-      process.env.LOG_LEVEL = 'debug';        // Valid
+      process.env.TASK_TIMEOUT = '30000'; // Valid
+      process.env.CPU_CORES_RESERVED = '2'; // Valid
+      process.env.MEMORY_RESERVE = '-1'; // Invalid!
+      process.env.LOG_LEVEL = 'debug'; // Valid
 
       const config = loadConfiguration();
 
@@ -456,7 +456,7 @@ describe('loadConfiguration - REAL Configuration Loading', () => {
       const config = loadConfiguration();
 
       expect(config.timeout).toBe(30000);
-      expect(config.cpuCoresReserved).toBe(2);  // Now uses cores not percent
+      expect(config.cpuCoresReserved).toBe(2); // Now uses cores not percent
     });
 
     it('should handle very large numbers', () => {
@@ -494,10 +494,10 @@ describe('loadConfiguration - REAL Configuration Loading', () => {
         { TASK_TIMEOUT: '-1', CPU_CORES_RESERVED: '200' },
         { MAX_OUTPUT_BUFFER: '0', MEMORY_RESERVE: '-999' },
         { LOG_LEVEL: '123', TASK_TIMEOUT: 'infinity' },
-        { CPU_CORES_RESERVED: 'NaN', MEMORY_RESERVE: 'undefined' }
+        { CPU_CORES_RESERVED: 'NaN', MEMORY_RESERVE: 'undefined' },
       ];
 
-      invalidConfigs.forEach(envVars => {
+      invalidConfigs.forEach((envVars) => {
         process.env = { ...originalEnv, ...envVars };
 
         const config = loadConfiguration();
@@ -523,7 +523,7 @@ describe('loadConfiguration - REAL Configuration Loading', () => {
 describe('TaskConfiguration - Interface Testing', () => {
   it('should allow partial configuration', () => {
     const taskConfig: TaskConfiguration = {
-      timeout: 60000
+      timeout: 60000,
     };
 
     expect(taskConfig.timeout).toBe(60000);
@@ -541,7 +541,7 @@ describe('TaskConfiguration - Interface Testing', () => {
     // Test RUNTIME immutability, not TypeScript compile-time
     const taskConfig: TaskConfiguration = Object.freeze({
       timeout: 60000,
-      maxOutputBuffer: BUFFER_SIZES.SMALL
+      maxOutputBuffer: BUFFER_SIZES.SMALL,
     });
 
     // Test that Object.freeze actually prevents mutations
@@ -580,7 +580,7 @@ describe('Real-world configuration scenarios', () => {
   });
 
   it('should handle production configuration', () => {
-    process.env.TASK_TIMEOUT = '3600000';     // 1 hour
+    process.env.TASK_TIMEOUT = '3600000'; // 1 hour
     process.env.MAX_OUTPUT_BUFFER = '52428800'; // 50MB
     process.env.CPU_CORES_RESERVED = '2';
     process.env.MEMORY_RESERVE = '2147483648'; // 2GB
@@ -590,32 +590,32 @@ describe('Real-world configuration scenarios', () => {
 
     expect(config.timeout).toBe(3600000);
     expect(config.maxOutputBuffer).toBe(52428800);
-    expect(config.cpuCoresReserved).toBe(2);  // Default is 2 cores
+    expect(config.cpuCoresReserved).toBe(2); // Default is 2 cores
     expect(config.memoryReserve).toBe(2147483648);
     expect(config.logLevel).toBe('error');
   });
 
   it('should handle development configuration', () => {
-    process.env.TASK_TIMEOUT = TIMEOUTS.LONG.toString();        // 5 seconds
+    process.env.TASK_TIMEOUT = TIMEOUTS.LONG.toString(); // 5 seconds
     process.env.MAX_OUTPUT_BUFFER = String(BUFFER_SIZES.SMALL); // 1MB
     process.env.CPU_CORES_RESERVED = '3';
-    process.env.MEMORY_RESERVE = '100000000';  // 100MB
+    process.env.MEMORY_RESERVE = '100000000'; // 100MB
     process.env.LOG_LEVEL = 'debug';
 
     const config = loadConfiguration();
 
     expect(config.timeout).toBe(TIMEOUTS.LONG);
     expect(config.maxOutputBuffer).toBe(BUFFER_SIZES.SMALL);
-    expect(config.cpuCoresReserved).toBe(3);  // From CPU_CORES_RESERVED env var
+    expect(config.cpuCoresReserved).toBe(3); // From CPU_CORES_RESERVED env var
     expect(config.memoryReserve).toBe(100000000);
     expect(config.logLevel).toBe('debug');
   });
 
   it('should handle CI/CD configuration', () => {
-    process.env.TASK_TIMEOUT = '600000';      // 10 minutes
+    process.env.TASK_TIMEOUT = '600000'; // 10 minutes
     process.env.MAX_OUTPUT_BUFFER = String(BUFFER_SIZES.MEDIUM); // 10MB
     process.env.CPU_CORES_RESERVED = '2';
-    process.env.MEMORY_RESERVE = '500000000';   // 500MB
+    process.env.MEMORY_RESERVE = '500000000'; // 500MB
     process.env.LOG_LEVEL = 'info';
 
     const config = loadConfiguration();
@@ -623,9 +623,9 @@ describe('Real-world configuration scenarios', () => {
     expect(config).toMatchObject({
       timeout: 600000,
       maxOutputBuffer: BUFFER_SIZES.MEDIUM,
-      cpuCoresReserved: 2,  // Default 2 cores
+      cpuCoresReserved: 2, // Default 2 cores
       memoryReserve: 500000000,
-      logLevel: 'info'
+      logLevel: 'info',
     });
   });
 });
