@@ -3,20 +3,20 @@
  * Manages all task persistence operations through events
  */
 
-import { TaskRepository, Logger } from '../../core/interfaces.js';
-import { Result, ok } from '../../core/result.js';
-import { BaseEventHandler } from '../../core/events/handlers.js';
+import type { Task } from '../../core/domain.js';
+import { TaskStatus } from '../../core/domain.js';
 import { EventBus } from '../../core/events/event-bus.js';
 import {
-  TaskDelegatedEvent,
-  TaskStartedEvent,
-  TaskCompletedEvent,
-  TaskFailedEvent,
   TaskCancelledEvent,
+  TaskCompletedEvent,
+  TaskDelegatedEvent,
+  TaskFailedEvent,
+  TaskStartedEvent,
   TaskTimeoutEvent,
 } from '../../core/events/events.js';
-import { TaskStatus } from '../../core/domain.js';
-import type { Task } from '../../core/domain.js';
+import { BaseEventHandler } from '../../core/events/handlers.js';
+import { Logger, TaskRepository } from '../../core/interfaces.js';
+import { ok, Result } from '../../core/result.js';
 
 export class PersistenceHandler extends BaseEventHandler {
   private eventBus?: EventBus;

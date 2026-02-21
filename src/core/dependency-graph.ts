@@ -6,9 +6,9 @@
  */
 
 import { TaskId } from './domain.js';
-import { Result, ok, err } from './result.js';
 import { ClaudineError, ErrorCode } from './errors.js';
 import { TaskDependency } from './interfaces.js';
+import { err, ok, Result } from './result.js';
 
 /**
  * Represents a directed graph of task dependencies

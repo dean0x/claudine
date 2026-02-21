@@ -10,19 +10,19 @@
  * Trade-offs: Slight performance overhead vs direct reads (< 1ms)
  */
 
-import { TaskRepository, Logger, OutputCapture } from '../../core/interfaces.js';
 import { Task } from '../../core/domain.js';
-import { Result, ok, err } from '../../core/result.js';
-import { BaseEventHandler } from '../../core/events/handlers.js';
+import { taskNotFound } from '../../core/errors.js';
 import { EventBus, InMemoryEventBus } from '../../core/events/event-bus.js';
 import {
-  TaskStatusQueryEvent,
-  TaskStatusResponseEvent,
+  createEvent,
   TaskLogsQueryEvent,
   TaskLogsResponseEvent,
-  createEvent,
+  TaskStatusQueryEvent,
+  TaskStatusResponseEvent,
 } from '../../core/events/events.js';
-import { taskNotFound } from '../../core/errors.js';
+import { BaseEventHandler } from '../../core/events/handlers.js';
+import { Logger, OutputCapture, TaskRepository } from '../../core/interfaces.js';
+import { err, ok, Result } from '../../core/result.js';
 
 export class QueryHandler extends BaseEventHandler {
   constructor(

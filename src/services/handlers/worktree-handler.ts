@@ -10,18 +10,17 @@
  * Trade-offs: Slight overhead vs direct calls (< 1ms)
  */
 
-import { WorktreeManager, Logger } from '../../core/interfaces.js';
-import { WorktreeStatus } from '../../core/interfaces.js';
 import { TaskId } from '../../core/domain.js';
-import { Result, ok, err } from '../../core/result.js';
-import { BaseEventHandler } from '../../core/events/handlers.js';
+import { ClaudineError, ErrorCode } from '../../core/errors.js';
 import { EventBus, InMemoryEventBus } from '../../core/events/event-bus.js';
 import {
+  WorktreeCleanupRequestedEvent,
   WorktreeListQueryEvent,
   WorktreeStatusQueryEvent,
-  WorktreeCleanupRequestedEvent,
 } from '../../core/events/events.js';
-import { ClaudineError, ErrorCode } from '../../core/errors.js';
+import { BaseEventHandler } from '../../core/events/handlers.js';
+import { Logger, WorktreeManager, WorktreeStatus } from '../../core/interfaces.js';
+import { err, ok, Result } from '../../core/result.js';
 
 /**
  * Result type for worktree cleanup operations

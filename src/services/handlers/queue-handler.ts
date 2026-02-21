@@ -4,20 +4,20 @@
  * ARCHITECTURE: Dependency-aware queueing - tasks only enqueued when dependencies met
  */
 
-import { TaskQueue, Logger, DependencyRepository, TaskRepository } from '../../core/interfaces.js';
-import { Result, ok, err } from '../../core/result.js';
-import { BaseEventHandler } from '../../core/events/handlers.js';
+import { Task, TaskStatus } from '../../core/domain.js';
 import { EventBus } from '../../core/events/event-bus.js';
 import {
-  TaskPersistedEvent,
-  TaskCancelledEvent,
-  TaskCancellationRequestedEvent,
+  createEvent,
   NextTaskQueryEvent,
   RequeueTaskEvent,
+  TaskCancellationRequestedEvent,
+  TaskCancelledEvent,
+  TaskPersistedEvent,
   TaskUnblockedEvent,
-  createEvent,
 } from '../../core/events/events.js';
-import { Task, TaskStatus } from '../../core/domain.js';
+import { BaseEventHandler } from '../../core/events/handlers.js';
+import { DependencyRepository, Logger, TaskQueue, TaskRepository } from '../../core/interfaces.js';
+import { err, ok, Result } from '../../core/result.js';
 
 export class QueueHandler extends BaseEventHandler {
   private eventBus?: EventBus;
@@ -160,18 +160,18 @@ export class QueueHandler extends BaseEventHandler {
 
       if (!result.ok) {
         // Respond with error
-        const correlationId = (event as any).__correlationId;
-        if (correlationId && this.eventBus && 'respondError' in this.eventBus) {
-          (this.eventBus as any).respondError(correlationId, result.error);
+        const correlationId = event.__correlationId;
+        if (correlationId && this.eventBus?.respondError) {
+          this.eventBus.respondError(correlationId, result.error);
         }
         return result;
       }
 
       if (!result.value) {
         // Respond with null (no tasks)
-        const correlationId = (event as any).__correlationId;
-        if (correlationId && this.eventBus && 'respond' in this.eventBus) {
-          (this.eventBus as any).respond(correlationId, null);
+        const correlationId = event.__correlationId;
+        if (correlationId && this.eventBus?.respond) {
+          this.eventBus.respond(correlationId, null);
         }
         return ok(undefined);
       }
@@ -185,9 +185,9 @@ export class QueueHandler extends BaseEventHandler {
       });
 
       // Respond with task
-      const correlationId = (event as any).__correlationId;
-      if (correlationId && this.eventBus && 'respond' in this.eventBus) {
-        (this.eventBus as any).respond(correlationId, task);
+      const correlationId = event.__correlationId;
+      if (correlationId && this.eventBus?.respond) {
+        this.eventBus.respond(correlationId, task);
       }
 
       return ok(undefined);

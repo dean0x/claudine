@@ -6,12 +6,11 @@
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import pkg from '../package.json' with { type: 'json' };
-import { bootstrap } from './bootstrap.js';
-import { AutoscalingManager } from './services/autoscaling-manager.js';
-import { WorkerPool } from './core/interfaces.js';
 import { MCPAdapter } from './adapters/mcp-adapter.js';
-import { Logger } from './core/interfaces.js';
+import { bootstrap } from './bootstrap.js';
 import { Container } from './core/container.js';
+import { Logger, WorkerPool } from './core/interfaces.js';
+import { AutoscalingManager } from './services/autoscaling-manager.js';
 
 // Handle errors gracefully
 process.on('uncaughtException', (error) => {

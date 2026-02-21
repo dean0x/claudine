@@ -3,11 +3,11 @@
  * Manages stdout/stderr for tasks with size limits
  */
 
-import { OutputCapture } from '../core/interfaces.js';
-import { EventBus } from '../core/events/event-bus.js';
 import { TaskId, TaskOutput } from '../core/domain.js';
-import { Result, ok, err } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { EventBus } from '../core/events/event-bus.js';
+import { OutputCapture } from '../core/interfaces.js';
+import { err, ok, Result } from '../core/result.js';
 
 interface OutputBuffer {
   stdout: string[];

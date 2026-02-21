@@ -4,20 +4,20 @@
  * Using simple-git for security and better error handling
  */
 
-import { simpleGit, SimpleGit } from 'simple-git';
-import path from 'path';
 import fs from 'fs/promises';
+import path from 'path';
+import { SimpleGit, simpleGit } from 'simple-git';
 import { Task, TaskId } from '../core/domain.js';
-import { Result, ok, err } from '../core/result.js';
-import {
-  Logger,
-  WorktreeManager,
-  WorktreeInfo,
-  WorktreeStatus,
-  WorktreeManagerConfig,
-  CompletionResult,
-} from '../core/interfaces.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
+import {
+  CompletionResult,
+  Logger,
+  WorktreeInfo,
+  WorktreeManager,
+  WorktreeManagerConfig,
+  WorktreeStatus,
+} from '../core/interfaces.js';
+import { err, ok, Result } from '../core/result.js';
 import { retryWithBackoff } from '../utils/retry.js';
 
 /**
@@ -476,7 +476,7 @@ export class GitWorktreeManager implements WorktreeManager {
       return ok(undefined);
     } catch (error) {
       // If we can't stat the worktree, it probably doesn't exist, so it's safe to remove
-      if ((error as any).code === 'ENOENT') {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         return ok(undefined);
       }
       return err(

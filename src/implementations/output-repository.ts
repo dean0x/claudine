@@ -4,14 +4,13 @@
  */
 
 import SQLite from 'better-sqlite3';
-import fs from 'fs';
-import { promises as fsPromises } from 'fs';
+import fs, { promises as fsPromises } from 'fs';
 import path from 'path';
-import { TaskId, TaskOutput } from '../core/domain.js';
-import { Result, ok, err, tryCatchAsync } from '../core/result.js';
-import { ClaudineError, ErrorCode } from '../core/errors.js';
-import { Database } from './database.js';
 import { Configuration } from '../core/configuration.js';
+import { TaskId, TaskOutput } from '../core/domain.js';
+import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { err, ok, Result, tryCatchAsync } from '../core/result.js';
+import { Database } from './database.js';
 
 export interface OutputRepository {
   save(taskId: TaskId, output: TaskOutput): Promise<Result<void>>;
@@ -112,7 +111,7 @@ export class SQLiteOutputRepository implements OutputRepository {
   async get(taskId: TaskId): Promise<Result<TaskOutput | null>> {
     return tryCatchAsync(
       async () => {
-        const row = this.getStmt.get(taskId) as Record<string, any> | undefined;
+        const row = this.getStmt.get(taskId) as Record<string, unknown> | undefined;
 
         if (!row) {
           return null;
@@ -120,15 +119,15 @@ export class SQLiteOutputRepository implements OutputRepository {
 
         // Check if output is in a file
         if (row.file_path) {
-          return await this.loadFromFile(taskId, row.file_path);
+          return await this.loadFromFile(taskId, row.file_path as string);
         }
 
         // Parse from database
         return {
           taskId: row.task_id as TaskId,
-          stdout: JSON.parse(row.stdout || '[]'),
-          stderr: JSON.parse(row.stderr || '[]'),
-          totalSize: row.total_size || 0,
+          stdout: JSON.parse((row.stdout as string) || '[]'),
+          stderr: JSON.parse((row.stderr as string) || '[]'),
+          totalSize: (row.total_size as number) || 0,
         };
       },
       (error) => new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to get output: ${error}`, { taskId }),
@@ -139,16 +138,16 @@ export class SQLiteOutputRepository implements OutputRepository {
     return tryCatchAsync(
       async () => {
         // Get the row to check for file
-        const row = this.getStmt.get(taskId) as Record<string, any> | undefined;
+        const row = this.getStmt.get(taskId) as Record<string, unknown> | undefined;
 
         if (row?.file_path) {
           // Delete the file
-          const filePath = path.join(this.outputDir, row.file_path);
+          const filePath = path.join(this.outputDir, row.file_path as string);
           try {
             await fsPromises.unlink(filePath);
-          } catch (error: any) {
+          } catch (error: unknown) {
             // Ignore if file doesn't exist
-            if (error.code !== 'ENOENT') {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
               throw error;
             }
           }
@@ -200,8 +199,8 @@ export class SQLiteOutputRepository implements OutputRepository {
     try {
       const content = await fsPromises.readFile(filePath, 'utf-8');
       return JSON.parse(content);
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         throw new Error(`Output file not found: ${filePath}`);
       }
       throw error;

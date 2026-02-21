@@ -5,8 +5,8 @@
 
 import SQLite from 'better-sqlite3';
 import fs from 'fs';
-import path from 'path';
 import os from 'os';
+import path from 'path';
 import { Logger } from '../core/interfaces.js';
 
 /**
@@ -200,10 +200,10 @@ export class Database {
         .get() as { version: number | null };
 
       return result?.version || 0;
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Only return 0 if the table doesn't exist (fresh database)
       // Re-throw all other errors (permissions, corruption, connection issues)
-      if (error.message && error.message.includes('no such table')) {
+      if (error instanceof Error && error.message.includes('no such table')) {
         return 0;
       }
       throw error;

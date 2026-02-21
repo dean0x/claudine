@@ -7,10 +7,10 @@
 
 import SQLite from 'better-sqlite3';
 import { z } from 'zod';
-import { CheckpointRepository } from '../core/interfaces.js';
 import { TaskCheckpoint, TaskId } from '../core/domain.js';
-import { Result, ok, tryCatchAsync } from '../core/result.js';
 import { operationErrorHandler } from '../core/errors.js';
+import { CheckpointRepository } from '../core/interfaces.js';
+import { ok, Result, tryCatchAsync } from '../core/result.js';
 import { Database } from './database.js';
 
 /**

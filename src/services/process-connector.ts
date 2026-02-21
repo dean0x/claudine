@@ -4,8 +4,8 @@
  */
 
 import { ChildProcess } from 'child_process';
-import { OutputCapture, Logger } from '../core/interfaces.js';
 import { TaskId } from '../core/domain.js';
+import { Logger, OutputCapture } from '../core/interfaces.js';
 
 export class ProcessConnector {
   constructor(

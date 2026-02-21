@@ -3,10 +3,10 @@
  * Handles loading tasks from database and emits events for recovery actions
  */
 
-import { TaskRepository, TaskQueue, Logger } from '../core/interfaces.js';
+import { isTerminalState, TaskStatus } from '../core/domain.js';
 import { EventBus } from '../core/events/event-bus.js';
-import { TaskStatus, isTerminalState } from '../core/domain.js';
-import { Result, ok, err } from '../core/result.js';
+import { Logger, TaskQueue, TaskRepository } from '../core/interfaces.js';
+import { err, ok, Result } from '../core/result.js';
 
 export class RecoveryManager {
   constructor(

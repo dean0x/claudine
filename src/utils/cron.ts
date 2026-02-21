@@ -4,10 +4,10 @@
  * Pattern: Parse-don't-validate - validates cron expressions at boundary
  */
 
-import cronParser from 'cron-parser';
 import type { CronExpression } from 'cron-parser';
-import { Result, ok, err } from '../core/result.js';
+import cronParser from 'cron-parser';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { err, ok, Result } from '../core/result.js';
 
 const { parseExpression } = cronParser;
 

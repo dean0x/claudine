@@ -3,11 +3,11 @@
  * Provides pub/sub pattern for loosely coupled components
  */
 
-import { Result, ok, err } from '../result.js';
+import { Configuration } from '../configuration.js';
 import { ClaudineError, ErrorCode } from '../errors.js';
 import { Logger } from '../interfaces.js';
-import { ClaudineEvent, EventHandler, createEvent, BaseEvent } from './events.js';
-import { Configuration } from '../configuration.js';
+import { err, ok, Result } from '../result.js';
+import { BaseEvent, ClaudineEvent, createEvent, EventHandler } from './events.js';
 
 /**
  * Event bus interface for dependency injection
@@ -28,10 +28,15 @@ export interface EventBus {
   dispose?(): void; // Optional cleanup method
 
   // Additional convenience methods for testing compatibility
+  // biome-ignore lint/suspicious/noExplicitAny: testing convenience methods — `unknown` would break all test call sites for no safety gain
   on?(event: string, handler: (data: any) => void): string;
   off?(event: string, subscriptionId: string): void;
+  // biome-ignore lint/suspicious/noExplicitAny: testing convenience methods — `unknown` would break all test call sites for no safety gain
   once?(event: string, handler: (data: any) => void): void;
+  // biome-ignore lint/suspicious/noExplicitAny: testing convenience methods — `unknown` would break all test call sites for no safety gain
   onRequest?(event: string, handler: (data: any) => Promise<Result<any>>): string;
+  respond?<T = unknown>(correlationId: string, response: T): boolean;
+  respondError?(correlationId: string, error: Error): boolean;
 }
 
 /**
@@ -242,7 +247,7 @@ export class InMemoryEventBus implements EventBus {
    * ARCHITECTURE: Thread-safe implementation using correlation IDs and promises
    * Includes automatic timeout (default 5s) to prevent hanging queries
    */
-  async request<T extends ClaudineEvent, R = any>(
+  async request<T extends ClaudineEvent, R = unknown>(
     type: T['type'],
     payload: Omit<T, keyof BaseEvent | 'type'>,
     timeoutMs: number = this.defaultRequestTimeoutMs,
@@ -293,9 +298,10 @@ export class InMemoryEventBus implements EventBus {
 
       // Emit event with correlation ID
       const event = createEvent(type, {
-        ...payload,
+        ...(payload as Record<string, unknown>),
         __correlationId: correlationId,
-      } as any) as T;
+        // biome-ignore lint/suspicious/noExplicitAny: createEvent requires Omit<T> but we're merging runtime fields
+      } as any as Omit<T, keyof BaseEvent | 'type'>) as T;
 
       this.logger.debug('Request event emitted', {
         eventType: event.type,
@@ -494,10 +500,12 @@ export class InMemoryEventBus implements EventBus {
   /**
    * Convenience method for testing - similar to Node's EventEmitter
    */
+  // biome-ignore lint/suspicious/noExplicitAny: testing convenience — mirrors Node EventEmitter API
   on(event: string, handler: (data: any) => void): string {
     const wrappedHandler: EventHandler = async (evt) => {
       handler(evt);
     };
+    // biome-ignore lint/suspicious/noExplicitAny: string event name can't be narrowed to ClaudineEvent union at this call site
     const result = this.subscribe(event as any, wrappedHandler);
     return result.ok ? result.value : '';
   }
@@ -512,6 +520,7 @@ export class InMemoryEventBus implements EventBus {
   /**
    * Convenience method for testing - one-time event listener
    */
+  // biome-ignore lint/suspicious/noExplicitAny: testing convenience — mirrors Node EventEmitter API
   once(event: string, handler: (data: any) => void): void {
     const subscriptionId = this.on(event, (data) => {
       handler(data);
@@ -522,9 +531,10 @@ export class InMemoryEventBus implements EventBus {
   /**
    * Convenience method for testing - handle request/response pattern
    */
+  // biome-ignore lint/suspicious/noExplicitAny: testing convenience — handler receives untyped event payloads
   onRequest(event: string, handler: (data: any) => Promise<Result<any>>): string {
-    const wrappedHandler: EventHandler = async (evt: any) => {
-      const correlationId = evt.__correlationId || evt.correlationId;
+    const wrappedHandler: EventHandler = async (evt) => {
+      const correlationId = evt.__correlationId;
       if (!correlationId) return;
 
       try {
@@ -538,6 +548,7 @@ export class InMemoryEventBus implements EventBus {
         }
       }
     };
+    // biome-ignore lint/suspicious/noExplicitAny: string event name can't be narrowed to ClaudineEvent union at this call site
     const result = this.subscribe(event as any, wrappedHandler);
     return result.ok ? result.value : '';
   }

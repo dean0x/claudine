@@ -4,12 +4,12 @@
  */
 
 import * as os from 'os';
-import { ResourceMonitor, Logger } from '../core/interfaces.js';
-import { EventBus } from '../core/events/event-bus.js';
-import { SystemResources } from '../core/domain.js';
-import { Result, ok, err, tryCatchAsync } from '../core/result.js';
-import { ClaudineError, ErrorCode } from '../core/errors.js';
 import { Configuration } from '../core/configuration.js';
+import { SystemResources } from '../core/domain.js';
+import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { EventBus } from '../core/events/event-bus.js';
+import { Logger, ResourceMonitor } from '../core/interfaces.js';
+import { err, ok, Result, tryCatchAsync } from '../core/result.js';
 
 export class SystemResourceMonitor implements ResourceMonitor {
   private readonly cpuCoresReserved: number;

@@ -3,22 +3,22 @@
  * Manages worker spawning, monitoring, and cleanup through events
  */
 
-import { WorkerPool, ResourceMonitor, Logger } from '../../core/interfaces.js';
-import { Result, ok, err } from '../../core/result.js';
-import { BaseEventHandler } from '../../core/events/handlers.js';
-import { EventBus } from '../../core/events/event-bus.js';
-import {
-  TaskDelegatedEvent,
-  TaskCancelledEvent,
-  TaskStatusQueryEvent,
-  TaskCancellationRequestedEvent,
-  TaskQueuedEvent,
-  NextTaskQueryEvent,
-  createEvent,
-} from '../../core/events/events.js';
+import { Configuration } from '../../core/configuration.js';
 import { Task, TaskId, TaskStatus, Worker } from '../../core/domain.js';
 import { ClaudineError, ErrorCode, taskNotFound } from '../../core/errors.js';
-import { Configuration } from '../../core/configuration.js';
+import { EventBus } from '../../core/events/event-bus.js';
+import {
+  createEvent,
+  NextTaskQueryEvent,
+  TaskCancellationRequestedEvent,
+  TaskCancelledEvent,
+  TaskDelegatedEvent,
+  TaskQueuedEvent,
+  TaskStatusQueryEvent,
+} from '../../core/events/events.js';
+import { BaseEventHandler } from '../../core/events/handlers.js';
+import { Logger, ResourceMonitor, WorkerPool } from '../../core/interfaces.js';
+import { err, ok, Result } from '../../core/result.js';
 
 export class WorkerHandler extends BaseEventHandler {
   /**

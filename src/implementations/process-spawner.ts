@@ -3,11 +3,11 @@
  * Handles Claude Code process creation
  */
 
-import { spawn, ChildProcess } from 'child_process';
-import { ProcessSpawner } from '../core/interfaces.js';
-import { Result, ok, err, tryCatch } from '../core/result.js';
-import { processSpawnFailed, ClaudineError, ErrorCode } from '../core/errors.js';
+import { ChildProcess, spawn } from 'child_process';
 import { Configuration } from '../core/configuration.js';
+import { ClaudineError, ErrorCode, processSpawnFailed } from '../core/errors.js';
+import { ProcessSpawner } from '../core/interfaces.js';
+import { err, ok, Result, tryCatch } from '../core/result.js';
 
 export class ClaudeProcessSpawner implements ProcessSpawner {
   private readonly claudeCommand: string;

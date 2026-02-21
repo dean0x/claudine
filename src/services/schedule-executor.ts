@@ -5,19 +5,19 @@
  * Rationale: Decoupled from ScheduleHandler for testability and separation of concerns
  */
 
-import { EventBus } from '../core/events/event-bus.js';
-import { ScheduleRepository, Logger } from '../core/interfaces.js';
-import { Result, ok, err } from '../core/result.js';
-import { ClaudineError, ErrorCode } from '../core/errors.js';
-import { ScheduleStatus, ScheduleType, MissedRunPolicy } from '../core/domain.js';
 import type { Schedule } from '../core/domain.js';
+import { MissedRunPolicy, ScheduleStatus, ScheduleType } from '../core/domain.js';
+import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { EventBus } from '../core/events/event-bus.js';
 import type {
+  ScheduleExecutedEvent,
+  TaskCancelledEvent,
   TaskCompletedEvent,
   TaskFailedEvent,
-  TaskCancelledEvent,
   TaskTimeoutEvent,
-  ScheduleExecutedEvent,
 } from '../core/events/events.js';
+import { Logger, ScheduleRepository } from '../core/interfaces.js';
+import { err, ok, Result } from '../core/result.js';
 import { getNextRunTime } from '../utils/cron.js';
 
 /**

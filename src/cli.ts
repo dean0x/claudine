@@ -7,10 +7,10 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { bootstrap } from './bootstrap.js';
-import { validatePath, validateBufferSize, validateTimeout } from './utils/validation.js';
-import type { Task } from './core/domain.js';
-import type { TaskManager, ScheduleService } from './core/interfaces.js';
-import { TaskId, ScheduleId } from './core/domain.js';
+import type { DelegateRequest, Task } from './core/domain.js';
+import { Priority, ScheduleId, TaskId } from './core/domain.js';
+import type { ScheduleService, TaskManager } from './core/interfaces.js';
+import { validateBufferSize, validatePath, validateTimeout } from './utils/validation.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -224,18 +224,21 @@ async function delegateTask(
     }
     const container = containerResult.value;
 
-    const taskManagerResult = await container.resolve('taskManager');
+    const taskManagerResult = await container.resolve<TaskManager>('taskManager');
     if (!taskManagerResult.ok) {
       console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
       process.exit(1);
     }
 
-    const taskManager = taskManagerResult.value as any;
+    const taskManager = taskManagerResult.value;
     console.log('📝 Delegating task:', prompt.substring(0, 100) + (prompt.length > 100 ? '...' : ''));
 
-    const request = {
+    const request: DelegateRequest = {
       prompt,
       ...options,
+      priority: options?.priority ? Priority[options.priority as keyof typeof Priority] : undefined,
+      dependsOn: options?.dependsOn?.map((id: string) => TaskId(id)),
+      continueFrom: options?.continueFrom ? TaskId(options.continueFrom) : undefined,
     };
 
     // Log the parameters being used
@@ -284,19 +287,19 @@ async function getTaskStatus(taskId?: string, showDependencies?: boolean) {
     }
     const container = containerResult.value;
 
-    const taskManagerResult = await container.resolve('taskManager');
+    const taskManagerResult = await container.resolve<TaskManager>('taskManager');
     if (!taskManagerResult.ok) {
       console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
       process.exit(1);
     }
 
-    const taskManager = taskManagerResult.value as any;
+    const taskManager = taskManagerResult.value;
 
     if (taskId) {
       console.log('🔍 Getting status for:', taskId);
-      const result = await taskManager.getStatus(taskId);
+      const result = await taskManager.getStatus(TaskId(taskId));
       if (result.ok) {
-        const task = result.value;
+        const task = result.value as Task;
         console.log('📋 Task Details:');
         console.log('   ID:', task.id);
         console.log('   Status:', task.status);
@@ -363,16 +366,16 @@ async function getTaskLogs(taskId: string, tail?: number) {
     }
     const container = containerResult.value;
 
-    const taskManagerResult = await container.resolve('taskManager');
+    const taskManagerResult = await container.resolve<TaskManager>('taskManager');
     if (!taskManagerResult.ok) {
       console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
       process.exit(1);
     }
 
-    const taskManager = taskManagerResult.value as any;
+    const taskManager = taskManagerResult.value;
     console.log('📤 Getting logs for:', taskId);
 
-    const result = await taskManager.getLogs(taskId);
+    const result = await taskManager.getLogs(TaskId(taskId));
     if (result.ok) {
       const logs = result.value;
 
@@ -417,19 +420,19 @@ async function cancelTask(taskId: string, reason?: string) {
     }
     const container = containerResult.value;
 
-    const taskManagerResult = await container.resolve('taskManager');
+    const taskManagerResult = await container.resolve<TaskManager>('taskManager');
     if (!taskManagerResult.ok) {
       console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
       process.exit(1);
     }
 
-    const taskManager = taskManagerResult.value as any;
+    const taskManager = taskManagerResult.value;
     console.log('🛑 Canceling task:', taskId);
     if (reason) {
       console.log('📝 Reason:', reason);
     }
 
-    const result = await taskManager.cancel(taskId, reason);
+    const result = await taskManager.cancel(TaskId(taskId), reason);
     if (result.ok) {
       console.log('✅ Task canceled successfully');
       process.exit(0);
@@ -453,16 +456,16 @@ async function retryTask(taskId: string) {
     }
     const container = containerResult.value;
 
-    const taskManagerResult = await container.resolve('taskManager');
+    const taskManagerResult = await container.resolve<TaskManager>('taskManager');
     if (!taskManagerResult.ok) {
       console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
       process.exit(1);
     }
 
-    const taskManager = taskManagerResult.value as any;
+    const taskManager = taskManagerResult.value;
     console.log('🔄 Retrying task:', taskId);
 
-    const result = await taskManager.retry(taskId);
+    const result = await taskManager.retry(TaskId(taskId));
     if (result.ok) {
       const newTask = result.value;
       console.log('✅ Retry task created successfully');

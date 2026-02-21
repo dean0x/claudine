@@ -3,29 +3,28 @@
  * Wires all components together
  */
 
+import { validateConfiguration } from './core/config-validator.js';
+import { Configuration, loadConfiguration } from './core/configuration.js';
 import { Container } from './core/container.js';
+import { ClaudineError, ErrorCode } from './core/errors.js';
+import { EventBus, InMemoryEventBus } from './core/events/event-bus.js';
 import {
+  CheckpointRepository,
   Config,
+  DependencyRepository,
   Logger,
+  OutputCapture,
   ProcessSpawner,
   ResourceMonitor,
-  OutputCapture,
-  TaskQueue,
-  WorkerPool,
-  TaskRepository,
-  TaskManager,
-  WorktreeManager,
-  DependencyRepository,
   ScheduleRepository,
   ScheduleService,
-  CheckpointRepository,
+  TaskManager,
+  TaskQueue,
+  TaskRepository,
+  WorkerPool,
+  WorktreeManager,
 } from './core/interfaces.js';
-import { EventBus } from './core/events/event-bus.js';
-import { Configuration, loadConfiguration } from './core/configuration.js';
-import { InMemoryEventBus } from './core/events/event-bus.js';
-import { validateConfiguration } from './core/config-validator.js';
-import { Result, ok, err } from './core/result.js';
-import { ClaudineError, ErrorCode } from './core/errors.js';
+import { err, ok, Result } from './core/result.js';
 
 /**
  * Options for bootstrapping the application
@@ -40,36 +39,32 @@ export interface BootstrapOptions {
   skipResourceMonitoring?: boolean;
 }
 
-// Implementations
-import { PriorityTaskQueue } from './implementations/task-queue.js';
-import { ClaudeProcessSpawner } from './implementations/process-spawner.js';
-import { SystemResourceMonitor } from './implementations/resource-monitor.js';
-import { EventDrivenWorkerPool } from './implementations/event-driven-worker-pool.js';
-import { BufferedOutputCapture } from './implementations/output-capture.js';
-import { StructuredLogger, ConsoleLogger, LogLevel } from './implementations/logger.js';
-import { Database } from './implementations/database.js';
-import { SQLiteTaskRepository } from './implementations/task-repository.js';
-import { SQLiteOutputRepository } from './implementations/output-repository.js';
-import { SQLiteDependencyRepository } from './implementations/dependency-repository.js';
-import { SQLiteScheduleRepository } from './implementations/schedule-repository.js';
-import { SQLiteCheckpointRepository } from './implementations/checkpoint-repository.js';
-
-// Schedule Executor
-import { ScheduleExecutor } from './services/schedule-executor.js';
-
-// Services
-import { TaskManagerService } from './services/task-manager.js';
-import { ScheduleManagerService } from './services/schedule-manager.js';
-import { AutoscalingManager } from './services/autoscaling-manager.js';
-import { RecoveryManager } from './services/recovery-manager.js';
-import { GitWorktreeManager } from './services/worktree-manager.js';
-import { GitHubIntegration } from './services/github-integration.js';
-
-// Handler Setup (extracts handler creation from bootstrap)
-import { extractHandlerDependencies, setupEventHandlers } from './services/handler-setup.js';
-
 // Adapter
 import { MCPAdapter } from './adapters/mcp-adapter.js';
+import { SQLiteCheckpointRepository } from './implementations/checkpoint-repository.js';
+import { Database } from './implementations/database.js';
+import { SQLiteDependencyRepository } from './implementations/dependency-repository.js';
+import { EventDrivenWorkerPool } from './implementations/event-driven-worker-pool.js';
+import { ConsoleLogger, LogLevel, StructuredLogger } from './implementations/logger.js';
+import { BufferedOutputCapture } from './implementations/output-capture.js';
+import { SQLiteOutputRepository } from './implementations/output-repository.js';
+import { ClaudeProcessSpawner } from './implementations/process-spawner.js';
+import { SystemResourceMonitor } from './implementations/resource-monitor.js';
+import { SQLiteScheduleRepository } from './implementations/schedule-repository.js';
+// Implementations
+import { PriorityTaskQueue } from './implementations/task-queue.js';
+import { SQLiteTaskRepository } from './implementations/task-repository.js';
+import { AutoscalingManager } from './services/autoscaling-manager.js';
+import { GitHubIntegration } from './services/github-integration.js';
+// Handler Setup (extracts handler creation from bootstrap)
+import { extractHandlerDependencies, setupEventHandlers } from './services/handler-setup.js';
+import { RecoveryManager } from './services/recovery-manager.js';
+// Schedule Executor
+import { ScheduleExecutor } from './services/schedule-executor.js';
+import { ScheduleManagerService } from './services/schedule-manager.js';
+// Services
+import { TaskManagerService } from './services/task-manager.js';
+import { GitWorktreeManager } from './services/worktree-manager.js';
 
 // Convert new configuration format to existing Config interface
 const getConfig = (): Config => {

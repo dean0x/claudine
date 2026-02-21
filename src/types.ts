@@ -17,6 +17,7 @@ export interface Task {
 
 export interface ToolResponse {
   success: boolean;
+  // biome-ignore lint/suspicious/noExplicitAny: generic payload for tool responses
   data?: any;
   error?: string;
 }

@@ -178,7 +178,7 @@ export const toClaudineError = (error: unknown): ClaudineError => {
 
   // Handle objects with message property
   if (error && typeof error === 'object' && 'message' in error) {
-    return systemError(String((error as any).message));
+    return systemError(String((error as { message: unknown }).message));
   }
 
   // Handle null/undefined

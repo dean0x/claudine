@@ -5,23 +5,23 @@
  * Rationale: Manages schedule creation, triggering, pausing, and execution tracking
  */
 
-import { ScheduleRepository, TaskRepository, Logger } from '../../core/interfaces.js';
-import { Result, ok, err } from '../../core/result.js';
-import { BaseEventHandler } from '../../core/events/handlers.js';
-import { EventBus } from '../../core/events/event-bus.js';
-import { ScheduleStatus, ScheduleType, createTask, updateSchedule } from '../../core/domain.js';
 import type { Schedule } from '../../core/domain.js';
+import { createTask, ScheduleStatus, ScheduleType, updateSchedule } from '../../core/domain.js';
+import { ClaudineError, ErrorCode } from '../../core/errors.js';
+import { EventBus } from '../../core/events/event-bus.js';
 import {
-  ScheduleCreatedEvent,
-  ScheduleTriggeredEvent,
   ScheduleCancelledEvent,
+  ScheduleCreatedEvent,
   SchedulePausedEvent,
-  ScheduleResumedEvent,
   ScheduleQueryEvent,
+  ScheduleResumedEvent,
+  ScheduleTriggeredEvent,
   ScheduleUpdatedEvent,
 } from '../../core/events/events.js';
-import { ClaudineError, ErrorCode } from '../../core/errors.js';
-import { validateCronExpression, getNextRunTime, isValidTimezone } from '../../utils/cron.js';
+import { BaseEventHandler } from '../../core/events/handlers.js';
+import { Logger, ScheduleRepository, TaskRepository } from '../../core/interfaces.js';
+import { err, ok, Result } from '../../core/result.js';
+import { getNextRunTime, isValidTimezone, validateCronExpression } from '../../utils/cron.js';
 
 /**
  * Options for ScheduleHandler configuration

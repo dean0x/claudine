@@ -3,24 +3,24 @@
  * All implementations should be injected, not instantiated directly
  */
 
-import { Result } from './result.js';
+import { ChildProcess } from 'child_process';
 import {
-  Task,
-  TaskId,
-  Worker,
-  WorkerId,
-  SystemResources,
-  TaskOutput,
   DelegateRequest,
+  ResumeTaskRequest,
   Schedule,
+  ScheduleCreateRequest,
   ScheduleId,
   ScheduleStatus,
-  ScheduleCreateRequest,
+  SystemResources,
+  Task,
   TaskCheckpoint,
-  ResumeTaskRequest,
+  TaskId,
+  TaskOutput,
+  Worker,
+  WorkerId,
 } from './domain.js';
-import { ChildProcess } from 'child_process';
-import { ClaudineEvent, EventHandler, BaseEvent } from './events/events.js';
+import { BaseEvent, ClaudineEvent, EventHandler } from './events/events.js';
+import { Result } from './result.js';
 
 /**
  * Task queue management
@@ -366,7 +366,9 @@ export interface TaskEventEmitter {
   on(event: 'worker:spawned', listener: (worker: Worker) => void): void;
   on(event: 'worker:killed', listener: (worker: Worker) => void): void;
 
+  // biome-ignore lint/suspicious/noExplicitAny: EventEmitter-compatible variadic signatures
   emit(event: string, ...args: any[]): void;
+  // biome-ignore lint/suspicious/noExplicitAny: EventEmitter-compatible variadic signatures
   off(event: string, listener: (...args: any[]) => void): void;
 }
 

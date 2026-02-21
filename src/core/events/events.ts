@@ -4,15 +4,15 @@
  */
 
 import {
-  Task,
-  TaskId,
-  Worker,
-  WorkerId,
+  MissedRunPolicy,
   Schedule,
   ScheduleId,
   ScheduleStatus,
-  MissedRunPolicy,
+  Task,
   TaskCheckpoint,
+  TaskId,
+  Worker,
+  WorkerId,
 } from '../domain.js';
 import { ClaudineError } from '../errors.js';
 
@@ -23,6 +23,8 @@ export interface BaseEvent {
   eventId: string;
   timestamp: number;
   source: string;
+  /** Correlation ID for request-response pattern */
+  __correlationId?: string;
 }
 
 /**

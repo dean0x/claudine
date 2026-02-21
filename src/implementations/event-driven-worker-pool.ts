@@ -4,24 +4,25 @@
  */
 
 import { ChildProcess, exec } from 'child_process';
-import { promisify } from 'util';
 import path from 'path';
+import { promisify } from 'util';
 
 const execAsync = promisify(exec);
+
+import { Task, TaskId, Worker, WorkerId } from '../core/domain.js';
+import { ClaudineError, ErrorCode, taskTimeout } from '../core/errors.js';
+import { EventBus } from '../core/events/event-bus.js';
 import {
-  WorkerPool,
-  ProcessSpawner,
-  ResourceMonitor,
+  CompletionResult,
   Logger,
   OutputCapture,
-  WorktreeManager,
+  ProcessSpawner,
+  ResourceMonitor,
+  WorkerPool,
   WorktreeInfo,
-  CompletionResult,
+  WorktreeManager,
 } from '../core/interfaces.js';
-import { EventBus } from '../core/events/event-bus.js';
-import { Worker, WorkerId, Task, TaskId } from '../core/domain.js';
-import { Result, ok, err, tryCatchAsync } from '../core/result.js';
-import { ClaudineError, ErrorCode, taskTimeout } from '../core/errors.js';
+import { err, ok, Result, tryCatchAsync } from '../core/result.js';
 import { ProcessConnector } from '../services/process-connector.js';
 
 interface WorkerState extends Worker {

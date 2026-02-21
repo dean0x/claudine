@@ -3,10 +3,11 @@
  * Manages service lifecycle and dependencies
  */
 
-import { Result, ok, err } from './result.js';
 import { ClaudineError, ErrorCode } from './errors.js';
+import { err, ok, Result } from './result.js';
 
 type Factory<T> = () => T | Promise<T>;
+// biome-ignore lint/suspicious/noExplicitAny: DI container needs generic flexibility for heterogeneous service storage
 type Service = { factory: Factory<any>; singleton: boolean; instance?: any };
 
 /**

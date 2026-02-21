@@ -6,8 +6,8 @@
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { Result, ok, err } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { err, ok, Result } from '../core/result.js';
 
 const execFileAsync = promisify(execFile);
 

@@ -3,10 +3,10 @@
  * Provides secure validation for user inputs
  */
 
-import path from 'path';
 import fs from 'fs';
-import { Result, ok, err } from '../core/result.js';
+import path from 'path';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { err, ok, Result } from '../core/result.js';
 
 /**
  * Validate that a path is within allowed boundaries

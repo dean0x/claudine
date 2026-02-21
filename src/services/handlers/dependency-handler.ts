@@ -5,22 +5,22 @@
  * Rationale: Ensures dependency integrity, prevents deadlocks, enables parallel task execution
  */
 
-import { DependencyRepository, Logger, TaskRepository, CheckpointLookup } from '../../core/interfaces.js';
-import { Result, ok, err } from '../../core/result.js';
-import { BaseEventHandler } from '../../core/events/handlers.js';
-import { EventBus } from '../../core/events/event-bus.js';
-import { TaskId, type TaskCheckpoint } from '../../core/domain.js';
-import {
-  TaskDelegatedEvent,
-  TaskCompletedEvent,
-  TaskFailedEvent,
-  TaskCancelledEvent,
-  TaskTimeoutEvent,
-  TaskDeletedEvent,
-  CheckpointCreatedEvent,
-} from '../../core/events/events.js';
 import { DependencyGraph } from '../../core/dependency-graph.js';
+import { type TaskCheckpoint, TaskId } from '../../core/domain.js';
 import { ClaudineError, ErrorCode } from '../../core/errors.js';
+import { EventBus } from '../../core/events/event-bus.js';
+import {
+  CheckpointCreatedEvent,
+  TaskCancelledEvent,
+  TaskCompletedEvent,
+  TaskDelegatedEvent,
+  TaskDeletedEvent,
+  TaskFailedEvent,
+  TaskTimeoutEvent,
+} from '../../core/events/events.js';
+import { BaseEventHandler } from '../../core/events/handlers.js';
+import { CheckpointLookup, DependencyRepository, Logger, TaskRepository } from '../../core/interfaces.js';
+import { err, ok, Result } from '../../core/result.js';
 import { buildContinuationPrompt } from '../../utils/continuation-prompt.js';
 
 // SECURITY: Maximum allowed depth for dependency chains (DoS prevention)

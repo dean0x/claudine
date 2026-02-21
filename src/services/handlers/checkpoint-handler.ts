@@ -5,13 +5,13 @@
  * Rationale: Captures task state snapshots for "smart retry" enrichment
  */
 
-import { CheckpointRepository, TaskRepository, OutputCapture, Logger } from '../../core/interfaces.js';
-import { Result, ok, err } from '../../core/result.js';
-import { BaseEventHandler } from '../../core/events/handlers.js';
-import { EventBus } from '../../core/events/event-bus.js';
 import type { TaskCheckpoint, TaskId } from '../../core/domain.js';
-import type { TaskCompletedEvent, TaskFailedEvent, TaskCancelledEvent } from '../../core/events/events.js';
 import { ClaudineError, ErrorCode } from '../../core/errors.js';
+import { EventBus } from '../../core/events/event-bus.js';
+import type { TaskCancelledEvent, TaskCompletedEvent, TaskFailedEvent } from '../../core/events/events.js';
+import { BaseEventHandler } from '../../core/events/handlers.js';
+import { CheckpointRepository, Logger, OutputCapture, TaskRepository } from '../../core/interfaces.js';
+import { err, ok, Result } from '../../core/result.js';
 import { captureGitState } from '../../utils/git-state.js';
 
 /** Maximum characters for output/error summaries stored in checkpoints */

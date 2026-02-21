@@ -3,11 +3,11 @@
  * Provides common patterns for event handling
  */
 
-import { Result, ok, err } from '../result.js';
 import { ClaudineError, ErrorCode } from '../errors.js';
 import { Logger } from '../interfaces.js';
-import { ClaudineEvent, EventHandler } from './events.js';
+import { err, ok, Result } from '../result.js';
 import { EventBus } from './event-bus.js';
+import { ClaudineEvent, EventHandler } from './events.js';
 
 /**
  * Base event handler with common functionality
@@ -50,6 +50,7 @@ export abstract class BaseEventHandler {
     // generic helper call site. This is a TypeScript limitation, not a design flaw.
     // Safety: EventBus.emit() wraps payload in createEvent() which adds eventId/timestamp.
     // The alternative would be no DRY helper at all - this trade-off is acceptable.
+    // biome-ignore lint/suspicious/noExplicitAny: TS can't infer payload type from string event type in DRY helper
     const result = await eventBus.emit(eventType as any, payload as any);
 
     if (!result.ok && (options?.logOnError ?? true)) {

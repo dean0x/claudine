@@ -3,12 +3,12 @@
  * Responds to system events and emits scaling decisions
  */
 
-import { TaskQueue, WorkerPool, ResourceMonitor, Logger } from '../core/interfaces.js';
-import { EventBus } from '../core/events/event-bus.js';
-import { Result, ok, err } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { EventBus } from '../core/events/event-bus.js';
+import { SystemResourcesUpdatedEvent, WorkerKilledEvent } from '../core/events/events.js';
 import { BaseEventHandler } from '../core/events/handlers.js';
-import { WorkerKilledEvent, SystemResourcesUpdatedEvent } from '../core/events/events.js';
+import { Logger, ResourceMonitor, TaskQueue, WorkerPool } from '../core/interfaces.js';
+import { err, ok, Result } from '../core/result.js';
 
 export class AutoscalingManager extends BaseEventHandler {
   private running = false;

@@ -7,10 +7,10 @@
 
 import SQLite from 'better-sqlite3';
 import { z } from 'zod';
-import { DependencyRepository, TaskDependency } from '../core/interfaces.js';
 import { TaskId } from '../core/domain.js';
-import { Result, ok, err, tryCatch, tryCatchAsync } from '../core/result.js';
 import { ClaudineError, ErrorCode, operationErrorHandler } from '../core/errors.js';
+import { DependencyRepository, TaskDependency } from '../core/interfaces.js';
+import { err, ok, Result, tryCatch, tryCatchAsync } from '../core/result.js';
 import { Database } from './database.js';
 
 /**

@@ -4,35 +4,34 @@
  * Rationale: Reduces bootstrap.ts complexity, enables easy handler additions for v0.4.0
  */
 
-import { Result, ok, err } from '../core/result.js';
-import { Container } from '../core/container.js';
-import { EventHandlerRegistry } from '../core/events/handlers.js';
-import { EventBus } from '../core/events/event-bus.js';
-import { ClaudineError, ErrorCode } from '../core/errors.js';
-import {
-  Logger,
-  TaskRepository,
-  OutputCapture,
-  TaskQueue,
-  DependencyRepository,
-  WorkerPool,
-  ResourceMonitor,
-  WorktreeManager,
-  ScheduleRepository,
-  CheckpointRepository,
-} from '../core/interfaces.js';
 import { Configuration } from '../core/configuration.js';
-
+import { Container } from '../core/container.js';
+import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { EventBus } from '../core/events/event-bus.js';
+import { EventHandlerRegistry } from '../core/events/handlers.js';
+import {
+  CheckpointRepository,
+  DependencyRepository,
+  Logger,
+  OutputCapture,
+  ResourceMonitor,
+  ScheduleRepository,
+  TaskQueue,
+  TaskRepository,
+  WorkerPool,
+  WorktreeManager,
+} from '../core/interfaces.js';
+import { err, ok, Result } from '../core/result.js';
+import { CheckpointHandler } from './handlers/checkpoint-handler.js';
+import { DependencyHandler } from './handlers/dependency-handler.js';
+import { OutputHandler } from './handlers/output-handler.js';
 // Event Handlers
 import { PersistenceHandler } from './handlers/persistence-handler.js';
-import { QueueHandler } from './handlers/queue-handler.js';
 import { QueryHandler } from './handlers/query-handler.js';
-import { WorkerHandler } from './handlers/worker-handler.js';
-import { OutputHandler } from './handlers/output-handler.js';
-import { WorktreeHandler } from './handlers/worktree-handler.js';
-import { DependencyHandler } from './handlers/dependency-handler.js';
+import { QueueHandler } from './handlers/queue-handler.js';
 import { ScheduleHandler } from './handlers/schedule-handler.js';
-import { CheckpointHandler } from './handlers/checkpoint-handler.js';
+import { WorkerHandler } from './handlers/worker-handler.js';
+import { WorktreeHandler } from './handlers/worktree-handler.js';
 
 /**
  * Dependencies required for handler setup

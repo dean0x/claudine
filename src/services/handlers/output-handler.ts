@@ -3,11 +3,11 @@
  * Handles output-related events and provides task logs
  */
 
-import { OutputCapture, Logger } from '../../core/interfaces.js';
-import { Result, ok } from '../../core/result.js';
-import { BaseEventHandler } from '../../core/events/handlers.js';
 import { EventBus } from '../../core/events/event-bus.js';
 import { LogsRequestedEvent, OutputCapturedEvent } from '../../core/events/events.js';
+import { BaseEventHandler } from '../../core/events/handlers.js';
+import { Logger, OutputCapture } from '../../core/interfaces.js';
+import { ok, Result } from '../../core/result.js';
 
 export class OutputHandler extends BaseEventHandler {
   constructor(

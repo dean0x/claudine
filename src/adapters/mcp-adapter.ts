@@ -5,21 +5,22 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { z } from 'zod';
-import { TaskManager, Logger, ScheduleService } from '../core/interfaces.js';
+import pkg from '../../package.json' with { type: 'json' };
 import {
   DelegateRequest,
-  ResumeTaskRequest,
   Priority,
-  TaskId,
+  ResumeTaskRequest,
+  ScheduleCreateRequest,
   ScheduleId,
   ScheduleStatus,
   ScheduleType,
-  ScheduleCreateRequest,
+  Task,
+  TaskId,
 } from '../core/domain.js';
+import { Logger, ScheduleService, TaskManager } from '../core/interfaces.js';
 import { match } from '../core/result.js';
-import { validatePath } from '../utils/validation.js';
 import { toMissedRunPolicy } from '../services/schedule-manager.js';
-import pkg from '../../package.json' with { type: 'json' };
+import { validatePath } from '../utils/validation.js';
 
 // Zod schemas for MCP protocol validation
 const DelegateTaskSchema = z.object({
@@ -115,6 +116,7 @@ const ResumeScheduleSchema = z.object({
 
 /** Standard MCP tool response shape */
 interface MCPToolResponse {
+  [key: string]: unknown;
   content: { type: string; text: string }[];
   isError?: boolean;
 }
@@ -559,7 +561,7 @@ export class MCPAdapter {
     );
   }
 
-  private async handleDelegateTask(args: unknown): Promise<any> {
+  private async handleDelegateTask(args: unknown): Promise<MCPToolResponse> {
     // Validate input at boundary
     const parseResult = DelegateTaskSchema.safeParse(args);
 
@@ -647,7 +649,7 @@ export class MCPAdapter {
     });
   }
 
-  private async handleTaskStatus(args: unknown): Promise<any> {
+  private async handleTaskStatus(args: unknown): Promise<MCPToolResponse> {
     const parseResult = TaskStatusSchema.safeParse(args);
 
     if (!parseResult.success) {
@@ -683,7 +685,7 @@ export class MCPAdapter {
           };
         } else {
           // Single task - TypeScript needs help with type narrowing
-          const task = data as Exclude<typeof data, readonly any[]>;
+          const task = data as Exclude<typeof data, readonly Task[]>;
           return {
             content: [
               {
@@ -719,7 +721,7 @@ export class MCPAdapter {
     });
   }
 
-  private async handleTaskLogs(args: unknown): Promise<any> {
+  private async handleTaskLogs(args: unknown): Promise<MCPToolResponse> {
     const parseResult = TaskLogsSchema.safeParse(args);
 
     if (!parseResult.success) {
@@ -771,7 +773,7 @@ export class MCPAdapter {
     });
   }
 
-  private async handleCancelTask(args: unknown): Promise<any> {
+  private async handleCancelTask(args: unknown): Promise<MCPToolResponse> {
     const parseResult = CancelTaskSchema.safeParse(args);
 
     if (!parseResult.success) {
@@ -817,7 +819,7 @@ export class MCPAdapter {
     });
   }
 
-  private async handleRetryTask(args: unknown): Promise<any> {
+  private async handleRetryTask(args: unknown): Promise<MCPToolResponse> {
     const parseResult = RetryTaskSchema.safeParse(args);
 
     if (!parseResult.success) {

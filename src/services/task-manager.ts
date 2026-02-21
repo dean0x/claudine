@@ -13,36 +13,36 @@
  * - All state changes MUST go through events
  */
 
+import { Configuration } from '../core/configuration.js';
 import {
-  TaskManager,
-  TaskRepository,
+  canCancel,
+  createTask,
+  DelegateRequest,
+  isTerminalState,
+  ResumeTaskRequest,
+  Task,
+  TaskId,
+  TaskOutput,
+} from '../core/domain.js';
+import { ClaudineError, ErrorCode, taskNotFound } from '../core/errors.js';
+import { EventBus } from '../core/events/event-bus.js';
+import {
+  TaskLogsQueryEvent,
+  TaskStatusQueryEvent,
+  WorktreeCleanupRequestedEvent,
+  WorktreeListQueryEvent,
+  WorktreeStatusQueryEvent,
+} from '../core/events/events.js';
+import {
   CheckpointRepository,
   Logger,
   OutputCapture,
-  WorktreeStatus,
+  TaskManager,
+  TaskRepository,
   WorktreeCleanupResult,
+  WorktreeStatus,
 } from '../core/interfaces.js';
-import { EventBus } from '../core/events/event-bus.js';
-import {
-  TaskStatusQueryEvent,
-  TaskLogsQueryEvent,
-  WorktreeListQueryEvent,
-  WorktreeStatusQueryEvent,
-  WorktreeCleanupRequestedEvent,
-} from '../core/events/events.js';
-import {
-  Task,
-  TaskId,
-  DelegateRequest,
-  TaskOutput,
-  ResumeTaskRequest,
-  createTask,
-  canCancel,
-  isTerminalState,
-} from '../core/domain.js';
-import { Result, ok, err } from '../core/result.js';
-import { taskNotFound, ClaudineError, ErrorCode } from '../core/errors.js';
-import { Configuration } from '../core/configuration.js';
+import { err, ok, Result } from '../core/result.js';
 
 export class TaskManagerService implements TaskManager {
   constructor(
