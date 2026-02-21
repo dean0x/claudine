@@ -1,55 +1,75 @@
 name: Release
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
 
 jobs:
-  publish-npm:
+  release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Use Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20.x'
         registry-url: 'https://registry.npmjs.org'
-    
+
     - name: Install dependencies
       run: npm ci
-    
+
     - name: Build
       run: npm run build
-    
-    - name: Test
-      run: npm test
-    
-    - name: Update package version to match tag
+
+    - name: Run tests
+      run: NODE_OPTIONS="--max-old-space-size=2048" npm run test:all
+
+    - name: Check version
+      id: version
       run: |
-        TAG=${GITHUB_REF#refs/tags/}
-        VERSION=${TAG#v}
-        npm version $VERSION --no-git-tag-version --allow-same-version
-    
+        PUBLISHED_VERSION=$(npm view claudine version 2>/dev/null || echo "0.0.0")
+        PACKAGE_VERSION=$(node -p "require('./package.json').version")
+        echo "Published version: $PUBLISHED_VERSION"
+        echo "Package version: $PACKAGE_VERSION"
+        echo "published=$PUBLISHED_VERSION" >> $GITHUB_OUTPUT
+        echo "package=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+        if [ "$PUBLISHED_VERSION" = "$PACKAGE_VERSION" ]; then
+          echo "❌ Version $PACKAGE_VERSION is already published. Bump version in package.json first."
+          exit 1
+        fi
+
+    - name: Check for release notes
+      run: |
+        RELEASE_NOTES_FILE="docs/releases/RELEASE_NOTES_v${{ steps.version.outputs.package }}.md"
+        if [ ! -f "$RELEASE_NOTES_FILE" ]; then
+          echo "❌ Error: $RELEASE_NOTES_FILE not found!"
+          echo "Release notes are required for version ${{ steps.version.outputs.package }}"
+          echo "Please create $RELEASE_NOTES_FILE with release notes before publishing"
+          exit 1
+        fi
+        echo "✅ Release notes found: $RELEASE_NOTES_FILE"
+
     - name: Publish to npm
-      run: npm publish --access public
+      run: |
+        echo "Publishing version ${{ steps.version.outputs.package }} to npm..."
+        npm publish --access public
       env:
         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-    
-    - name: Update release notes
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const tag = context.ref.replace('refs/tags/', '');
-          const version = tag.replace('v', '');
-          const release = context.payload.release;
-          const newBody = release.body + `\n\n---\n\n📦 **Published to npm**: Version ${version}\n\nInstall with: \`npm install -g claudine@${version}\``;
-          
-          await github.rest.repos.updateRelease({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            release_id: release.id,
-            body: newBody
-          });
+
+    - name: Create git tag
+      run: |
+        git config user.name github-actions
+        git config user.email github-actions@github.com
+        git tag v${{ steps.version.outputs.package }}
+        git push origin v${{ steps.version.outputs.package }}
+
+    - name: Create GitHub release
+      run: |
+        gh release create v${{ steps.version.outputs.package }} \
+          --title "Claudine v${{ steps.version.outputs.package }}" \
+          --notes-file docs/releases/RELEASE_NOTES_v${{ steps.version.outputs.package }}.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
