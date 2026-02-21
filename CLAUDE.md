@@ -42,7 +42,7 @@ npm run test:coverage       # With coverage
 
 **Memory Management**:
 - All commands use 2GB memory limit (`--max-old-space-size=2048`)
-- Vitest config: `memoryLimit: '1024MB'` restarts workers at 1GB threshold
+- Vitest config: `vmMemoryLimit: '1024MB'` restarts workers at 1GB threshold
 - **Claude Code constraint**: Full suite exhausts system resources even with low limits
 
 
@@ -111,8 +111,8 @@ See `docs/TASK-DEPENDENCIES.md` for usage patterns.
 - **Use individual groups** from Claude Code: `npm run test:core`, `test:handlers`, etc.
 - **Full suite**: `npm run test:all` (only in local terminal/CI)
 - **ROOT CAUSE of memory exhaustion**: Vitest workers accumulate memory across test files
-- **Solution**: `memoryLimit: '1024MB'` in vitest.config.ts restarts workers at 1GB threshold
-- **Tests are sequential** via vitest config (`singleThread: true`, `isolate: false`)
+- **Solution**: `vmMemoryLimit: '1024MB'` in vitest.config.ts restarts workers at 1GB threshold
+- **Tests are sequential** via vitest config (`maxWorkers: 1`, `isolate: false`)
 - **All commands use 2GB** memory limit (`--max-old-space-size=2048`)
 - **No real process spawning** - all tests use mocks (MockWorkerPool, MockProcessSpawner)
 
