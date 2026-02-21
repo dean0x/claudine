@@ -159,7 +159,11 @@ describe('Integration: Task Resumption - End-to-End Flow', () => {
       await autoCompletePromise;
       await flushEventLoop();
 
-      // Set up checkpoint listener before manually emitting failure
+      // Delete the auto-created 'completed' checkpoint so findLatest returns
+      // only the manually-emitted 'failed' checkpoint (avoids same-millisecond
+      // timestamp race where findLatest could return either one)
+      await checkpointRepo.deleteByTask(failTask.value.id);
+
       const failCheckpointPromise = waitForEvent(eventBus, 'CheckpointCreated');
 
       // Manually emit TaskFailed event (since NoOpProcessSpawner always exits 0)
@@ -191,8 +195,12 @@ describe('Integration: Task Resumption - End-to-End Flow', () => {
       // Step 1: Create and complete a task
       const originalTask = await delegateAndWaitForCompletion('Original task for resume test');
 
-      // Step 2: Manually save a checkpoint with rich context
-      // (auto-created checkpoints may lack output since NoOpProcessSpawner produces none)
+      // Step 2: Delete auto-created checkpoint (NoOpProcessSpawner produces no output,
+      // so auto-checkpoint lacks the rich context this test needs), then save one with
+      // explicit data. Without deletion, findLatest may return the empty auto-checkpoint
+      // when both share the same created_at millisecond.
+      await checkpointRepo.deleteByTask(originalTask.id);
+
       const saveResult = await checkpointRepo.save({
         taskId: originalTask.id,
         checkpointType: 'completed',
