@@ -23,8 +23,8 @@ preconditions:
 ### Step 1: Clean State
 **Action:** Ensure clean starting state
 ```bash
-rm -rf .claudine/
-pkill -f "claudine" || true
+rm -rf .delegate/
+pkill -f "delegate" || true
 ```
 **Expected:** Clean state achieved
 **Verify:**
@@ -117,7 +117,7 @@ node dist/cli.js logs $(node dist/cli.js status --json 2>/dev/null | grep -o '"i
 # Get current queue state
 node dist/cli.js status > /tmp/queue_before.txt
 # Kill process
-pkill -f "claudine" || true
+pkill -f "delegate" || true
 sleep 2
 ```
 **Expected:** Process killed with tasks pending
@@ -161,7 +161,7 @@ timeout 30 bash -c 'while [ $(node dist/cli.js status | grep -c "completed") -lt
 ### Step 13: Verify Final Execution Order
 **Action:** Check completion timestamps
 ```bash
-sqlite3 .claudine/claudine.db "SELECT priority, status, completedAt FROM tasks ORDER BY completedAt;" 2>/dev/null | head -10
+sqlite3 .delegate/delegate.db "SELECT priority, status, completedAt FROM tasks ORDER BY completedAt;" 2>/dev/null | head -10
 ```
 **Expected:** Completion follows priority
 **Verify:**
@@ -172,8 +172,8 @@ sqlite3 .claudine/claudine.db "SELECT priority, status, completedAt FROM tasks O
 ### Step 14: Cleanup
 **Action:** Clean up test artifacts
 ```bash
-pkill -f "claudine" || true
-rm -rf .claudine/ /tmp/queue_*.txt
+pkill -f "delegate" || true
+rm -rf .delegate/ /tmp/queue_*.txt
 ```
 **Expected:** Cleanup successful
 **Verify:**
@@ -192,8 +192,8 @@ rm -rf .claudine/ /tmp/queue_*.txt
 
 ## Rollback Plan
 If test fails:
-1. Kill all processes: `pkill -9 -f claudine`
-2. Clear database: `rm -rf .claudine/`
+1. Kill all processes: `pkill -9 -f delegate`
+2. Clear database: `rm -rf .delegate/`
 3. Check queue implementation in code
 4. Verify priority enum values (P0=0, P1=1, P2=2)
 

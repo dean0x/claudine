@@ -19,7 +19,7 @@ import {
   ScheduleType,
   TaskId,
 } from '../../src/core/domain';
-import { ClaudineError, ErrorCode, taskNotFound } from '../../src/core/errors';
+import { DelegateError, ErrorCode, taskNotFound } from '../../src/core/errors';
 import type { ScheduleService, TaskManager } from '../../src/core/interfaces';
 import { err, ok } from '../../src/core/result';
 import { TaskFactory } from '../fixtures/factories';
@@ -107,7 +107,7 @@ class MockTaskManager implements TaskManager {
     }
     if (oldTask.status !== 'completed' && oldTask.status !== 'failed' && oldTask.status !== 'cancelled') {
       return err(
-        new ClaudineError(
+        new DelegateError(
           ErrorCode.INVALID_OPERATION,
           `Task ${request.taskId} cannot be resumed in state ${oldTask.status}`,
         ),
@@ -125,7 +125,7 @@ class MockTaskManager implements TaskManager {
     return ok([]);
   }
   async getWorktreeStatus() {
-    return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, 'Not implemented'));
+    return err(new DelegateError(ErrorCode.TASK_NOT_FOUND, 'Not implemented'));
   }
   async cleanupWorktrees() {
     return ok({ removed: 0, kept: 0, errors: [] });
@@ -189,7 +189,7 @@ class MockScheduleService implements ScheduleService {
     this.getCalls.push({ scheduleId, includeHistory, historyLimit });
     const schedule = this.scheduleStorage.get(scheduleId);
     if (!schedule) {
-      return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`));
+      return err(new DelegateError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`));
     }
     const history: ScheduleExecution[] = includeHistory ? [] : (undefined as any);
     return ok({ schedule, history });
@@ -199,7 +199,7 @@ class MockScheduleService implements ScheduleService {
     this.cancelCalls.push({ scheduleId, reason });
     const schedule = this.scheduleStorage.get(scheduleId);
     if (!schedule) {
-      return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`));
+      return err(new DelegateError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`));
     }
     return ok(undefined);
   }
@@ -208,7 +208,7 @@ class MockScheduleService implements ScheduleService {
     this.pauseCalls.push({ scheduleId });
     const schedule = this.scheduleStorage.get(scheduleId);
     if (!schedule) {
-      return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`));
+      return err(new DelegateError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`));
     }
     return ok(undefined);
   }
@@ -217,7 +217,7 @@ class MockScheduleService implements ScheduleService {
     this.resumeCalls.push({ scheduleId });
     const schedule = this.scheduleStorage.get(scheduleId);
     if (!schedule) {
-      return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`));
+      return err(new DelegateError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`));
     }
     return ok(undefined);
   }
@@ -251,7 +251,7 @@ class MockContainer implements Container {
   get<T>(key: string) {
     const value = this.services.get(key);
     if (!value) {
-      return err(new ClaudineError(ErrorCode.DEPENDENCY_INJECTION_FAILED, `Service not found: ${key}`, { key }));
+      return err(new DelegateError(ErrorCode.DEPENDENCY_INJECTION_FAILED, `Service not found: ${key}`, { key }));
     }
 
     // Handle singleton factories
@@ -303,7 +303,7 @@ describe('CLI - Command Parsing and Validation', () => {
 
       const helpText = getHelpText();
 
-      expect(helpText).toContain('Claudine');
+      expect(helpText).toContain('Delegate');
       expect(helpText).toContain('mcp start');
       expect(helpText).toContain('delegate');
       expect(helpText).toContain('status');
@@ -334,7 +334,7 @@ describe('CLI - Command Parsing and Validation', () => {
       const configText = getConfigText();
 
       expect(configText).toContain('mcpServers');
-      expect(configText).toContain('claudine');
+      expect(configText).toContain('delegate');
       expect(configText).toContain('npx');
       expect(configText).toContain('mcp');
       expect(configText).toContain('start');
@@ -353,7 +353,7 @@ describe('CLI - Command Parsing and Validation', () => {
 
       expect(configText).toContain('global installation');
       expect(configText).toContain('local development');
-      expect(configText).toContain('/path/to/claudine');
+      expect(configText).toContain('/path/to/delegate');
     });
   });
 
@@ -1233,10 +1233,10 @@ describe('CLI - Help Text Coverage', () => {
 function getHelpText(): string {
   // Simulate help text extraction - must match actual showHelp() output
   return `
-🤖 Claudine - MCP Server for Task Delegation
+🤖 Delegate - MCP Server for Task Delegation
 
 Usage:
-  claudine <command> [options...]
+  delegate <command> [options...]
 
 MCP Server Commands:
   mcp start              Start the MCP server
@@ -1267,25 +1267,25 @@ Task Resumption:
   resume <task-id> [--context "additional instructions"]
 
 Examples:
-  claudine delegate "analyze codebase" --priority P0
-  claudine status abc123
-  claudine schedule create "run tests" --type cron --cron "0 9 * * 1-5"
-  claudine pipeline "setup db" --delay 5m "run migrations"
-  claudine resume <task-id> --context "Try a different approach"
+  delegate "analyze codebase" --priority P0
+  delegate status abc123
+  delegate schedule create "run tests" --type cron --cron "0 9 * * 1-5"
+  delegate pipeline "setup db" --delay 5m "run migrations"
+  delegate resume <task-id> --context "Try a different approach"
 `;
 }
 
 function getConfigText(): string {
   return `
-📋 MCP Configuration for Claudine
+📋 MCP Configuration for Delegate
 
 Add this to your MCP configuration file:
 
 {
   "mcpServers": {
-    "claudine": {
+    "delegate": {
       "command": "npx",
-      "args": ["-y", "claudine", "mcp", "start"]
+      "args": ["-y", "@dean0x/delegate", "mcp", "start"]
     }
   }
 }
@@ -1298,25 +1298,25 @@ Configuration file locations:
 For global installation, use:
 {
   "mcpServers": {
-    "claudine": {
-      "command": "claudine",
+    "delegate": {
+      "command": "delegate",
       "args": ["mcp", "start"]
     }
   }
 }
 
-For local development, use /path/to/claudine/dist/index.js
+For local development, use /path/to/delegate/dist/index.js
 `;
 }
 
 function validateDelegateInput(prompt: string, options: any) {
   if (!prompt || prompt.trim().length === 0) {
-    return err(new ClaudineError(ErrorCode.INVALID_INPUT, 'Prompt is required', { field: 'prompt' }));
+    return err(new DelegateError(ErrorCode.INVALID_INPUT, 'Prompt is required', { field: 'prompt' }));
   }
 
   if (options.priority && !['P0', 'P1', 'P2'].includes(options.priority)) {
     return err(
-      new ClaudineError(ErrorCode.INVALID_INPUT, 'Priority must be P0, P1, or P2', {
+      new DelegateError(ErrorCode.INVALID_INPUT, 'Priority must be P0, P1, or P2', {
         field: 'priority',
         value: options.priority,
       }),
@@ -1326,17 +1326,17 @@ function validateDelegateInput(prompt: string, options: any) {
   if (options.workingDirectory) {
     const path = options.workingDirectory;
     if (!path.startsWith('/')) {
-      return err(new ClaudineError(ErrorCode.INVALID_DIRECTORY, 'Working directory must be absolute path', { path }));
+      return err(new DelegateError(ErrorCode.INVALID_DIRECTORY, 'Working directory must be absolute path', { path }));
     }
     if (path.includes('..')) {
-      return err(new ClaudineError(ErrorCode.INVALID_DIRECTORY, 'Path traversal not allowed', { path }));
+      return err(new DelegateError(ErrorCode.INVALID_DIRECTORY, 'Path traversal not allowed', { path }));
     }
   }
 
   if (options.timeout !== undefined) {
     if (typeof options.timeout !== 'number' || options.timeout <= 0 || !isFinite(options.timeout)) {
       return err(
-        new ClaudineError(ErrorCode.INVALID_INPUT, 'Timeout must be positive number', {
+        new DelegateError(ErrorCode.INVALID_INPUT, 'Timeout must be positive number', {
           field: 'timeout',
           value: options.timeout,
         }),
@@ -1348,7 +1348,7 @@ function validateDelegateInput(prompt: string, options: any) {
     const maxAllowed = 1024 * 1024 * 100; // 100MB
     if (options.maxOutputBuffer > maxAllowed) {
       return err(
-        new ClaudineError(ErrorCode.INVALID_INPUT, `maxOutputBuffer exceeds limit of ${maxAllowed} bytes`, {
+        new DelegateError(ErrorCode.INVALID_INPUT, `maxOutputBuffer exceeds limit of ${maxAllowed} bytes`, {
           field: 'maxOutputBuffer',
           value: options.maxOutputBuffer,
         }),
@@ -1406,13 +1406,13 @@ async function simulateRetryCommand(taskManager: MockTaskManager, taskId: string
 function validateScheduleCreateInput(prompt: string, options: any) {
   if (!prompt || prompt.trim().length === 0) {
     return err(
-      new ClaudineError(ErrorCode.INVALID_INPUT, 'Prompt is required for schedule creation', { field: 'prompt' }),
+      new DelegateError(ErrorCode.INVALID_INPUT, 'Prompt is required for schedule creation', { field: 'prompt' }),
     );
   }
 
   if (!options.type || !['cron', 'one_time'].includes(options.type)) {
     return err(
-      new ClaudineError(ErrorCode.INVALID_INPUT, '--type must be "cron" or "one_time"', {
+      new DelegateError(ErrorCode.INVALID_INPUT, '--type must be "cron" or "one_time"', {
         field: 'type',
         value: options.type,
       }),
@@ -1485,7 +1485,7 @@ function testParseDelay(delayStr: string): number | null {
 
 function validatePipelineInput(steps: string[]) {
   if (steps.length === 0) {
-    return err(new ClaudineError(ErrorCode.INVALID_INPUT, 'No pipeline steps found', { field: 'steps' }));
+    return err(new DelegateError(ErrorCode.INVALID_INPUT, 'No pipeline steps found', { field: 'steps' }));
   }
   return ok(undefined);
 }

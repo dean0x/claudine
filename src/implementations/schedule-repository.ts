@@ -16,7 +16,7 @@ import {
   ScheduleType,
   TaskId,
 } from '../core/domain.js';
-import { ClaudineError, ErrorCode, operationErrorHandler } from '../core/errors.js';
+import { DelegateError, ErrorCode, operationErrorHandler } from '../core/errors.js';
 import { ScheduleExecution, ScheduleRepository } from '../core/interfaces.js';
 import { err, ok, Result, tryCatchAsync } from '../core/result.js';
 import { Database } from './database.js';
@@ -267,7 +267,7 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
     }
 
     if (!existingResult.value) {
-      return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Schedule ${id} not found`));
+      return err(new DelegateError(ErrorCode.TASK_NOT_FOUND, `Schedule ${id} not found`));
     }
 
     // Merge updates with existing schedule

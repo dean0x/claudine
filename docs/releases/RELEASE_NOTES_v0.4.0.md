@@ -1,4 +1,21 @@
-# Claudine v0.4.0 - Task Scheduling & Task Resumption
+# Delegate v0.4.0 - Project Rename + Task Scheduling & Resumption
+
+## Project Rename: claudine → @dean0x/delegate
+
+This release renames the project from `claudine` to `@dean0x/delegate` to avoid trademark concerns with Anthropic's "Claude" branding. This is a **clean break** — no data migration from `~/.claudine/`.
+
+| Before | After |
+|--------|-------|
+| `npm install -g claudine` | `npm install -g @dean0x/delegate` |
+| `claudine mcp start` | `delegate mcp start` |
+| `CLAUDINE_DATABASE_PATH` | `DELEGATE_DATABASE_PATH` |
+| `CLAUDINE_DATA_DIR` | `DELEGATE_DATA_DIR` |
+| `~/.claudine/claudine.db` | `~/.delegate/delegate.db` |
+| `claudine/task-{id}` branches | `delegate/task-{id}` branches |
+| `.claudine-patches/` | `.delegate-patches/` |
+| `ClaudineError` / `isClaudineError` | `DelegateError` / `isDelegateError` |
+
+See the **Breaking Changes** section below for full migration guide.
 
 ## Major Features
 
@@ -25,20 +42,20 @@ Schedule tasks for future or recurring execution with full lifecycle management.
 **CLI Commands (6 new + pipeline):**
 ```bash
 # Cron schedule
-claudine schedule create "run linter" --type cron --cron "0 9 * * 1-5"
+delegate schedule create "run linter" --type cron --cron "0 9 * * 1-5"
 
 # One-time schedule
-claudine schedule create "deploy v2" --type one_time --at "2026-03-01T09:00:00Z"
+delegate schedule create "deploy v2" --type one_time --at "2026-03-01T09:00:00Z"
 
 # List and manage
-claudine schedule list --status active
-claudine schedule get <id> --history
-claudine schedule pause <id>
-claudine schedule resume <id>
-claudine schedule cancel <id> "no longer needed"
+delegate schedule list --status active
+delegate schedule get <id> --history
+delegate schedule pause <id>
+delegate schedule resume <id>
+delegate schedule cancel <id> "no longer needed"
 
 # Pipeline: sequential tasks with delays
-claudine pipeline "set up DB" --delay 5m "run migrations" --delay 10m "seed data"
+delegate pipeline "set up DB" --delay 5m "run migrations" --delay 10m "seed data"
 ```
 
 **Architecture:**
@@ -65,8 +82,8 @@ Resume failed or completed tasks with enriched context from automatic checkpoint
 
 **CLI Command:**
 ```bash
-claudine resume <task-id>
-claudine resume <task-id> --context "Try a different approach this time"
+delegate resume <task-id>
+delegate resume <task-id> --context "Try a different approach this time"
 ```
 
 **Architecture:**
@@ -97,7 +114,7 @@ await DelegateTask({
 
 **CLI:**
 ```bash
-claudine delegate "npm test" --depends-on task-abc --continue-from task-abc
+delegate delegate "npm test" --depends-on task-abc --continue-from task-abc
 ```
 
 ---
@@ -156,23 +173,47 @@ Added `withServices()` helper that eliminates 15-line bootstrap boilerplate repe
 
 ## Breaking Changes
 
-**None** - All changes are backward compatible. Scheduling and resumption are additive features. Existing databases auto-migrate on startup.
+### Package Rename
+- **npm package**: `claudine` → `@dean0x/delegate`
+- **CLI command**: `claudine` → `delegate`
+- **MCP server name**: `claudine` → `delegate`
+- **Update your MCP config** to use the new package and server name
+
+### Environment Variables
+- `CLAUDINE_DATABASE_PATH` → `DELEGATE_DATABASE_PATH`
+- `CLAUDINE_DATA_DIR` → `DELEGATE_DATA_DIR`
+
+### Data Paths
+- `~/.claudine/claudine.db` → `~/.delegate/delegate.db`
+- `%APPDATA%/claudine/` → `%APPDATA%/delegate/`
+- Existing data at `~/.claudine/` is **not migrated** — start fresh
+
+### Library API
+- `ClaudineError` → `DelegateError`
+- `isClaudineError()` → `isDelegateError()`
+- `toClaudineError()` → `toDelegateError()`
+
+### Git Artifacts
+- Branch pattern: `claudine/task-{id}` → `delegate/task-{id}`
+- Patch directory: `.claudine-patches/` → `.delegate-patches/`
+
+Scheduling and resumption features are additive — existing databases auto-migrate on startup.
 
 ---
 
 ## Installation
 
 ```bash
-npm install -g claudine@0.4.0
+npm install -g @dean0x/delegate@0.4.0
 ```
 
 Or add to your `.mcp.json`:
 ```json
 {
   "mcpServers": {
-    "claudine": {
+    "delegate": {
       "command": "npx",
-      "args": ["-y", "claudine@0.4.0", "mcp", "start"]
+      "args": ["-y", "@dean0x/delegate", "mcp", "start"]
     }
   }
 }
@@ -196,7 +237,7 @@ See [ROADMAP.md](../ROADMAP.md) for complete roadmap.
 No special upgrade steps required. Simply update to 0.4.0:
 
 ```bash
-npm install -g claudine@0.4.0
+npm install -g @dean0x/delegate@0.4.0
 ```
 
 Existing databases will automatically migrate through v4-v6 schemas on first startup.
@@ -212,6 +253,6 @@ Existing databases will automatically migrate through v4-v6 schemas on first sta
 
 ## Links
 
-- NPM Package: https://www.npmjs.com/package/claudine
-- Documentation: https://github.com/dean0x/claudine/blob/main/docs/FEATURES.md
-- Issues: https://github.com/dean0x/claudine/issues
+- NPM Package: https://www.npmjs.com/package/@dean0x/delegate
+- Documentation: https://github.com/dean0x/delegate/blob/main/docs/FEATURES.md
+- Issues: https://github.com/dean0x/delegate/issues

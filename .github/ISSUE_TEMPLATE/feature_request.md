@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea for Claudine
+about: Suggest an idea for Delegate
 title: '[FEATURE] '
 labels: enhancement
 assignees: ''

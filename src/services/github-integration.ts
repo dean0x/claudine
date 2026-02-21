@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import { unlink, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
-import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { DelegateError, ErrorCode } from '../core/errors.js';
 import { Logger } from '../core/interfaces.js';
 import { err, ok, Result } from '../core/result.js';
 import { retryWithBackoff } from '../utils/retry.js';

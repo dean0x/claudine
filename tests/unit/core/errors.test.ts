@@ -1,30 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ClaudineError,
+  DelegateError,
   ErrorCode,
   insufficientResources,
   invalidDirectory,
   invalidInput,
-  isClaudineError,
+  isDelegateError,
   processSpawnFailed,
   systemError,
   taskAlreadyRunning,
   taskNotFound,
   taskTimeout,
-  toClaudineError,
+  toDelegateError,
 } from '../../../src/core/errors';
 import { TEST_COUNTS, TIMEOUTS } from '../../constants';
 
-describe('ClaudineError - REAL Error Behavior', () => {
+describe('DelegateError - REAL Error Behavior', () => {
   describe('Error creation and properties', () => {
     it('should create error with code and message', () => {
-      const error = new ClaudineError(ErrorCode.TASK_NOT_FOUND, 'Task task-123 not found');
+      const error = new DelegateError(ErrorCode.TASK_NOT_FOUND, 'Task task-123 not found');
 
       expect(error).toBeInstanceOf(Error);
-      expect(error).toBeInstanceOf(ClaudineError);
+      expect(error).toBeInstanceOf(DelegateError);
       expect(error.code).toBe(ErrorCode.TASK_NOT_FOUND);
       expect(error.message).toBe('Task task-123 not found');
-      expect(error.name).toBe('ClaudineError');
+      expect(error.name).toBe('DelegateError');
 
       // Additional error property validations
       expect(typeof error.code).toBe('string');
@@ -33,19 +33,19 @@ describe('ClaudineError - REAL Error Behavior', () => {
       expect(error.stack).toBeDefined();
       expect(typeof error.stack).toBe('string');
       expect(error.context).toBeUndefined();
-      expect(error.toString()).toContain('ClaudineError');
+      expect(error.toString()).toContain('DelegateError');
       expect(error.toString()).toContain('Task task-123 not found');
     });
 
     it('should include context', () => {
-      const error = new ClaudineError(ErrorCode.SYSTEM_ERROR, 'Connection failed', { host: 'localhost', port: 5432 });
+      const error = new DelegateError(ErrorCode.SYSTEM_ERROR, 'Connection failed', { host: 'localhost', port: 5432 });
 
       expect(error.context).toEqual({ host: 'localhost', port: 5432 });
 
       // Additional context validations
       expect(error.code).toBe(ErrorCode.SYSTEM_ERROR);
       expect(error.message).toBe('Connection failed');
-      expect(error.name).toBe('ClaudineError');
+      expect(error.name).toBe('DelegateError');
       expect(typeof error.context).toBe('object');
       expect(error.context).not.toBeNull();
       expect(Object.keys(error.context)).toEqual(['host', 'port']);
@@ -54,16 +54,16 @@ describe('ClaudineError - REAL Error Behavior', () => {
     });
 
     it('should preserve stack trace', () => {
-      const error = new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Failed to spawn process');
+      const error = new DelegateError(ErrorCode.PROCESS_SPAWN_FAILED, 'Failed to spawn process');
 
       expect(error.stack).toBeDefined();
-      expect(error.stack).toContain('ClaudineError');
+      expect(error.stack).toContain('DelegateError');
       expect(error.stack).toContain('errors.test.ts');
     });
 
     it('should include error in context', () => {
       const cause = new Error('Original error');
-      const error = new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Process spawn failed', {
+      const error = new DelegateError(ErrorCode.PROCESS_SPAWN_FAILED, 'Process spawn failed', {
         originalError: cause.message,
       });
 
@@ -77,7 +77,7 @@ describe('ClaudineError - REAL Error Behavior', () => {
 
       expect(error.code).toBe(ErrorCode.TASK_NOT_FOUND);
       expect(error.message).toBe('Task task-456 not found');
-      expect(isClaudineError(error)).toBe(true);
+      expect(isDelegateError(error)).toBe(true);
     });
 
     it('should create task already running error', () => {
@@ -140,20 +140,20 @@ describe('ClaudineError - REAL Error Behavior', () => {
   });
 
   describe('Error type guards and helpers', () => {
-    it('should identify ClaudineError instances', () => {
-      const claudineError = new ClaudineError(ErrorCode.TASK_NOT_FOUND, 'Not found');
+    it('should identify DelegateError instances', () => {
+      const delegateError = new DelegateError(ErrorCode.TASK_NOT_FOUND, 'Not found');
       const regularError = new Error('Regular error');
       const typeError = new TypeError('Type error');
 
-      expect(isClaudineError(claudineError)).toBe(true);
-      expect(isClaudineError(regularError)).toBe(false);
-      expect(isClaudineError(typeError)).toBe(false);
-      expect(isClaudineError(null)).toBe(false);
-      expect(isClaudineError(undefined)).toBe(false);
-      expect(isClaudineError('string')).toBe(false);
+      expect(isDelegateError(delegateError)).toBe(true);
+      expect(isDelegateError(regularError)).toBe(false);
+      expect(isDelegateError(typeError)).toBe(false);
+      expect(isDelegateError(null)).toBe(false);
+      expect(isDelegateError(undefined)).toBe(false);
+      expect(isDelegateError('string')).toBe(false);
     });
 
-    it('should access error code from ClaudineError', () => {
+    it('should access error code from DelegateError', () => {
       const error = taskNotFound('task-123');
       expect(error.code).toBe(ErrorCode.TASK_NOT_FOUND);
     });
@@ -165,43 +165,43 @@ describe('ClaudineError - REAL Error Behavior', () => {
     });
 
     it('should have meaningful error messages', () => {
-      const claudineError = taskNotFound('task-123');
+      const delegateError = taskNotFound('task-123');
       const timeoutError = taskTimeout('task-456', TIMEOUTS.LONG);
       const resourceError = insufficientResources(95, 1000000);
 
-      expect(claudineError.message).toBe('Task task-123 not found');
+      expect(delegateError.message).toBe('Task task-123 not found');
       expect(timeoutError.message).toBe('Task task-456 timed out after 5000ms');
       expect(resourceError.message).toContain('Insufficient resources');
     });
 
-    it('should convert various types to ClaudineError', () => {
+    it('should convert various types to DelegateError', () => {
       // Regular Error
       const regularError = new Error('Regular');
-      const converted1 = toClaudineError(regularError);
-      expect(converted1).toBeInstanceOf(ClaudineError);
+      const converted1 = toDelegateError(regularError);
+      expect(converted1).toBeInstanceOf(DelegateError);
       expect(converted1.code).toBe(ErrorCode.SYSTEM_ERROR);
       expect(converted1.message).toBe('Regular');
 
-      // Already ClaudineError
-      const claudineError = taskNotFound('task');
-      const converted2 = toClaudineError(claudineError);
-      expect(converted2).toBe(claudineError); // Should return same instance
+      // Already DelegateError
+      const delegateError = taskNotFound('task');
+      const converted2 = toDelegateError(delegateError);
+      expect(converted2).toBe(delegateError); // Should return same instance
 
       // String
-      const converted3 = toClaudineError('String error');
-      expect(converted3).toBeInstanceOf(ClaudineError);
+      const converted3 = toDelegateError('String error');
+      expect(converted3).toBeInstanceOf(DelegateError);
       expect(converted3.message).toBe('String error');
 
       // Object with message
-      const converted4 = toClaudineError({ message: 'Object error', code: 'TEST' });
+      const converted4 = toDelegateError({ message: 'Object error', code: 'TEST' });
       expect(converted4.message).toBe('Object error');
 
       // Number
-      const converted5 = toClaudineError(404);
+      const converted5 = toDelegateError(404);
       expect(converted5.message).toBe('404');
 
       // Null/undefined
-      const converted6 = toClaudineError(null);
+      const converted6 = toDelegateError(null);
       expect(converted6.message).toBe('Unknown error');
     });
   });
@@ -237,7 +237,7 @@ describe('ClaudineError - REAL Error Behavior', () => {
 
   describe('Error serialization', () => {
     it('should serialize to JSON correctly', () => {
-      const error = new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {
+      const error = new DelegateError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {
         taskId: 'task-123',
         attempts: 3,
       });
@@ -245,7 +245,7 @@ describe('ClaudineError - REAL Error Behavior', () => {
       const json = JSON.stringify(error);
       const parsed = JSON.parse(json);
 
-      expect(parsed.name).toBe('ClaudineError');
+      expect(parsed.name).toBe('DelegateError');
       expect(parsed.message).toBe('Spawn failed');
       expect(parsed.code).toBe(ErrorCode.PROCESS_SPAWN_FAILED);
       expect(parsed.context).toEqual({ taskId: 'task-123', attempts: 3 });
@@ -255,7 +255,7 @@ describe('ClaudineError - REAL Error Behavior', () => {
       const context: any = { key: 'value' };
       context.circular = context;
 
-      const error = new ClaudineError(ErrorCode.SYSTEM_ERROR, 'System error', context);
+      const error = new DelegateError(ErrorCode.SYSTEM_ERROR, 'System error', context);
 
       // Should not throw when accessing context
       expect(error.context?.key).toBe('value');
@@ -283,7 +283,7 @@ describe('ClaudineError - REAL Error Behavior', () => {
 
       errors.forEach((error) => {
         expect(error).toBeInstanceOf(Error);
-        expect(error).toBeInstanceOf(ClaudineError);
+        expect(error).toBeInstanceOf(DelegateError);
       });
     });
   });
@@ -293,7 +293,7 @@ describe('ClaudineError - REAL Error Behavior', () => {
       const originalError = new Error('SQLITE_BUSY: database is locked');
       const appError = systemError(originalError.message, originalError);
 
-      const finalError = new ClaudineError(ErrorCode.TASK_NOT_FOUND, 'Could not fetch task', { taskId: 'task-123' });
+      const finalError = new DelegateError(ErrorCode.TASK_NOT_FOUND, 'Could not fetch task', { taskId: 'task-123' });
 
       expect(finalError.context?.taskId).toBe('task-123');
       expect(finalError.message).toBe('Could not fetch task');
@@ -307,15 +307,15 @@ describe('ClaudineError - REAL Error Behavior', () => {
       try {
         await asyncOperation();
       } catch (error) {
-        expect(isClaudineError(error)).toBe(true);
-        if (isClaudineError(error)) {
+        expect(isDelegateError(error)).toBe(true);
+        if (isDelegateError(error)) {
           expect(error.code).toBe(ErrorCode.PROCESS_SPAWN_FAILED);
         }
       }
     });
 
     it('should work with Result type patterns', () => {
-      type Result<T> = { ok: true; value: T } | { ok: false; error: ClaudineError };
+      type Result<T> = { ok: true; value: T } | { ok: false; error: DelegateError };
 
       const success: Result<string> = { ok: true, value: 'data' };
       const failure: Result<string> = {
@@ -333,14 +333,14 @@ describe('ClaudineError - REAL Error Behavior', () => {
     });
 
     it('should handle error recovery strategies', () => {
-      const tryOperation = (attempt: number): ClaudineError | null => {
+      const tryOperation = (attempt: number): DelegateError | null => {
         if (attempt < 3) {
           return taskTimeout('operation', TIMEOUTS.LONG);
         }
         return null; // Success
       };
 
-      const errors: ClaudineError[] = [];
+      const errors: DelegateError[] = [];
 
       for (let i = 1; i <= 5; i++) {
         const error = tryOperation(i);
@@ -380,19 +380,19 @@ describe('ClaudineError - REAL Error Behavior', () => {
 
       // Create deep chain by wrapping errors in context
       for (let i = 0; i < 100; i++) {
-        error = new ClaudineError(ErrorCode.SYSTEM_ERROR, `Layer ${i}: ${error.message}`, {
+        error = new DelegateError(ErrorCode.SYSTEM_ERROR, `Layer ${i}: ${error.message}`, {
           previousError: error.message,
           layer: i,
         });
       }
 
       // Should handle deep chain without stack overflow
-      expect(error).toBeInstanceOf(ClaudineError);
+      expect(error).toBeInstanceOf(DelegateError);
       expect(error.message).toContain('Layer 99');
       expect(error.message).toContain('Root cause');
 
       // Verify context preserved
-      if (isClaudineError(error)) {
+      if (isDelegateError(error)) {
         expect(error.context?.layer).toBe(99);
       }
     });

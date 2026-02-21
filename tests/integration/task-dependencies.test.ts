@@ -22,8 +22,8 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
   beforeEach(async () => {
     // Create isolated temp directory for each test
-    tempDir = await mkdtemp(join(tmpdir(), 'claudine-deps-test-'));
-    process.env.CLAUDINE_DATABASE_PATH = join(tempDir, 'test.db');
+    tempDir = await mkdtemp(join(tmpdir(), 'delegate-deps-test-'));
+    process.env.DELEGATE_DATABASE_PATH = join(tempDir, 'test.db');
 
     const result = await bootstrap({
       processSpawner: new NoOpProcessSpawner(),
@@ -66,7 +66,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       await container.dispose();
     }
     // Clean up env var and temp directory
-    delete process.env.CLAUDINE_DATABASE_PATH;
+    delete process.env.DELEGATE_DATABASE_PATH;
     if (tempDir) {
       await rm(tempDir, { recursive: true, force: true });
     }

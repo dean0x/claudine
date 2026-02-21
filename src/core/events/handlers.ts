@@ -3,11 +3,11 @@
  * Provides common patterns for event handling
  */
 
-import { ClaudineError, ErrorCode } from '../errors.js';
+import { DelegateError, ErrorCode } from '../errors.js';
 import { Logger } from '../interfaces.js';
 import { err, ok, Result } from '../result.js';
 import { EventBus } from './event-bus.js';
-import { ClaudineEvent, EventHandler } from './events.js';
+import { DelegateEvent, EventHandler } from './events.js';
 
 /**
  * Base event handler with common functionality
@@ -36,7 +36,7 @@ export abstract class BaseEventHandler {
    * });
    * ```
    */
-  protected async emitEvent<T extends ClaudineEvent['type']>(
+  protected async emitEvent<T extends DelegateEvent['type']>(
     eventBus: EventBus,
     eventType: T,
     payload: Record<string, unknown>,
@@ -67,7 +67,7 @@ export abstract class BaseEventHandler {
    * Handle an event with error logging
    * ARCHITECTURE: Returns Result instead of throwing to maintain consistency
    */
-  protected async handleEvent<T extends ClaudineEvent>(
+  protected async handleEvent<T extends DelegateEvent>(
     event: T,
     handler: (event: T) => Promise<Result<void>>,
   ): Promise<Result<void>> {
@@ -155,7 +155,7 @@ export class EventHandlerRegistry {
 
       return ok(undefined);
     } catch (error) {
-      return err(new ClaudineError(ErrorCode.SYSTEM_ERROR, `Event handler registry initialization failed: ${error}`));
+      return err(new DelegateError(ErrorCode.SYSTEM_ERROR, `Event handler registry initialization failed: ${error}`));
     }
   }
 
@@ -173,7 +173,7 @@ export class EventHandlerRegistry {
       this.logger.info('Event handler registry shutdown complete');
       return ok(undefined);
     } catch (error) {
-      return err(new ClaudineError(ErrorCode.SYSTEM_ERROR, `Event handler registry shutdown failed: ${error}`));
+      return err(new DelegateError(ErrorCode.SYSTEM_ERROR, `Event handler registry shutdown failed: ${error}`));
     }
   }
 }
@@ -195,11 +195,11 @@ export class RetryableEventHandler extends BaseEventHandler {
    * Execute handler with retry logic
    * ARCHITECTURE: Returns Result instead of throwing
    */
-  protected async executeWithRetry<T extends ClaudineEvent>(
+  protected async executeWithRetry<T extends DelegateEvent>(
     event: T,
     handler: (event: T) => Promise<Result<void>>,
   ): Promise<Result<void>> {
-    let lastError: ClaudineError | undefined;
+    let lastError: DelegateError | undefined;
 
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       try {
@@ -216,9 +216,9 @@ export class RetryableEventHandler extends BaseEventHandler {
         }
 
         lastError =
-          result.error instanceof ClaudineError
+          result.error instanceof DelegateError
             ? result.error
-            : new ClaudineError(ErrorCode.SYSTEM_ERROR, result.error.message || String(result.error));
+            : new DelegateError(ErrorCode.SYSTEM_ERROR, result.error.message || String(result.error));
 
         this.logger.warn(`${this.name} failed, attempt ${attempt}/${this.maxRetries}`, {
           eventId: event.eventId,
@@ -230,13 +230,13 @@ export class RetryableEventHandler extends BaseEventHandler {
           await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs));
         }
       } catch (error) {
-        lastError = error instanceof ClaudineError ? error : new ClaudineError(ErrorCode.SYSTEM_ERROR, `${error}`);
+        lastError = error instanceof DelegateError ? error : new DelegateError(ErrorCode.SYSTEM_ERROR, `${error}`);
       }
     }
 
     // All retries failed - return error instead of throwing
     return err(
-      lastError || new ClaudineError(ErrorCode.SYSTEM_ERROR, `${this.name} failed after ${this.maxRetries} attempts`),
+      lastError || new DelegateError(ErrorCode.SYSTEM_ERROR, `${this.name} failed after ${this.maxRetries} attempts`),
     );
   }
 }
@@ -245,7 +245,7 @@ export class RetryableEventHandler extends BaseEventHandler {
  * Utility to create simple event handler functions
  * ARCHITECTURE: Logs errors but doesn't throw - EventBus handles error propagation
  */
-export function createEventHandler<T extends ClaudineEvent>(
+export function createEventHandler<T extends DelegateEvent>(
   handler: (event: T) => Promise<Result<void>>,
   logger: Logger,
   name: string,

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // Set process title for easy identification in ps/pgrep/pkill
-process.title = 'claudine-cli';
+process.title = 'delegate-cli';
 
 import { spawn } from 'child_process';
 import path from 'path';
@@ -28,7 +28,7 @@ async function withServices(): Promise<{
   taskManager: TaskManager;
   scheduleService: ScheduleService;
 }> {
-  console.log('🚀 Bootstrapping Claudine...');
+  console.log('🚀 Bootstrapping Delegate...');
   const containerResult = await bootstrap();
   if (!containerResult.ok) {
     console.error('❌ Bootstrap failed:', containerResult.error.message);
@@ -56,10 +56,10 @@ async function withServices(): Promise<{
 
 function showHelp() {
   console.log(`
-🤖 Claudine - MCP Server for Task Delegation
+🤖 Delegate - MCP Server for Task Delegation
 
 Usage:
-  claudine <command> [options...]
+  delegate <command> [options...]
 
 MCP Server Commands:
   mcp start              Start the MCP server
@@ -128,39 +128,39 @@ Configuration:
   help                         Show this help message
 
 Examples:
-  claudine mcp start                                    # Start MCP server
-  claudine delegate "analyze this codebase"            # Delegate task
-  claudine delegate "fix the bug" --priority P0        # High priority task
-  claudine delegate "run tests" --depends-on task-abc123  # Wait for dependency
+  delegate mcp start                                    # Start MCP server
+  delegate delegate "analyze this codebase"            # Delegate task
+  delegate delegate "fix the bug" --priority P0        # High priority task
+  delegate delegate "run tests" --depends-on task-abc123  # Wait for dependency
 
   # Scheduling
-  claudine schedule create "run tests" --type cron --cron "0 9 * * 1-5"
-  claudine schedule create "deploy" --type one_time --at "2025-03-01T09:00:00Z"
-  claudine schedule list --status active
-  claudine schedule pause <id>
+  delegate schedule create "run tests" --type cron --cron "0 9 * * 1-5"
+  delegate schedule create "deploy" --type one_time --at "2025-03-01T09:00:00Z"
+  delegate schedule list --status active
+  delegate schedule pause <id>
 
   # Pipeline (sequential tasks with delays)
-  claudine pipeline "setup db" --delay 5m "run migrations" --delay 10m "seed data"
+  delegate pipeline "setup db" --delay 5m "run migrations" --delay 10m "seed data"
 
   # Resume failed task with context
-  claudine resume <task-id> --context "Try a different approach"
+  delegate resume <task-id> --context "Try a different approach"
 
-Repository: https://github.com/dean0x/claudine
+Repository: https://github.com/dean0x/delegate
 `);
 }
 
 function showConfig() {
   const config = {
     mcpServers: {
-      claudine: {
+      delegate: {
         command: 'npx',
-        args: ['-y', 'claudine', 'mcp', 'start'],
+        args: ['-y', '@dean0x/delegate', 'mcp', 'start'],
       },
     },
   };
 
   console.log(`
-📋 MCP Configuration for Claudine
+📋 MCP Configuration for Delegate
 
 Add this to your MCP configuration file:
 
@@ -174,9 +174,9 @@ Configuration file locations:
 For local development, use:
 {
   "mcpServers": {
-    "claudine": {
+    "delegate": {
       "command": "node",
-      "args": ["/path/to/claudine/dist/index.js"]
+      "args": ["/path/to/delegate/dist/index.js"]
     }
   }
 }
@@ -184,14 +184,14 @@ For local development, use:
 For global installation, use:
 {
   "mcpServers": {
-    "claudine": {
-      "command": "claudine",
+    "delegate": {
+      "command": "delegate",
       "args": ["mcp", "start"]
     }
   }
 }
 
-Learn more: https://github.com/dean0x/claudine#configuration
+Learn more: https://github.com/dean0x/delegate#configuration
 `);
 }
 
@@ -216,7 +216,7 @@ async function delegateTask(
   },
 ) {
   try {
-    console.log('🚀 Bootstrapping Claudine...');
+    console.log('🚀 Bootstrapping Delegate...');
     const containerResult = await bootstrap();
     if (!containerResult.ok) {
       console.error('❌ Bootstrap failed:', containerResult.error.message);
@@ -265,7 +265,7 @@ async function delegateTask(
       console.log('✅ Task delegated successfully!');
       console.log('📋 Task ID:', task.id);
       console.log('🔍 Status:', task.status);
-      console.log('⏰ Check status with: claudine status', task.id);
+      console.log('⏰ Check status with: delegate status', task.id);
       process.exit(0);
     } else {
       console.error('❌ Failed to delegate task:', result.error.message);
@@ -279,7 +279,7 @@ async function delegateTask(
 
 async function getTaskStatus(taskId?: string, showDependencies?: boolean) {
   try {
-    console.log('🚀 Bootstrapping Claudine...');
+    console.log('🚀 Bootstrapping Delegate...');
     const containerResult = await bootstrap();
     if (!containerResult.ok) {
       console.error('❌ Bootstrap failed:', containerResult.error.message);
@@ -358,7 +358,7 @@ async function getTaskStatus(taskId?: string, showDependencies?: boolean) {
 
 async function getTaskLogs(taskId: string, tail?: number) {
   try {
-    console.log('🚀 Bootstrapping Claudine...');
+    console.log('🚀 Bootstrapping Delegate...');
     const containerResult = await bootstrap();
     if (!containerResult.ok) {
       console.error('❌ Bootstrap failed:', containerResult.error.message);
@@ -412,7 +412,7 @@ async function getTaskLogs(taskId: string, tail?: number) {
 
 async function cancelTask(taskId: string, reason?: string) {
   try {
-    console.log('🚀 Bootstrapping Claudine...');
+    console.log('🚀 Bootstrapping Delegate...');
     const containerResult = await bootstrap();
     if (!containerResult.ok) {
       console.error('❌ Bootstrap failed:', containerResult.error.message);
@@ -448,7 +448,7 @@ async function cancelTask(taskId: string, reason?: string) {
 
 async function retryTask(taskId: string) {
   try {
-    console.log('🚀 Bootstrapping Claudine...');
+    console.log('🚀 Bootstrapping Delegate...');
     const containerResult = await bootstrap();
     if (!containerResult.ok) {
       console.error('❌ Bootstrap failed:', containerResult.error.message);
@@ -492,7 +492,7 @@ async function retryTask(taskId: string) {
 
 async function handleScheduleCommand(subCmd: string | undefined, scheduleArgs: string[]) {
   if (!subCmd) {
-    console.error('❌ Usage: claudine schedule <create|list|get|cancel|pause|resume>');
+    console.error('❌ Usage: delegate schedule <create|list|get|cancel|pause|resume>');
     process.exit(1);
   }
 
@@ -603,7 +603,7 @@ async function scheduleCreate(service: ScheduleService, scheduleArgs: string[]) 
 
   const prompt = promptWords.join(' ');
   if (!prompt) {
-    console.error('❌ Usage: claudine schedule create <prompt> --type cron|one_time [options]');
+    console.error('❌ Usage: delegate schedule create <prompt> --type cron|one_time [options]');
     process.exit(1);
   }
   if (!scheduleType) {
@@ -701,7 +701,7 @@ async function scheduleList(service: ScheduleService, scheduleArgs: string[]) {
 async function scheduleGet(service: ScheduleService, scheduleArgs: string[]) {
   const scheduleId = scheduleArgs[0];
   if (!scheduleId) {
-    console.error('❌ Usage: claudine schedule get <schedule-id> [--history] [--history-limit N]');
+    console.error('❌ Usage: delegate schedule get <schedule-id> [--history] [--history-limit N]');
     process.exit(1);
   }
 
@@ -754,7 +754,7 @@ async function scheduleGet(service: ScheduleService, scheduleArgs: string[]) {
 async function scheduleCancel(service: ScheduleService, scheduleArgs: string[]) {
   const scheduleId = scheduleArgs[0];
   if (!scheduleId) {
-    console.error('❌ Usage: claudine schedule cancel <schedule-id> [reason]');
+    console.error('❌ Usage: delegate schedule cancel <schedule-id> [reason]');
     process.exit(1);
   }
   const reason = scheduleArgs.slice(1).join(' ') || undefined;
@@ -772,7 +772,7 @@ async function scheduleCancel(service: ScheduleService, scheduleArgs: string[]) 
 async function schedulePause(service: ScheduleService, scheduleArgs: string[]) {
   const scheduleId = scheduleArgs[0];
   if (!scheduleId) {
-    console.error('❌ Usage: claudine schedule pause <schedule-id>');
+    console.error('❌ Usage: delegate schedule pause <schedule-id>');
     process.exit(1);
   }
 
@@ -788,7 +788,7 @@ async function schedulePause(service: ScheduleService, scheduleArgs: string[]) {
 async function scheduleResume(service: ScheduleService, scheduleArgs: string[]) {
   const scheduleId = scheduleArgs[0];
   if (!scheduleId) {
-    console.error('❌ Usage: claudine schedule resume <schedule-id>');
+    console.error('❌ Usage: delegate schedule resume <schedule-id>');
     process.exit(1);
   }
 
@@ -830,8 +830,8 @@ function parseDelay(delayStr: string): number {
 
 async function handlePipelineCommand(pipelineArgs: string[]) {
   if (pipelineArgs.length === 0) {
-    console.error('❌ Usage: claudine pipeline <prompt> [--delay Nm <prompt>]...');
-    console.error('Example: claudine pipeline "setup db" --delay 5m "run migrations" --delay 10m "seed data"');
+    console.error('❌ Usage: delegate pipeline <prompt> [--delay Nm <prompt>]...');
+    console.error('Example: delegate pipeline "setup db" --delay 5m "run migrations" --delay 10m "seed data"');
     process.exit(1);
   }
 
@@ -967,7 +967,7 @@ if (mainCommand === 'mcp') {
         process.exit(1);
       });
   } else if (subCommand === 'test') {
-    console.log('🧪 Testing Claudine MCP Server...\n');
+    console.log('🧪 Testing Delegate MCP Server...\n');
 
     // Test real server startup and shutdown
     const indexPath = path.join(__dirname, 'index.js');
@@ -1005,7 +1005,7 @@ if (mainCommand === 'mcp') {
 
     // Test server starts within reasonable time
     setTimeout(() => {
-      if (output.includes('Starting Claudine MCP Server') && !hasError) {
+      if (output.includes('Starting Delegate MCP Server') && !hasError) {
         console.log('✅ Server started successfully!');
         console.log('✅ Bootstrap completed without errors');
         mcp.kill();
@@ -1194,7 +1194,7 @@ if (mainCommand === 'mcp') {
 
   const prompt = promptWords.join(' ');
   if (!prompt) {
-    console.error('❌ Usage: claudine delegate "<prompt>" [options]');
+    console.error('❌ Usage: delegate "<prompt>" [options]');
     console.error('Options:');
     console.error('  -p, --priority P0|P1|P2      Task priority (P0=critical, P1=high, P2=normal)');
     console.error('  -w, --working-directory DIR   Working directory for task execution');
@@ -1218,10 +1218,10 @@ if (mainCommand === 'mcp') {
     console.error('  --max-output-buffer BYTES     Maximum output buffer size');
     console.error('');
     console.error('Examples:');
-    console.error('  claudine delegate "refactor auth"                     # Default: PR with worktree');
-    console.error('  claudine delegate "quick fix" --no-worktree           # Direct execution');
-    console.error('  claudine delegate "feature" --strategy auto           # Auto-merge');
-    console.error('  claudine delegate "experiment" --keep-worktree        # Preserve worktree');
+    console.error('  delegate "refactor auth"                     # Default: PR with worktree');
+    console.error('  delegate "quick fix" --no-worktree           # Direct execution');
+    console.error('  delegate "feature" --strategy auto           # Auto-merge');
+    console.error('  delegate "experiment" --keep-worktree        # Preserve worktree');
     process.exit(1);
   }
 
@@ -1244,9 +1244,9 @@ if (mainCommand === 'mcp') {
 } else if (mainCommand === 'logs') {
   const taskId = args[1];
   if (!taskId) {
-    console.error('❌ Usage: claudine logs <task-id> [--tail N]');
-    console.error('Example: claudine logs abc123');
-    console.error('         claudine logs abc123 --tail 50');
+    console.error('❌ Usage: delegate logs <task-id> [--tail N]');
+    console.error('Example: delegate logs abc123');
+    console.error('         delegate logs abc123 --tail 50');
     process.exit(1);
   }
 
@@ -1266,9 +1266,9 @@ if (mainCommand === 'mcp') {
 } else if (mainCommand === 'cancel') {
   const taskId = args[1];
   if (!taskId) {
-    console.error('❌ Usage: claudine cancel <task-id> [reason]');
-    console.error('Example: claudine cancel abc123');
-    console.error('         claudine cancel abc123 "Taking too long"');
+    console.error('❌ Usage: delegate cancel <task-id> [reason]');
+    console.error('Example: delegate cancel abc123');
+    console.error('         delegate cancel abc123 "Taking too long"');
     process.exit(1);
   }
 
@@ -1278,8 +1278,8 @@ if (mainCommand === 'mcp') {
 } else if (mainCommand === 'retry-task') {
   const taskId = args[1];
   if (!taskId) {
-    console.error('❌ Usage: claudine retry-task <task-id>');
-    console.error('Example: claudine retry-task abc123');
+    console.error('❌ Usage: delegate retry-task <task-id>');
+    console.error('Example: delegate retry-task abc123');
     process.exit(1);
   }
 
@@ -1299,13 +1299,13 @@ if (mainCommand === 'mcp') {
   } else if (subCommand === 'status') {
     const taskId = args[2];
     if (!taskId) {
-      console.error('❌ Usage: claudine worktree status <task-id>');
+      console.error('❌ Usage: delegate worktree status <task-id>');
       process.exit(1);
     }
     console.log(`🌳 Getting worktree status for task: ${taskId}`);
     console.log('⚠️  Worktree management is not yet fully implemented.');
   } else {
-    console.error('❌ Usage: claudine worktree <list|cleanup|status>');
+    console.error('❌ Usage: delegate worktree <list|cleanup|status>');
     process.exit(1);
   }
 } else if (mainCommand === 'schedule') {
@@ -1315,7 +1315,7 @@ if (mainCommand === 'mcp') {
 } else if (mainCommand === 'resume') {
   const taskId = args[1];
   if (!taskId) {
-    console.error('❌ Usage: claudine resume <task-id> [--context "additional instructions"]');
+    console.error('❌ Usage: delegate resume <task-id> [--context "additional instructions"]');
     process.exit(1);
   }
 
@@ -1415,7 +1415,7 @@ if (mainCommand === 'mcp') {
     console.log('   export WORKTREE_MAX_COUNT=50');
     console.log('   export WORKTREE_REQUIRE_SAFETY_CHECK=true');
   } else {
-    console.error('❌ Usage: claudine config <show|set>');
+    console.error('❌ Usage: delegate config <show|set>');
     process.exit(1);
   }
 } else if (mainCommand === 'help' || !mainCommand) {

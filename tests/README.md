@@ -1,9 +1,9 @@
-# Claudine Test Suite
+# Delegate Test Suite
 
 **Quality Score**: 75/100 (Target: 85/100)
 **Standards**: [TEST_STANDARDS.md](./TEST_STANDARDS.md) - **MUST READ BEFORE WRITING TESTS**
 
-This directory contains comprehensive tests for Claudine's task delegation system following strict quality standards.
+This directory contains comprehensive tests for Delegate's task delegation system following strict quality standards.
 
 ## Test Structure
 
@@ -124,7 +124,7 @@ Reusable test data and mocks:
 
 ### Temporary Files
 Tests create temporary artifacts in:
-- `.claudine/` - Temporary databases
+- `.delegate/` - Temporary databases
 - `.worktrees/` - Test git worktrees
 
 **Cleanup**: Tests automatically clean up after execution
@@ -240,8 +240,8 @@ E2E tests are written in markdown with:
 - **Mock leakage**: Reset mocks in afterEach hooks
 
 ### E2E Test Issues
-- **Database locks**: Clean `.claudine/` directory
-- **Orphaned processes**: Run `pkill -f claudine`
+- **Database locks**: Clean `.delegate/` directory
+- **Orphaned processes**: Run `pkill -f delegate`
 - **Worktree issues**: Run `git worktree prune`
 
 ## CI/CD Integration

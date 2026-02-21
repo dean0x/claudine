@@ -11,7 +11,7 @@
  */
 
 import { TaskId } from '../../core/domain.js';
-import { ClaudineError, ErrorCode } from '../../core/errors.js';
+import { DelegateError, ErrorCode } from '../../core/errors.js';
 import { EventBus, InMemoryEventBus } from '../../core/events/event-bus.js';
 import {
   WorktreeCleanupRequestedEvent,
@@ -174,7 +174,7 @@ export class WorktreeHandler extends BaseEventHandler {
 
     // Interactive mode not supported in event-driven architecture
     if (strategy === 'interactive') {
-      const error = new ClaudineError(
+      const error = new DelegateError(
         ErrorCode.INVALID_OPERATION,
         'Interactive cleanup strategy not supported in event-driven mode. Use "safe" or "force".',
       );

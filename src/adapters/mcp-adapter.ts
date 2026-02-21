@@ -131,7 +131,7 @@ export class MCPAdapter {
   ) {
     this.server = new Server(
       {
-        name: 'claudine',
+        name: 'delegate',
         version: pkg.version,
       },
       {
@@ -267,7 +267,7 @@ export class MCPAdapter {
                   },
                   branchName: {
                     type: 'string',
-                    description: 'Custom branch name (default: claudine/task-{id})',
+                    description: 'Custom branch name (default: delegate/task-{id})',
                   },
                   baseBranch: {
                     type: 'string',

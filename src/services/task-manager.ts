@@ -24,7 +24,7 @@ import {
   TaskId,
   TaskOutput,
 } from '../core/domain.js';
-import { ClaudineError, ErrorCode, taskNotFound } from '../core/errors.js';
+import { DelegateError, ErrorCode, taskNotFound } from '../core/errors.js';
 import { EventBus } from '../core/events/event-bus.js';
 import {
   TaskLogsQueryEvent,
@@ -79,7 +79,7 @@ export class TaskManagerService implements TaskManager {
         { taskId: continueFromId },
       );
       if (!lookupResult.ok || lookupResult.value === null) {
-        return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `continueFrom task not found: ${continueFromId}`));
+        return err(new DelegateError(ErrorCode.TASK_NOT_FOUND, `continueFrom task not found: ${continueFromId}`));
       }
 
       // Auto-add to dependsOn if missing
@@ -187,7 +187,7 @@ export class TaskManagerService implements TaskManager {
    * @returns New task with retry tracking, or error if task cannot be retried
    *
    * @example
-   * // CLI usage: claudine retry-task abc-123
+   * // CLI usage: delegate retry-task abc-123
    * // Creates new task def-456 with:
    * // - parentTaskId: abc-123 (or original if abc-123 is already a retry)
    * // - retryCount: 1 (or incremented from abc-123's count)
@@ -212,7 +212,7 @@ export class TaskManagerService implements TaskManager {
     // Only retry tasks that are in terminal states
     if (!isTerminalState(originalTask.status)) {
       return err(
-        new ClaudineError(
+        new DelegateError(
           ErrorCode.INVALID_OPERATION,
           `Task ${taskId} cannot be retried in state ${originalTask.status}`,
         ),
@@ -308,7 +308,7 @@ export class TaskManagerService implements TaskManager {
     // Only resume tasks in terminal states
     if (!isTerminalState(originalTask.status)) {
       return err(
-        new ClaudineError(
+        new DelegateError(
           ErrorCode.INVALID_OPERATION,
           `Task ${taskId} cannot be resumed in state ${originalTask.status}`,
         ),

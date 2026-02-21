@@ -8,7 +8,7 @@ import fs, { promises as fsPromises } from 'fs';
 import path from 'path';
 import { Configuration } from '../core/configuration.js';
 import { TaskId, TaskOutput } from '../core/domain.js';
-import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { DelegateError, ErrorCode } from '../core/errors.js';
 import { err, ok, Result, tryCatchAsync } from '../core/result.js';
 import { Database } from './database.js';
 
@@ -74,7 +74,7 @@ export class SQLiteOutputRepository implements OutputRepository {
 
       return ok(undefined);
     } catch (error) {
-      return err(new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to save output: ${error}`, { taskId }));
+      return err(new DelegateError(ErrorCode.SYSTEM_ERROR, `Failed to save output: ${error}`, { taskId }));
     }
   }
 
@@ -104,7 +104,7 @@ export class SQLiteOutputRepository implements OutputRepository {
 
         await this.save(taskId, output);
       },
-      (error) => new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to append output: ${error}`, { taskId, stream }),
+      (error) => new DelegateError(ErrorCode.SYSTEM_ERROR, `Failed to append output: ${error}`, { taskId, stream }),
     );
   }
 
@@ -130,7 +130,7 @@ export class SQLiteOutputRepository implements OutputRepository {
           totalSize: (row.total_size as number) || 0,
         };
       },
-      (error) => new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to get output: ${error}`, { taskId }),
+      (error) => new DelegateError(ErrorCode.SYSTEM_ERROR, `Failed to get output: ${error}`, { taskId }),
     );
   }
 
@@ -156,7 +156,7 @@ export class SQLiteOutputRepository implements OutputRepository {
         // Delete from database
         this.deleteStmt.run(taskId);
       },
-      (error) => new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to delete output: ${error}`, { taskId }),
+      (error) => new DelegateError(ErrorCode.SYSTEM_ERROR, `Failed to delete output: ${error}`, { taskId }),
     );
   }
 

@@ -1,10 +1,10 @@
-# Claudine Development Roadmap
+# Delegate Development Roadmap
 
 ## Current Status: v0.4.0 ✅
 
 **Status**: Production Ready
 
-Claudine v0.4.0 is a fully-featured MCP server with autoscaling, persistence, task dependencies, task scheduling, and task resumption. See [FEATURES.md](./FEATURES.md) for complete list of current capabilities.
+Delegate v0.4.0 is a fully-featured MCP server with autoscaling, persistence, task dependencies, task scheduling, and task resumption. See [FEATURES.md](./FEATURES.md) for complete list of current capabilities.
 
 ---
 
@@ -222,8 +222,8 @@ Resume failed or completed tasks with enriched context from automatic checkpoint
 
 **CLI Command**:
 ```bash
-claudine resume <task-id>
-claudine resume <task-id> --context "Try a different approach this time"
+delegate resume <task-id>
+delegate resume <task-id> --context "Try a different approach this time"
 ```
 
 **Implementation**:
@@ -317,7 +317,7 @@ v0.4.0 shipped the **"fallback" approach** for task resumption: enriched prompts
 **Priority**: Medium - Enterprise use cases
 
 #### Features
-- **Multi-Server Support**: Distribute tasks across multiple Claudine instances
+- **Multi-Server Support**: Distribute tasks across multiple Delegate instances
 - **Load Balancing**: Intelligent task distribution based on server resources
 - **Shared State**: Centralized task queue and status tracking (Redis backend)
 - **Fault Tolerance**: Handle server failures gracefully with automatic failover
@@ -504,4 +504,4 @@ tasks:
 - 📊 v0.4.0 metrics: ~10,080 lines added across 42 files, 844+ tests passing
 - 🔀 Reorganized roadmap: v0.4.0 Resumption+Scheduling, v0.5.0 Distributed, v0.6.0 Orchestration, v0.7.0 Monitoring
 
-For questions about the roadmap, please open a [GitHub Discussion](https://github.com/dean0x/claudine/discussions).
+For questions about the roadmap, please open a [GitHub Discussion](https://github.com/dean0x/delegate/discussions).

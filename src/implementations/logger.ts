@@ -97,7 +97,7 @@ export class StructuredLogger implements Logger {
  */
 export class ConsoleLogger implements Logger {
   constructor(
-    private readonly prefix = '[Claudine]',
+    private readonly prefix = '[Delegate]',
     private readonly useColors = true,
   ) {}
 

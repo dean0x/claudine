@@ -3,7 +3,7 @@
  * All types are immutable (readonly)
  */
 
-import { ClaudineError } from './errors.js';
+import { DelegateError } from './errors.js';
 
 export type TaskId = string & { readonly __brand: 'TaskId' };
 export type WorkerId = string & { readonly __brand: 'WorkerId' };
@@ -72,7 +72,7 @@ export interface Task {
 
   // Merge strategy fields (only applies when useWorktree is true)
   readonly mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch'; // default: 'pr', undefined when no worktree
-  readonly branchName?: string; // default: 'claudine/task-{id}'
+  readonly branchName?: string; // default: 'delegate/task-{id}'
   readonly baseBranch?: string; // default: current branch
   readonly autoCommit: boolean; // default: true
   readonly pushToRemote: boolean; // default: true for PR mode
@@ -116,7 +116,7 @@ export interface Task {
   readonly workerId?: WorkerId;
   readonly exitCode?: number;
   readonly duration?: number;
-  readonly error?: Error | ClaudineError;
+  readonly error?: Error | DelegateError;
 }
 
 export interface Worker {
@@ -187,7 +187,7 @@ export interface TaskUpdate {
   readonly completedAt?: number;
   readonly exitCode?: number;
   readonly duration?: number;
-  readonly error?: Error | ClaudineError;
+  readonly error?: Error | DelegateError;
 }
 
 /**

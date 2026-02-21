@@ -89,24 +89,24 @@ export enum ErrorCode {
 }
 
 /**
- * Custom error class for Claudine
+ * Custom error class for Delegate
  * Includes error code and optional context for debugging
  *
  * @example
- * return err(new ClaudineError(
+ * return err(new DelegateError(
  *   ErrorCode.INVALID_INPUT,
  *   'Path traversal detected',
  *   { path: inputPath, base: baseDir }
  * ));
  */
-export class ClaudineError extends Error {
+export class DelegateError extends Error {
   constructor(
     public readonly code: ErrorCode,
     message: string,
     public readonly context?: Record<string, unknown>,
   ) {
     super(message);
-    this.name = 'ClaudineError';
+    this.name = 'DelegateError';
   }
 
   toJSON() {
@@ -122,53 +122,53 @@ export class ClaudineError extends Error {
 /**
  * Error factory functions
  */
-export const taskNotFound = (taskId: string): ClaudineError =>
-  new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Task ${taskId} not found`, { taskId });
+export const taskNotFound = (taskId: string): DelegateError =>
+  new DelegateError(ErrorCode.TASK_NOT_FOUND, `Task ${taskId} not found`, { taskId });
 
-export const taskAlreadyRunning = (taskId: string): ClaudineError =>
-  new ClaudineError(ErrorCode.TASK_ALREADY_RUNNING, `Task ${taskId} is already running`, { taskId });
+export const taskAlreadyRunning = (taskId: string): DelegateError =>
+  new DelegateError(ErrorCode.TASK_ALREADY_RUNNING, `Task ${taskId} is already running`, { taskId });
 
-export const taskTimeout = (taskId: string, timeoutMs: number): ClaudineError =>
-  new ClaudineError(ErrorCode.TASK_TIMEOUT, `Task ${taskId} timed out after ${timeoutMs}ms`, { taskId, timeoutMs });
+export const taskTimeout = (taskId: string, timeoutMs: number): DelegateError =>
+  new DelegateError(ErrorCode.TASK_TIMEOUT, `Task ${taskId} timed out after ${timeoutMs}ms`, { taskId, timeoutMs });
 
-export const insufficientResources = (cpuUsage: number, availableMemory: number): ClaudineError =>
-  new ClaudineError(
+export const insufficientResources = (cpuUsage: number, availableMemory: number): DelegateError =>
+  new DelegateError(
     ErrorCode.INSUFFICIENT_RESOURCES,
     `Insufficient resources: CPU ${cpuUsage}%, Memory ${availableMemory} bytes`,
     { cpuUsage, availableMemory },
   );
 
-export const processSpawnFailed = (reason: string): ClaudineError =>
-  new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, `Failed to spawn process: ${reason}`, { reason });
+export const processSpawnFailed = (reason: string): DelegateError =>
+  new DelegateError(ErrorCode.PROCESS_SPAWN_FAILED, `Failed to spawn process: ${reason}`, { reason });
 
-export const invalidInput = (field: string, value: unknown): ClaudineError =>
-  new ClaudineError(ErrorCode.INVALID_INPUT, `Invalid input for field ${field}`, { field, value });
+export const invalidInput = (field: string, value: unknown): DelegateError =>
+  new DelegateError(ErrorCode.INVALID_INPUT, `Invalid input for field ${field}`, { field, value });
 
-export const invalidDirectory = (path: string): ClaudineError =>
-  new ClaudineError(ErrorCode.INVALID_DIRECTORY, `Invalid directory: ${path}`, { path });
+export const invalidDirectory = (path: string): DelegateError =>
+  new DelegateError(ErrorCode.INVALID_DIRECTORY, `Invalid directory: ${path}`, { path });
 
-export const systemError = (message: string, originalError?: Error): ClaudineError =>
-  new ClaudineError(ErrorCode.SYSTEM_ERROR, message, { originalError: originalError?.message });
+export const systemError = (message: string, originalError?: Error): DelegateError =>
+  new DelegateError(ErrorCode.SYSTEM_ERROR, message, { originalError: originalError?.message });
 
-export const resourceLimitExceeded = (resourceType: string, limit: number, current: number): ClaudineError =>
-  new ClaudineError(
+export const resourceLimitExceeded = (resourceType: string, limit: number, current: number): DelegateError =>
+  new DelegateError(
     ErrorCode.RESOURCE_LIMIT_EXCEEDED,
     `Resource limit exceeded for ${resourceType}: limit=${limit}, current=${current}`,
     { resourceType, limit, current },
   );
 
 /**
- * Type guard for ClaudineError
+ * Type guard for DelegateError
  */
-export const isClaudineError = (error: unknown): error is ClaudineError => {
-  return error instanceof ClaudineError;
+export const isDelegateError = (error: unknown): error is DelegateError => {
+  return error instanceof DelegateError;
 };
 
 /**
- * Convert unknown errors to ClaudineError
+ * Convert unknown errors to DelegateError
  */
-export const toClaudineError = (error: unknown): ClaudineError => {
-  if (isClaudineError(error)) {
+export const toDelegateError = (error: unknown): DelegateError => {
+  if (isDelegateError(error)) {
     return error;
   }
 
@@ -208,9 +208,9 @@ export const toClaudineError = (error: unknown): ClaudineError => {
 export const operationErrorHandler = (
   operation: string,
   context?: Record<string, unknown>,
-): ((error: unknown) => ClaudineError) => {
-  return (error: unknown): ClaudineError => {
+): ((error: unknown) => DelegateError) => {
+  return (error: unknown): DelegateError => {
     const message = error instanceof Error ? error.message : String(error);
-    return new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to ${operation}: ${message}`, context);
+    return new DelegateError(ErrorCode.SYSTEM_ERROR, `Failed to ${operation}: ${message}`, context);
   };
 };

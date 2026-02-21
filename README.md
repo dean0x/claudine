@@ -1,12 +1,12 @@
-# Claudine - Task Delegation And Management Framework
+# Delegate - Task Delegation And Management Framework
 
-[![npm version](https://img.shields.io/npm/v/claudine.svg)](https://www.npmjs.com/package/claudine)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Node](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)
-[![CI](https://github.com/dean0x/claudine/actions/workflows/ci.yml/badge.svg)](https://github.com/dean0x/claudine/actions/workflows/ci.yml)
-![MCP](https://img.shields.io/badge/MCP-Compatible-purple)
+[![npm version](https://img.shields.io/npm/v/@dean0x/delegate.svg)](https://www.npmjs.com/package/@dean0x/delegate)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)](https://nodejs.org/)
+[![CI](https://github.com/dean0x/delegate/actions/workflows/ci.yml/badge.svg)](https://github.com/dean0x/delegate/actions/workflows/ci.yml)
+[![MCP](https://img.shields.io/badge/MCP-Compatible-purple)](https://modelcontextprotocol.io/)
 
-## Why Claudine Exists
+## Why Delegate Exists
 
 **The Problem**: Claude Code is incredibly powerful, but you can only work on one thing at a time with a single claude code instance. This kills true multitasking and orchestration.
 
@@ -53,15 +53,15 @@ Add to your project's `.mcp.json`:
 ```json
 {
   "mcpServers": {
-    "claudine": {
+    "delegate": {
       "command": "npx",
-      "args": ["-y", "claudine", "mcp", "start"]
+      "args": ["-y", "@dean0x/delegate", "mcp", "start"]
     }
   }
 }
 ```
 
-Restart Claude Code to connect to Claudine.
+Restart Claude Code to connect to Delegate.
 
 ## Usage
 
@@ -88,20 +88,20 @@ Once configured, use these tools in Claude Code:
 
 | Command | Description |
 |---------|-------------|
-| `claudine mcp start` | Start the MCP server |
-| `claudine delegate <task>` | Submit new task |
-| `claudine status [task-id]` | Check task status (all tasks if no ID) |
-| `claudine logs <task-id>` | View task output |
-| `claudine cancel <task-id>` | Cancel running task |
-| `claudine schedule create <prompt>` | Create a cron or one-time schedule |
-| `claudine schedule list` | List schedules with optional status filter |
-| `claudine schedule get <id>` | Get schedule details and execution history |
-| `claudine schedule pause <id>` | Pause an active schedule |
-| `claudine schedule resume <id>` | Resume a paused schedule |
-| `claudine schedule cancel <id>` | Cancel a schedule |
-| `claudine pipeline <prompt> ...` | Create chained one-time schedules with delays |
-| `claudine resume <task-id>` | Resume a task from its checkpoint |
-| `claudine help` | Show help |
+| `delegate mcp start` | Start the MCP server |
+| `delegate delegate <task>` | Submit new task |
+| `delegate status [task-id]` | Check task status (all tasks if no ID) |
+| `delegate logs <task-id>` | View task output |
+| `delegate cancel <task-id>` | Cancel running task |
+| `delegate schedule create <prompt>` | Create a cron or one-time schedule |
+| `delegate schedule list` | List schedules with optional status filter |
+| `delegate schedule get <id>` | Get schedule details and execution history |
+| `delegate schedule pause <id>` | Pause an active schedule |
+| `delegate schedule resume <id>` | Resume a paused schedule |
+| `delegate schedule cancel <id>` | Cancel a schedule |
+| `delegate pipeline <prompt> ...` | Create chained one-time schedules with delays |
+| `delegate resume <task-id>` | Resume a task from its checkpoint |
+| `delegate help` | Show help |
 
 ### Task Dependencies
 
@@ -109,15 +109,15 @@ Create workflows where tasks wait for dependencies to complete:
 
 ```bash
 # Step 1: Create build task
-claudine delegate "npm run build" --priority P1
+delegate delegate "npm run build" --priority P1
 # → task-abc123
 
 # Step 2: Create test task that waits for build
-claudine delegate "npm test" --depends-on task-abc123
+delegate delegate "npm test" --depends-on task-abc123
 # Task waits for build to complete before running
 
 # Step 3: Create deploy task that waits for tests
-claudine delegate "npm run deploy" --depends-on task-def456
+delegate delegate "npm run deploy" --depends-on task-def456
 # Execution order: build → test → deploy
 ```
 
@@ -183,10 +183,10 @@ Resume failed or completed tasks with enriched context from automatic checkpoint
 
 ```bash
 # Resume a failed task
-claudine resume task-abc123
+delegate resume task-abc123
 
 # Resume with additional instructions
-claudine resume task-abc123 --context "Try a different approach this time"
+delegate resume task-abc123 --context "Try a different approach this time"
 ```
 
 ```typescript
@@ -273,7 +273,7 @@ npm run test:coverage       # With coverage
 ### Project Structure
 
 ```
-claudine/
+delegate/
 ├── src/
 │   ├── core/                # Core interfaces and types
 │   ├── implementations/     # Service implementations
@@ -335,7 +335,7 @@ MIT License - see LICENSE file for details
 
 ## Support
 
-- Report issues: [GitHub Issues](https://github.com/dean0x/claudine/issues)
+- Report issues: [GitHub Issues](https://github.com/dean0x/delegate/issues)
 
 ## Acknowledgments
 

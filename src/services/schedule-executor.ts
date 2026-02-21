@@ -7,7 +7,7 @@
 
 import type { Schedule } from '../core/domain.js';
 import { MissedRunPolicy, ScheduleStatus, ScheduleType } from '../core/domain.js';
-import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { DelegateError, ErrorCode } from '../core/errors.js';
 import { EventBus } from '../core/events/event-bus.js';
 import type {
   ScheduleExecutedEvent,
@@ -90,7 +90,7 @@ export class ScheduleExecutor {
     eventBus: EventBus,
     logger: Logger,
     options?: ScheduleExecutorOptions,
-  ): Result<ScheduleExecutor, ClaudineError> {
+  ): Result<ScheduleExecutor, DelegateError> {
     const executor = new ScheduleExecutor(scheduleRepo, eventBus, logger, options);
 
     const subscribeResult = executor.subscribeToTaskEvents();
@@ -106,7 +106,7 @@ export class ScheduleExecutor {
    * ARCHITECTURE: Returns Result so factory can detect subscription failures.
    * Stores subscription IDs for cleanup in stop().
    */
-  private subscribeToTaskEvents(): Result<void, ClaudineError> {
+  private subscribeToTaskEvents(): Result<void, DelegateError> {
     const subscriptions = [
       // When a schedule execution creates a task, track it
       this.eventBus.subscribe<ScheduleExecutedEvent>('ScheduleExecuted', async (event) => {
@@ -139,7 +139,7 @@ export class ScheduleExecutor {
     for (const result of subscriptions) {
       if (!result.ok) {
         return err(
-          new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to subscribe to events: ${result.error.message}`, {
+          new DelegateError(ErrorCode.SYSTEM_ERROR, `Failed to subscribe to events: ${result.error.message}`, {
             error: result.error,
           }),
         );
@@ -189,9 +189,9 @@ export class ScheduleExecutor {
    *
    * @returns Result<void> - Error if already running
    */
-  start(): Result<void, ClaudineError> {
+  start(): Result<void, DelegateError> {
     if (this.isRunning) {
-      return err(new ClaudineError(ErrorCode.INVALID_OPERATION, 'ScheduleExecutor is already running'));
+      return err(new DelegateError(ErrorCode.INVALID_OPERATION, 'ScheduleExecutor is already running'));
     }
 
     this.isRunning = true;
@@ -216,7 +216,7 @@ export class ScheduleExecutor {
    *
    * @returns Result<void> - Always succeeds
    */
-  stop(): Result<void, ClaudineError> {
+  stop(): Result<void, DelegateError> {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;

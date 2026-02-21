@@ -1,4 +1,4 @@
-# 🚀 Claudine v0.3.0 - Task Dependencies
+# 🚀 Delegate v0.3.0 - Task Dependencies
 
 ## Major Features
 
@@ -48,7 +48,7 @@ await delegateTask({
 ### 🛠️ Error Handling Improvements
 **Issue**: `addDependency()` converted all errors to `SYSTEM_ERROR`, masking semantic error types like `TASK_NOT_FOUND` and `INVALID_OPERATION`.
 
-**Fix**: Preserve `ClaudineError` types throughout the error handling chain, allowing upstream code to correctly distinguish error types.
+**Fix**: Preserve `DelegateError` types throughout the error handling chain, allowing upstream code to correctly distinguish error types.
 
 **Impact**: Better error handling and debugging experience.
 
@@ -130,16 +130,16 @@ See [ROADMAP.md](./docs/ROADMAP.md) for v0.3.1 plans.
 ## Installation
 
 ```bash
-npm install -g claudine@0.3.0
+npm install -g @dean0x/delegate@0.3.0
 ```
 
 Or add to your `.mcp.json`:
 ```json
 {
   "mcpServers": {
-    "claudine": {
+    "delegate": {
       "command": "npx",
-      "args": ["-y", "claudine@0.3.0", "mcp", "start"]
+      "args": ["-y", "delegate@0.3.0", "mcp", "start"]
     }
   }
 }
@@ -170,7 +170,7 @@ See [ROADMAP.md](./docs/ROADMAP.md) for complete roadmap.
 No special upgrade steps required. Simply update to 0.3.0:
 
 ```bash
-npm install -g claudine@0.3.0
+npm install -g @dean0x/delegate@0.3.0
 ```
 
 Existing databases will automatically migrate to v1 schema on first startup.
@@ -188,10 +188,10 @@ Special thanks to:
 
 ## Links
 
-- 📦 **NPM Package**: https://www.npmjs.com/package/claudine
-- 📝 **Full Documentation**: https://github.com/dean0x/claudine/blob/main/docs/task-dependencies.md
-- 🐛 **Issues**: https://github.com/dean0x/claudine/issues
-- 💬 **Discussions**: https://github.com/dean0x/claudine/discussions
+- 📦 **NPM Package**: https://www.npmjs.com/package/@dean0x/delegate
+- 📝 **Full Documentation**: https://github.com/dean0x/delegate/blob/main/docs/task-dependencies.md
+- 🐛 **Issues**: https://github.com/dean0x/delegate/issues
+- 💬 **Discussions**: https://github.com/dean0x/delegate/discussions
 
 ---
 

@@ -6,7 +6,7 @@
 import SQLite from 'better-sqlite3';
 import { z } from 'zod';
 import { Priority, Task, TaskId, TaskStatus, WorkerId } from '../core/domain.js';
-import { ClaudineError, ErrorCode, operationErrorHandler } from '../core/errors.js';
+import { DelegateError, ErrorCode, operationErrorHandler } from '../core/errors.js';
 import { TaskRepository } from '../core/interfaces.js';
 import { err, ok, Result, tryCatchAsync } from '../core/result.js';
 import { Database } from './database.js';
@@ -224,7 +224,7 @@ export class SQLiteTaskRepository implements TaskRepository {
     }
 
     if (!existingResult.value) {
-      return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Task ${taskId} not found`));
+      return err(new DelegateError(ErrorCode.TASK_NOT_FOUND, `Task ${taskId} not found`));
     }
 
     // Merge updates with existing task
@@ -344,7 +344,7 @@ export class SQLiteTaskRepository implements TaskRepository {
       // Execute the transaction and return the result
       return await transactionFn();
     } catch (error) {
-      return err(new ClaudineError(ErrorCode.SYSTEM_ERROR, `Transaction failed: ${error}`));
+      return err(new DelegateError(ErrorCode.SYSTEM_ERROR, `Transaction failed: ${error}`));
     }
   }
 

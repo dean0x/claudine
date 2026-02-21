@@ -1,4 +1,4 @@
-# 🚀 Claudine v0.2.0 - Task Persistence & Stability
+# 🚀 Delegate v0.2.0 - Task Persistence & Stability
 
 ## Major Features
 
@@ -6,8 +6,8 @@
 - **SQLite-based persistence**: All tasks are now stored in a local SQLite database
 - **Automatic recovery**: Tasks queued before a crash are automatically re-queued on startup
 - **Platform-specific storage**: 
-  - Unix/Mac: `~/.claudine/claudine.db`
-  - Windows: `%APPDATA%/claudine/claudine.db`
+  - Unix/Mac: `~/.delegate/delegate.db`
+  - Windows: `%APPDATA%/delegate/delegate.db`
 - **Task history**: Complete history of all delegated tasks with status, logs, and metadata
 
 ### 🔧 MCP Connection Stability
@@ -58,10 +58,10 @@ No migration needed. The database will be created automatically on first run.
 
 ```bash
 # npm
-npm install -g claudine
+npm install -g @dean0x/delegate
 
 # or use npx
-npx claudine mcp start
+npx @dean0x/delegate mcp start
 ```
 
 ## Configuration
@@ -71,8 +71,8 @@ Add to your MCP configuration:
 ```json
 {
   "mcpServers": {
-    "claudine": {
-      "command": "claudine",
+    "delegate": {
+      "command": "delegate",
       "args": ["mcp", "start"]
     }
   }
@@ -86,4 +86,4 @@ Add to your MCP configuration:
 
 ---
 
-For detailed documentation, visit: https://github.com/dean0x/claudine
+For detailed documentation, visit: https://github.com/dean0x/delegate

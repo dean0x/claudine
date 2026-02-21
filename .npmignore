@@ -48,6 +48,9 @@ CLAUDE.md
 *.md
 !README.md
 
+# Launch kit (marketing/social content)
+launch/
+
 # Scripts not needed by users
 scripts/
 

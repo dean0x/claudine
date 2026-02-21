@@ -1,6 +1,6 @@
-# Claudine Features
+# Delegate Features
 
-This document lists all features that are **currently implemented and working** in Claudine.
+This document lists all features that are **currently implemented and working** in Delegate.
 
 Last Updated: February 2026
 
@@ -114,31 +114,31 @@ Last Updated: February 2026
 ## ✅ CLI Interface
 
 ### MCP Server Commands
-- `claudine mcp start`: Start the MCP server
-- `claudine mcp test`: Test server startup and validation
-- `claudine mcp config`: Show MCP configuration examples
-- `claudine help`: Show help and usage
+- `delegate mcp start`: Start the MCP server
+- `delegate mcp test`: Test server startup and validation
+- `delegate mcp config`: Show MCP configuration examples
+- `delegate help`: Show help and usage
 
 ### Direct Task Commands (v0.2.1+)
-- `claudine delegate <prompt>`: Delegate task directly to background Claude instance
-- `claudine status [task-id]`: Check status of all tasks or specific task
-- `claudine logs <task-id>`: Retrieve task output and logs
-- `claudine cancel <task-id> [reason]`: Cancel running task with optional reason
+- `delegate delegate <prompt>`: Delegate task directly to background Claude instance
+- `delegate status [task-id]`: Check status of all tasks or specific task
+- `delegate logs <task-id>`: Retrieve task output and logs
+- `delegate cancel <task-id> [reason]`: Cancel running task with optional reason
 
 ### Schedule Commands (v0.4.0+)
-- `claudine schedule create <prompt> [options]`: Create a cron or one-time scheduled task
-- `claudine schedule list [--status <status>]`: List schedules with optional status filter
-- `claudine schedule get <id> [--history]`: Get schedule details and execution history
-- `claudine schedule pause <id>`: Pause an active schedule
-- `claudine schedule resume <id>`: Resume a paused schedule
-- `claudine schedule cancel <id> [reason]`: Cancel a schedule with optional reason
+- `delegate schedule create <prompt> [options]`: Create a cron or one-time scheduled task
+- `delegate schedule list [--status <status>]`: List schedules with optional status filter
+- `delegate schedule get <id> [--history]`: Get schedule details and execution history
+- `delegate schedule pause <id>`: Pause an active schedule
+- `delegate schedule resume <id>`: Resume a paused schedule
+- `delegate schedule cancel <id> [reason]`: Cancel a schedule with optional reason
 
 ### Pipeline Commands (v0.4.0+)
-- `claudine pipeline <prompt> [--delay Nm <prompt>]...`: Create chained one-time schedules with delays
+- `delegate pipeline <prompt> [--delay Nm <prompt>]...`: Create chained one-time schedules with delays
 
 ### Task Resumption Commands (v0.4.0+)
-- `claudine resume <task-id>`: Resume a failed/completed task from its checkpoint
-- `claudine resume <task-id> --context "..."`: Resume with additional instructions
+- `delegate resume <task-id>`: Resume a failed/completed task from its checkpoint
+- `delegate resume <task-id> --context "..."`: Resume with additional instructions
 
 ### Configuration Examples
 - **NPM Package**: Global installation support
@@ -274,7 +274,7 @@ Last Updated: February 2026
 - **Enriched Prompts**: Resumed tasks receive full context from previous attempt
 - **Retry Chains**: Track resume lineage via `parentTaskId` and `retryOf` fields
 - **MCP Tool**: `ResumeTask` with optional additional context
-- **CLI**: `claudine resume <task-id> [--context "..."]`
+- **CLI**: `delegate resume <task-id> [--context "..."]`
 
 ### Session Continuation (`continueFrom`)
 - **Dependency Context Injection**: Dependent tasks receive checkpoint context from a specified dependency

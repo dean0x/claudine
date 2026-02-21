@@ -13,7 +13,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MCPAdapter } from '../../../src/adapters/mcp-adapter';
-import { ClaudineError, ErrorCode, taskNotFound } from '../../../src/core/errors';
+import { DelegateError, ErrorCode, taskNotFound } from '../../../src/core/errors';
 import type { EventBus } from '../../../src/core/events/event-bus';
 import type { Logger, ScheduleRepository, TaskManager } from '../../../src/core/interfaces';
 import { err, ok } from '../../../src/core/result';
@@ -41,7 +41,7 @@ class MockTaskManager implements TaskManager {
     this.delegateCalls.push(request);
 
     if (this.shouldFailDelegate) {
-      return err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'Failed to delegate task', {}));
+      return err(new DelegateError(ErrorCode.SYSTEM_ERROR, 'Failed to delegate task', {}));
     }
 
     const task = new TaskFactory()
@@ -56,7 +56,7 @@ class MockTaskManager implements TaskManager {
     this.statusCalls.push(taskId);
 
     if (this.shouldFailStatus) {
-      return err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'Failed to get status', {}));
+      return err(new DelegateError(ErrorCode.SYSTEM_ERROR, 'Failed to get status', {}));
     }
 
     if (taskId) {
@@ -201,7 +201,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
 
       expect(server).toBeTruthy();
       expect(typeof server).toBe('object');
-      // Server should be initialized with claudine name and package version
+      // Server should be initialized with delegate name and package version
     });
 
     it('should declare tools capability in MCP protocol', () => {

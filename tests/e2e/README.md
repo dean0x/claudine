@@ -1,4 +1,4 @@
-# E2E Testing Framework for Claudine
+# E2E Testing Framework for Delegate
 
 ## Overview
 
@@ -111,8 +111,8 @@ Execute tests in priority order (P0 → P1 → P2) to ensure critical functional
 ## Troubleshooting
 
 ### Common Issues
-- **Database locks**: Clean `.claudine/` directory
-- **Orphaned processes**: Run `pkill -f claudine`
+- **Database locks**: Clean `.delegate/` directory
+- **Orphaned processes**: Run `pkill -f delegate`
 - **Stale results**: Re-run tests marked with 🔴
 
 ### Test Timeouts

@@ -2,7 +2,7 @@ import { EventEmitter } from 'events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Task } from '../../../src/core/domain';
 import { TaskId, WorkerId } from '../../../src/core/domain';
-import { ClaudineError, ErrorCode } from '../../../src/core/errors';
+import { DelegateError, ErrorCode } from '../../../src/core/errors';
 import type { EventBus } from '../../../src/core/events/event-bus';
 import type {
   Logger,
@@ -155,12 +155,12 @@ describe('EventDrivenWorkerPool', () => {
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error).toBeInstanceOf(ClaudineError);
-      expect((result.error as ClaudineError).code).toBe(ErrorCode.INSUFFICIENT_RESOURCES);
+      expect(result.error).toBeInstanceOf(DelegateError);
+      expect((result.error as DelegateError).code).toBe(ErrorCode.INSUFFICIENT_RESOURCES);
     });
 
     it('should return error when canSpawnWorker returns err', async () => {
-      const monitorError = new ClaudineError(ErrorCode.RESOURCE_MONITORING_FAILED, 'monitor broken');
+      const monitorError = new DelegateError(ErrorCode.RESOURCE_MONITORING_FAILED, 'monitor broken');
       (monitor.canSpawnWorker as ReturnType<typeof vi.fn>).mockResolvedValue(err(monitorError));
       const task = buildTask();
 
@@ -198,7 +198,7 @@ describe('EventDrivenWorkerPool', () => {
 
     it('should fall back to normal execution when worktree creation fails', async () => {
       (worktreeManager.createWorktree as ReturnType<typeof vi.fn>).mockResolvedValue(
-        err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'git worktree failed')),
+        err(new DelegateError(ErrorCode.SYSTEM_ERROR, 'git worktree failed')),
       );
       const task = buildTask((f) => f.withUseWorktree(true).withWorkingDirectory('/fallback/dir'));
 
@@ -255,7 +255,7 @@ describe('EventDrivenWorkerPool', () => {
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect((result.error as ClaudineError).code).toBe(ErrorCode.WORKER_NOT_FOUND);
+      expect((result.error as DelegateError).code).toBe(ErrorCode.WORKER_NOT_FOUND);
     });
 
     it('should kill process with SIGTERM', async () => {

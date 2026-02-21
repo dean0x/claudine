@@ -1,8 +1,8 @@
-# Claudine Testing Architecture Documentation
+# Delegate Testing Architecture Documentation
 
 ## Overview
 
-This document provides a comprehensive overview of Claudine's testing architecture, patterns, and best practices. The test suite validates the event-driven task delegation system through multiple testing layers.
+This document provides a comprehensive overview of Delegate's testing architecture, patterns, and best practices. The test suite validates the event-driven task delegation system through multiple testing layers.
 
 ## Testing Philosophy
 
@@ -244,7 +244,7 @@ await manager.delegateTask(task);
 ```typescript
 // Test through CLI interface
 const { stdout, stderr } = await execCommand(
-  'claudine delegate "analyze codebase"'
+  'delegate delegate "analyze codebase"'
 );
 expect(stdout).toContain('Task delegated successfully');
 ```
@@ -525,7 +525,7 @@ npm test -- --grep "should handle concurrent"
 node --inspect-brk ./node_modules/.bin/vitest
 
 # Set debug environment
-DEBUG=claudine:* npm test
+DEBUG=delegate:* npm test
 ```
 
 ### Common Debug Patterns
@@ -658,7 +658,7 @@ afterEach(async () => {
 
 ## Conclusion
 
-Claudine's testing architecture emphasizes:
+Delegate's testing architecture emphasizes:
 - **Event-driven validation** matching the system architecture
 - **Type-safe error handling** with Result types
 - **Behavioral testing** over implementation details
