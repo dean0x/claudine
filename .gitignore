@@ -56,13 +56,8 @@ temp/
 .docs/
 .claude/
 .mcp.json
-CLAUDE.md
 output/
-coverage/
 .claudine/
-
-# Local memory/session files
-.memory/
 
 # Local memory/session files
 .memory/
