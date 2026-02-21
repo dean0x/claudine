@@ -13,9 +13,7 @@ jobs:
     strategy:
       matrix:
         node-version: [20.x]
-        # Note: Node 22.x excluded due to memory issues with worker-handler tests
-        # Can be re-enabled once Vitest/V8 memory handling improves
-    
+
     steps:
     - uses: actions/checkout@v4
     
@@ -34,33 +32,9 @@ jobs:
     - name: Build project
       run: npm run build
     
-    - name: Run unit tests (core)
-      run: NODE_OPTIONS="--max-old-space-size=2048" npm run test:unit -- tests/unit/core/
+    - name: Run tests
+      run: npm run test:all
 
-    - name: Run unit tests (implementations)
-      run: NODE_OPTIONS="--max-old-space-size=2048" npm run test:unit -- tests/unit/implementations/
-
-    - name: Run unit tests (query handler)
-      run: NODE_OPTIONS="--max-old-space-size=2048" npm run test:unit -- tests/unit/services/handlers/query-handler.test.ts
-
-    # Worker handler test skipped in CI due to excessive memory requirements (>6GB)
-    # Run locally with: NODE_OPTIONS="--max-old-space-size=6144" npm run test:unit -- tests/unit/services/handlers/worker-handler.test.ts
-    # - name: Run unit tests (worker handler)
-    #   run: NODE_OPTIONS="--max-old-space-size=6144" npm run test:unit -- --pool=forks --poolOptions.forks.singleFork tests/unit/services/handlers/worker-handler.test.ts
-
-    - name: Run unit tests (adapters & utils)
-      run: NODE_OPTIONS="--max-old-space-size=2048" npm run test:unit -- tests/unit/adapters/ tests/unit/utils/
-
-    - name: Run unit tests (error scenarios)
-      run: NODE_OPTIONS="--max-old-space-size=2048" npm run test:unit -- tests/unit/error-scenarios/
-
-    - name: Run unit tests (root level)
-      run: NODE_OPTIONS="--max-old-space-size=2048" npm run test:unit -- tests/unit/*.test.ts
-
-    # Integration tests require Claude Code CLI to be installed
-    # Skip in CI since `claude` binary is not available
-    # Run locally with: npm test -- tests/integration/
-    
     - name: Test CLI commands
       run: |
         node dist/cli.js help

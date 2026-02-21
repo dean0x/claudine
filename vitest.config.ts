@@ -30,17 +30,11 @@ export default defineConfig({
       'dist',
       '.git'
     ],
-    pool: 'threads', // Better stability than forks pool
-    poolOptions: {
-      threads: {
-        singleThread: true, // CRITICAL: Run all tests in single thread to prevent resource exhaustion
-        maxThreads: 1, // Only 1 test file at a time
-        minThreads: 1,
-        // CRITICAL: Restart workers when they exceed 1GB to prevent memory accumulation
-        // This fixes "Channel closed" errors from worker crashes
-        memoryLimit: '1024MB'
-      }
-    },
+    pool: 'threads', // Explicit: v4 defaults to 'forks'
+    maxWorkers: 1, // CRITICAL: Single worker to prevent resource exhaustion
+    // CRITICAL: Restart workers when they exceed 1GB to prevent memory accumulation
+    // This fixes "Channel closed" errors from worker crashes
+    vmMemoryLimit: '1024MB',
     // CRITICAL: Run ALL tests sequentially to prevent crashes
     sequence: {
       concurrent: false,
