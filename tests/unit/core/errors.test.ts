@@ -252,7 +252,7 @@ describe('DelegateError - REAL Error Behavior', () => {
     });
 
     it('should handle circular references in context', () => {
-      const context: any = { key: 'value' };
+      const context: Record<string, unknown> = { key: 'value' };
       context.circular = context;
 
       const error = new DelegateError(ErrorCode.SYSTEM_ERROR, 'System error', context);

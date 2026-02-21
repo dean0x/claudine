@@ -270,7 +270,7 @@ describe('Retry Functionality', () => {
 
   describe('Retry Event Handling', () => {
     it('should emit TaskDelegated event for retry task', async () => {
-      let delegatedEvents: any[] = [];
+      let delegatedEvents: Array<{ task: Task }> = [];
 
       // Subscribe to TaskDelegated events
       eventBus.subscribe('TaskDelegated', async (event) => {

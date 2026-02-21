@@ -8,9 +8,9 @@ import { createTestConfiguration } from '../../fixtures/factories';
 import { createMockChildProcess } from '../../fixtures/test-helpers';
 
 // Mock child_process module
-let mockSpawnImpl: any = () => null;
+let mockSpawnImpl: (...args: unknown[]) => ChildProcess | null = () => null;
 vi.mock('child_process', () => ({
-  spawn: (...args: any[]) => mockSpawnImpl(...args),
+  spawn: (...args: unknown[]) => mockSpawnImpl(...args),
 }));
 
 describe('ClaudeProcessSpawner - Behavioral Tests', () => {
@@ -36,7 +36,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
     }) as ChildProcess & EventEmitter;
 
     // Create a spy function that tracks calls
-    spawnSpy = vi.fn((...args: any[]) => mockProcess);
+    spawnSpy = vi.fn((...args: unknown[]) => mockProcess);
     mockSpawnImpl = spawnSpy;
   });
 
@@ -205,7 +205,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
         }
         return true;
       });
-      process.kill = processKillSpy as any;
+      process.kill = processKillSpy as typeof process.kill;
     });
 
     afterEach(() => {

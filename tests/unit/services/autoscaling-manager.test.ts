@@ -8,6 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DelegateError, ErrorCode } from '../../../src/core/errors';
+import { TaskId, WorkerId } from '../../../src/core/domain';
 import type { EventBus } from '../../../src/core/events/event-bus';
 import type { SystemResourcesUpdatedEvent, WorkerKilledEvent } from '../../../src/core/events/events';
 import type { Logger, ResourceMonitor, TaskQueue, WorkerPool } from '../../../src/core/interfaces';
@@ -193,8 +194,8 @@ describe('AutoscalingManager', () => {
         eventId: 'evt-1',
         timestamp: Date.now(),
         source: 'test',
-        workerId: 'worker-1' as any,
-        taskId: 'task-1' as any,
+        workerId: WorkerId('worker-1'),
+        taskId: TaskId('task-1'),
       });
 
       // queue.size() should not be called since we returned early
@@ -255,8 +256,8 @@ describe('AutoscalingManager', () => {
         eventId: 'evt-1',
         timestamp: Date.now(),
         source: 'test',
-        workerId: 'worker-1' as any,
-        taskId: 'task-1' as any,
+        workerId: WorkerId('worker-1'),
+        taskId: TaskId('task-1'),
       });
 
       // Before timeout: checkScaling should not have run

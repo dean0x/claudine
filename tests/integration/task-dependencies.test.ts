@@ -6,7 +6,7 @@ import { bootstrap } from '../../src/bootstrap.js';
 import { Container } from '../../src/core/container.js';
 import { Priority, Task, TaskId } from '../../src/core/domain.js';
 import { EventBus, TaskDependencyFailedEvent } from '../../src/core/events/events.js';
-import { DependencyRepository, TaskManager } from '../../src/core/interfaces.js';
+import { DependencyRepository, TaskManager, TaskQueue } from '../../src/core/interfaces.js';
 import { Database } from '../../src/implementations/database.js';
 import { TestResourceMonitor } from '../../src/implementations/resource-monitor.js';
 import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
@@ -487,7 +487,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       // If this fails, tasks will block forever even after dependencies complete
 
       // Get queue stats to verify Task B was enqueued
-      const queueResult = await container.get<any>('taskQueue');
+      const queueResult = container.get<TaskQueue>('taskQueue');
       if (!queueResult.ok) {
         throw new Error('Failed to get task queue');
       }

@@ -190,7 +190,7 @@ describe('handler-setup', () => {
 
       // Verify handlers are working by checking event subscriptions exist
       // The eventBus should have subscriptions for all handler event types
-      const subscriptionCount = (eventBus as any).handlers?.size ?? 0;
+      const subscriptionCount = (eventBus as unknown as { handlers?: Map<string, unknown[]> }).handlers?.size ?? 0;
 
       // With all handlers setup, we should have multiple event subscriptions
       // PersistenceHandler: TaskDelegated, TaskStarted, TaskCompleted, TaskFailed, etc.

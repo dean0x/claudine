@@ -338,7 +338,7 @@ describe('SystemResourceMonitor', () => {
     // TODO: Implement threshold crossing event emission in SystemResourceMonitor
     // Currently the monitor tracks thresholds internally but doesn't emit events
     it.skip('should emit events when thresholds are crossed', async () => {
-      const events: Array<{ type: string; data: any }> = [];
+      const events: Array<{ type: string; data: unknown }> = [];
 
       eventBus.on('ResourceThresholdCrossed', (data) => {
         events.push({ type: 'ResourceThresholdCrossed', data });
@@ -363,7 +363,7 @@ describe('SystemResourceMonitor', () => {
 
     // TODO: Implement threshold recovery event emission in SystemResourceMonitor
     it.skip('should emit recovery events', async () => {
-      const events: Array<{ type: string; data: any }> = [];
+      const events: Array<{ type: string; data: unknown }> = [];
 
       eventBus.on('ResourceThresholdRecovered', (data) => {
         events.push({ type: 'ResourceThresholdRecovered', data });
@@ -394,7 +394,7 @@ describe('SystemResourceMonitor', () => {
 
     // TODO: Implement threshold event de-duplication in SystemResourceMonitor
     it.skip('should not emit duplicate threshold events', async () => {
-      const events: any[] = [];
+      const events: unknown[] = [];
       eventBus.on('ResourceThresholdCrossed', (data) => events.push(data));
 
       monitor.startMonitoring();

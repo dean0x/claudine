@@ -436,7 +436,7 @@ describe('Result Type - REAL Behavior Tests', () => {
 
   describe('Real-world usage patterns', () => {
     it('should handle file parsing scenario', () => {
-      const parseJSON = (text: string): Result<any> => {
+      const parseJSON = (text: string): Result<unknown> => {
         return tryCatch(() => JSON.parse(text));
       };
 
@@ -519,7 +519,7 @@ describe('Result Type - REAL Behavior Tests', () => {
 
   describe('Edge cases and error conditions', () => {
     it('should handle circular references in results', () => {
-      const obj: any = { value: 1 };
+      const obj: Record<string, unknown> = { value: 1 };
       obj.self = obj; // Circular reference
 
       const result = ok(obj);
@@ -527,7 +527,9 @@ describe('Result Type - REAL Behavior Tests', () => {
       expect(isOk(result)).toBe(true);
       if (result.ok) {
         expect(result.value.value).toBe(1);
-        expect(result.value.self.self.self.value).toBe(1);
+        const self = result.value.self as Record<string, unknown>;
+        const selfSelf = (self.self as Record<string, unknown>).self as Record<string, unknown>;
+        expect(selfSelf.value).toBe(1);
       }
     });
 

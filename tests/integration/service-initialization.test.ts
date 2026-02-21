@@ -174,7 +174,7 @@ describe('Integration: Service initialization', () => {
 
         // Track events
         const events: string[] = [];
-        let taskDelegatedData: any = null;
+        let taskDelegatedData: { task: { prompt: string } } | null = null;
 
         // Subscribe to events
         eventBus.on('TaskDelegated', (data) => {

@@ -3,7 +3,7 @@ import { LogLevel, StructuredLogger } from '../../../src/implementations/logger'
 import { TEST_COUNTS } from '../../constants';
 
 describe('StructuredLogger - JSON Logging Behavior', () => {
-  let capturedLogs: any[] = [];
+  let capturedLogs: Array<{ level: string; message: string; context: Record<string, unknown>; timestamp: string }> = [];
   let mockOutput: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {

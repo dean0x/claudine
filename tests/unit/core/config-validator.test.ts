@@ -21,7 +21,7 @@ import { createTestConfiguration } from '../../fixtures/factories.js';
 describe('Component-Level Configuration Validation', () => {
   // Mock system resources for consistent testing
   beforeEach(() => {
-    vi.spyOn(os, 'cpus').mockReturnValue(new Array(8).fill({ model: 'test' }) as any);
+    vi.spyOn(os, 'cpus').mockReturnValue(new Array(8).fill({ model: 'test', speed: 2400, times: { user: 0, nice: 0, sys: 0, idle: 0, irq: 0 } }) as os.CpuInfo[]);
     vi.spyOn(os, 'totalmem').mockReturnValue(16 * 1024 * 1024 * 1024); // 16GB
     vi.spyOn(os, 'freemem').mockReturnValue(8 * 1024 * 1024 * 1024); // 8GB free
   });

@@ -170,7 +170,7 @@ describe('Integration: Task persistence', () => {
       const eventBus = new InMemoryEventBus(config, logger);
 
       // Setup persistence handler with promise tracking
-      const updatePromises: Promise<any>[] = [];
+      const updatePromises: Promise<unknown>[] = [];
 
       eventBus.on('TaskQueued', async (data) => {
         const promise = repository.update(data.task.id, { status: 'queued' });

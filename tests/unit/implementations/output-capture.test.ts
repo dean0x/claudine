@@ -76,7 +76,7 @@ describe('BufferedOutputCapture - REAL Buffer Management', () => {
 
       expect(result.ok).toBe(true);
       // FIX: TestEventBus doesn't have spy, use hasEmitted() method
-      const testEventBus = mockEventBus as any; // Cast to access TestEventBus methods
+      const testEventBus = mockEventBus as TestEventBus; // Cast to access TestEventBus methods
       expect(
         testEventBus.hasEmitted('OutputCaptured', {
           taskId: 'task-123',
