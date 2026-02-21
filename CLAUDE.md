@@ -97,32 +97,11 @@ See `docs/TASK-DEPENDENCIES.md` for usage patterns.
 
 ### Release Workflow
 
-1. **Create PR**:
-   ```bash
-   git add package.json docs/releases/RELEASE_NOTES_v*.md
-   git commit -m "chore: prepare v0.3.1 release"
-   git push origin feature/your-branch
-   gh pr create --title "Release v0.3.1" --body "See docs/releases/RELEASE_NOTES_v0.3.1.md"
-   ```
+1. **Merge version bump + release notes to main** via normal PR
+2. **Trigger release manually** from GitHub Actions → Release → Run workflow
+   - The workflow validates version is unpublished, checks release notes exist, runs tests, publishes to npm, creates git tag, and creates GitHub release
 
-2. **Merge to main** - CI automatically:
-   - Validates release notes exist
-   - Publishes to npm (`claudine@{version}`)
-   - Creates git tag (`v{version}`)
-   - Creates GitHub release
-
-**CI will FAIL if** `docs/releases/RELEASE_NOTES_v{version}.md` is missing.
-
-### Emergency Release
-
-If CI fails:
-```bash
-# Manual tag creation
-git tag v{version} && git push origin v{version}
-
-# Manual GitHub release
-gh release create v{version} --notes-file docs/releases/RELEASE_NOTES_v{version}.md
-```
+**Publishing is never automatic.** Merging a version bump to main does NOT publish. You must explicitly trigger the Release workflow.
 
 ## Project-Specific Guidelines
 
