@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { TestResourceMonitor } from '../../../src/implementations/resource-monitor';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryEventBus } from '../../../src/core/events/event-bus';
 import { TestLogger } from '../../../src/implementations/logger';
+import { TestResourceMonitor } from '../../../src/implementations/resource-monitor';
 
 describe('TestResourceMonitor', () => {
   let monitor: TestResourceMonitor;

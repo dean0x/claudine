@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { StructuredLogger, LogLevel } from '../../../src/implementations/logger';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { LogLevel, StructuredLogger } from '../../../src/implementations/logger';
 import { TEST_COUNTS } from '../../constants';
 
 describe('StructuredLogger - JSON Logging Behavior', () => {

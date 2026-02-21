@@ -3,28 +3,28 @@
  * Validates task retry behavior and tracking
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { Configuration } from '../../src/core/configuration.js';
 import {
+  createTask,
+  DelegateRequest,
+  isTerminalState,
+  Priority,
   Task,
   TaskId,
   TaskStatus,
-  Priority,
-  DelegateRequest,
-  createTask,
-  isTerminalState,
 } from '../../src/core/domain.js';
-import { TaskManagerService } from '../../src/services/task-manager.js';
+import { ErrorCode } from '../../src/core/errors.js';
 import { InMemoryEventBus } from '../../src/core/events/event-bus.js';
-import { SQLiteTaskRepository } from '../../src/implementations/task-repository.js';
+import { err, ok } from '../../src/core/result.js';
 import { Database } from '../../src/implementations/database.js';
-import { TestLogger } from '../fixtures/test-doubles.js';
-import { Configuration } from '../../src/core/configuration.js';
 import { BufferedOutputCapture } from '../../src/implementations/output-capture.js';
+import { SQLiteTaskRepository } from '../../src/implementations/task-repository.js';
 import { PersistenceHandler } from '../../src/services/handlers/persistence-handler.js';
 import { QueryHandler } from '../../src/services/handlers/query-handler.js';
-import { ok, err } from '../../src/core/result.js';
-import { ErrorCode } from '../../src/core/errors.js';
+import { TaskManagerService } from '../../src/services/task-manager.js';
 import { BUFFER_SIZES, TIMEOUTS } from '../constants.js';
+import { TestLogger } from '../fixtures/test-doubles.js';
 
 describe('Retry Functionality', () => {
   let taskManager: TaskManagerService;

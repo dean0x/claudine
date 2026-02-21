@@ -5,15 +5,15 @@
  *          concurrent execution prevention
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { InMemoryEventBus } from '../../../src/core/events/event-bus';
-import { SQLiteScheduleRepository } from '../../../src/implementations/schedule-repository';
-import { Database } from '../../../src/implementations/database';
-import { TestLogger } from '../../fixtures/test-doubles';
-import { createTestConfiguration } from '../../fixtures/factories';
-import { ScheduleExecutor } from '../../../src/services/schedule-executor';
-import { createSchedule, ScheduleType, ScheduleStatus, MissedRunPolicy, ScheduleId } from '../../../src/core/domain';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Schedule } from '../../../src/core/domain';
+import { createSchedule, MissedRunPolicy, ScheduleId, ScheduleStatus, ScheduleType } from '../../../src/core/domain';
+import { InMemoryEventBus } from '../../../src/core/events/event-bus';
+import { Database } from '../../../src/implementations/database';
+import { SQLiteScheduleRepository } from '../../../src/implementations/schedule-repository';
+import { ScheduleExecutor } from '../../../src/services/schedule-executor';
+import { createTestConfiguration } from '../../fixtures/factories';
+import { TestLogger } from '../../fixtures/test-doubles';
 import { flushEventLoop } from '../../utils/event-helpers';
 
 describe('ScheduleExecutor - Unit Tests', () => {

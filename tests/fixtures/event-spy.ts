@@ -2,9 +2,9 @@
  * Event spy utility for testing event flow
  */
 
-import { EventBus } from '../../src/core/interfaces';
 import { ClaudineEvent, EventHandler } from '../../src/core/events/events';
-import { Result, ok } from '../../src/core/result';
+import { EventBus } from '../../src/core/interfaces';
+import { ok, Result } from '../../src/core/result';
 
 export interface EventRecord {
   event: ClaudineEvent;

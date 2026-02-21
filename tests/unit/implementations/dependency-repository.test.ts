@@ -4,11 +4,11 @@
  * Pattern: Behavior-driven testing with Result pattern validation
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import SQLite from 'better-sqlite3';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TaskId } from '../../../src/core/domain.js';
 import { Database } from '../../../src/implementations/database.js';
 import { SQLiteDependencyRepository } from '../../../src/implementations/dependency-repository.js';
-import { TaskId } from '../../../src/core/domain.js';
-import SQLite from 'better-sqlite3';
 
 describe('SQLiteDependencyRepository - Unit Tests', () => {
   let db: Database;

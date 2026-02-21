@@ -2,26 +2,26 @@
  * Test container helper for dependency injection in tests
  */
 
-import { Container } from '../../src/core/container';
-import { InMemoryEventBus } from '../../src/core/events/event-bus';
-import { TaskManagerService } from '../../src/services/task-manager';
-import { SQLiteTaskRepository } from '../../src/implementations/task-repository';
-import { EventDrivenWorkerPool } from '../../src/implementations/event-driven-worker-pool';
-import { ClaudeProcessSpawner } from '../../src/implementations/process-spawner';
-import { BufferedOutputCapture } from '../../src/implementations/output-capture';
-import { ResourceMonitor } from '../../src/implementations/resource-monitor';
-import { AutoscalingManager } from '../../src/services/autoscaling-manager';
-import { RecoveryManager } from '../../src/services/recovery-manager';
-import { ConsoleLogger } from '../../src/implementations/logger';
-import { Configuration } from '../../src/core/configuration';
-import { EventBus, Logger } from '../../src/core/interfaces';
-import { Result, ok } from '../../src/core/result';
-import { Database } from '../../src/implementations/database';
-import { PriorityTaskQueue } from '../../src/implementations/task-queue';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { Configuration } from '../../src/core/configuration';
+import { Container } from '../../src/core/container';
+import { InMemoryEventBus } from '../../src/core/events/event-bus';
+import { EventBus, Logger } from '../../src/core/interfaces';
+import { ok, Result } from '../../src/core/result';
+import { Database } from '../../src/implementations/database';
+import { EventDrivenWorkerPool } from '../../src/implementations/event-driven-worker-pool';
+import { ConsoleLogger } from '../../src/implementations/logger';
+import { BufferedOutputCapture } from '../../src/implementations/output-capture';
+import { ClaudeProcessSpawner } from '../../src/implementations/process-spawner';
+import { ResourceMonitor } from '../../src/implementations/resource-monitor';
+import { PriorityTaskQueue } from '../../src/implementations/task-queue';
+import { SQLiteTaskRepository } from '../../src/implementations/task-repository';
+import { AutoscalingManager } from '../../src/services/autoscaling-manager';
+import { RecoveryManager } from '../../src/services/recovery-manager';
+import { TaskManagerService } from '../../src/services/task-manager';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

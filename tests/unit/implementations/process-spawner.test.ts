@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { ClaudeProcessSpawner } from '../../../src/implementations/process-spawner';
-import { spawn } from 'child_process';
 import type { ChildProcess } from 'child_process';
+import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
-import { createMockChildProcess } from '../../fixtures/test-helpers';
-import { TIMEOUTS, TEST_COUNTS } from '../../constants';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ClaudeProcessSpawner } from '../../../src/implementations/process-spawner';
+import { TEST_COUNTS, TIMEOUTS } from '../../constants';
 import { createTestConfiguration } from '../../fixtures/factories';
+import { createMockChildProcess } from '../../fixtures/test-helpers';
 
 // Mock child_process module
 let mockSpawnImpl: any = () => null;

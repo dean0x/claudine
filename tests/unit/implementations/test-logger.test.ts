@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { TestLogger } from '../../../src/implementations/logger';
 
 describe('TestLogger - Test Capture Behavior', () => {

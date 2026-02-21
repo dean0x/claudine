@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { DependencyGraph } from '../../../src/core/dependency-graph.js';
 import { TaskId } from '../../../src/core/domain.js';
 import { TaskDependency } from '../../../src/core/interfaces.js';

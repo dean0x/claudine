@@ -6,21 +6,21 @@
  * code but with controllable behavior for testing. Use these instead of mocks.
  */
 
+import type { ChildProcess } from 'child_process';
+import type { SystemResources, Task, TaskId, TaskOutput, Worker, WorkerId } from '../../src/core/domain';
+import { taskNotFound } from '../../src/core/errors';
 import type {
   EventBus,
   Logger,
-  TaskRepository,
+  OutputCapture,
   ProcessSpawner,
   ResourceMonitor,
-  OutputCapture,
   TaskQueue,
+  TaskRepository,
   WorkerPool,
 } from '../../src/core/interfaces';
-import type { Task, TaskId, Worker, WorkerId, SystemResources, TaskOutput } from '../../src/core/domain';
 import type { Result } from '../../src/core/result';
-import { ok, err } from '../../src/core/result';
-import { taskNotFound } from '../../src/core/errors';
-import type { ChildProcess } from 'child_process';
+import { err, ok } from '../../src/core/result';
 
 /**
  * TestEventBus - EventBus with event tracking capabilities

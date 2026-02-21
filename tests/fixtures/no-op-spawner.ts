@@ -3,10 +3,10 @@
  * Provides a ProcessSpawner that immediately completes without spawning real processes
  */
 
-import { ProcessSpawner } from '../../src/core/interfaces.js';
-import { Result, ok } from '../../src/core/result.js';
 import { ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
+import { ProcessSpawner } from '../../src/core/interfaces.js';
+import { ok, Result } from '../../src/core/result.js';
 
 /**
  * MockChildProcess - A fake ChildProcess that simulates immediate completion

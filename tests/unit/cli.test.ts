@@ -8,21 +8,21 @@
  * Quality: 3-5 assertions per test, AAA pattern, behavioral testing
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { TaskFactory } from '../fixtures/factories';
-import type { TaskManager, ScheduleService } from '../../src/core/interfaces';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Container } from '../../src/core/container';
-import { ok, err } from '../../src/core/result';
-import { ClaudineError, ErrorCode, taskNotFound } from '../../src/core/errors';
+import type { ResumeTaskRequest, Schedule, ScheduleExecution } from '../../src/core/domain';
 import {
-  ScheduleType,
-  ScheduleStatus,
+  createSchedule,
   MissedRunPolicy,
   ScheduleId,
+  ScheduleStatus,
+  ScheduleType,
   TaskId,
-  createSchedule,
 } from '../../src/core/domain';
-import type { Schedule, ScheduleExecution, ResumeTaskRequest } from '../../src/core/domain';
+import { ClaudineError, ErrorCode, taskNotFound } from '../../src/core/errors';
+import type { ScheduleService, TaskManager } from '../../src/core/interfaces';
+import { err, ok } from '../../src/core/result';
+import { TaskFactory } from '../fixtures/factories';
 
 // Test constants
 const VALID_PROMPT = 'analyze the codebase';

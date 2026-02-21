@@ -1,17 +1,17 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { QueryHandler } from '../../../../src/services/handlers/query-handler';
-import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
-import { SQLiteTaskRepository } from '../../../../src/implementations/task-repository';
-import { Database } from '../../../../src/implementations/database';
-import { TestLogger } from '../../../fixtures/test-doubles';
-import { BufferedOutputCapture } from '../../../../src/implementations/output-capture';
-import { createTask, type Task } from '../../../../src/core/domain';
-import { ok, err } from '../../../../src/core/result';
-import { taskNotFound } from '../../../../src/core/errors';
 import { mkdtemp, rm } from 'fs/promises';
-import { join } from 'path';
 import { tmpdir } from 'os';
+import { join } from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createTask, type Task } from '../../../../src/core/domain';
+import { taskNotFound } from '../../../../src/core/errors';
+import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
+import { err, ok } from '../../../../src/core/result';
+import { Database } from '../../../../src/implementations/database';
+import { BufferedOutputCapture } from '../../../../src/implementations/output-capture';
+import { SQLiteTaskRepository } from '../../../../src/implementations/task-repository';
+import { QueryHandler } from '../../../../src/services/handlers/query-handler';
 import { createTestConfiguration } from '../../../fixtures/factories';
+import { TestLogger } from '../../../fixtures/test-doubles';
 
 describe('QueryHandler - Behavioral Tests', () => {
   let handler: QueryHandler;

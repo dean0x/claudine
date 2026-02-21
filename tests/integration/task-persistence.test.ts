@@ -3,19 +3,19 @@
  * Tests database operations, queue persistence, and recovery flows
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { SQLiteTaskRepository } from '../../src/implementations/task-repository.js';
-import { Database } from '../../src/implementations/database.js';
-import { PriorityTaskQueue } from '../../src/implementations/task-queue.js';
-import { RecoveryManager } from '../../src/services/recovery-manager.js';
-import { InMemoryEventBus } from '../../src/core/events/event-bus.js';
-import { TestLogger } from '../fixtures/test-doubles.js';
-import { createTestTask as createTask } from '../fixtures/test-data.js';
-import { createTestConfiguration } from '../fixtures/factories.js';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Task } from '../../src/core/domain.js';
+import { InMemoryEventBus } from '../../src/core/events/event-bus.js';
+import { Database } from '../../src/implementations/database.js';
+import { PriorityTaskQueue } from '../../src/implementations/task-queue.js';
+import { SQLiteTaskRepository } from '../../src/implementations/task-repository.js';
+import { RecoveryManager } from '../../src/services/recovery-manager.js';
+import { createTestConfiguration } from '../fixtures/factories.js';
+import { createTestTask as createTask } from '../fixtures/test-data.js';
+import { TestLogger } from '../fixtures/test-doubles.js';
 
 describe('Integration: Task persistence', () => {
   it('should persist tasks across restarts', async () => {

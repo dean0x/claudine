@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { BufferedOutputCapture } from '../../../src/implementations/output-capture';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EventBus } from '../../../src/core/interfaces';
-import { TestEventBus } from '../../fixtures/test-doubles';
+import { BufferedOutputCapture } from '../../../src/implementations/output-capture';
 import { BUFFER_SIZES, TEST_COUNTS, TIMEOUTS } from '../../constants';
+import { TestEventBus } from '../../fixtures/test-doubles';
 
 describe('BufferedOutputCapture - REAL Buffer Management', () => {
   let capture: BufferedOutputCapture;

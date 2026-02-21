@@ -4,13 +4,13 @@
  * Pattern: Behavior-driven testing with Result pattern validation
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { TestEventBus, TestLogger } from '../../fixtures/test-doubles';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { ScheduleCreateRequest } from '../../../src/core/domain';
+import { createSchedule, MissedRunPolicy, ScheduleId, ScheduleStatus, ScheduleType } from '../../../src/core/domain';
 import { Database } from '../../../src/implementations/database';
 import { SQLiteScheduleRepository } from '../../../src/implementations/schedule-repository';
 import { ScheduleManagerService, toMissedRunPolicy } from '../../../src/services/schedule-manager';
-import { ScheduleType, ScheduleStatus, MissedRunPolicy, ScheduleId, createSchedule } from '../../../src/core/domain';
-import type { ScheduleCreateRequest } from '../../../src/core/domain';
+import { TestEventBus, TestLogger } from '../../fixtures/test-doubles';
 
 describe('ScheduleManagerService - Unit Tests', () => {
   let db: Database;

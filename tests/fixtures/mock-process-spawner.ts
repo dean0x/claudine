@@ -1,8 +1,8 @@
-import { ProcessSpawner } from '../../src/core/interfaces';
-import { Result, ok, err } from '../../src/core/result';
-import { ClaudineError } from '../../src/core/errors';
 import { ChildProcess, spawn } from 'child_process';
 import { EventEmitter } from 'events';
+import { ClaudineError } from '../../src/core/errors';
+import { ProcessSpawner } from '../../src/core/interfaces';
+import { err, ok, Result } from '../../src/core/result';
 
 /**
  * Mock process spawner for testing

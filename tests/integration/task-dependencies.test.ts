@@ -1,16 +1,16 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { bootstrap } from '../../src/bootstrap.js';
-import { Container } from '../../src/core/container.js';
-import { TaskManager, DependencyRepository } from '../../src/core/interfaces.js';
-import { Task, TaskId, Priority } from '../../src/core/domain.js';
-import { EventBus, TaskDependencyFailedEvent } from '../../src/core/events/events.js';
-import { Database } from '../../src/implementations/database.js';
-import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
-import { TestResourceMonitor } from '../../src/implementations/resource-monitor.js';
-import { flushEventLoop } from '../utils/event-helpers.js';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { bootstrap } from '../../src/bootstrap.js';
+import { Container } from '../../src/core/container.js';
+import { Priority, Task, TaskId } from '../../src/core/domain.js';
+import { EventBus, TaskDependencyFailedEvent } from '../../src/core/events/events.js';
+import { DependencyRepository, TaskManager } from '../../src/core/interfaces.js';
+import { Database } from '../../src/implementations/database.js';
+import { TestResourceMonitor } from '../../src/implementations/resource-monitor.js';
+import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
+import { flushEventLoop } from '../utils/event-helpers.js';
 
 describe('Integration: Task Dependencies - End-to-End Flow', () => {
   let container: Container;

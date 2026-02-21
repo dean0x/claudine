@@ -5,16 +5,15 @@
  * ARCHITECTURE: These tests validate proper error handling for all database failure modes
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { SQLiteTaskRepository } from '../../../src/implementations/task-repository';
-import { Database } from '../../../src/implementations/database';
-import { TaskFactory } from '../../fixtures/factories';
-import { TEST_COUNTS } from '../../constants';
-import { TIMEOUTS, DB_CONFIG, ERROR_MESSAGES } from '../../constants';
-import { mkdtemp, rm, chmod } from 'fs/promises';
-import { join } from 'path';
+import { chmod, mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
+import { join } from 'path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Task } from '../../../src/core/domain';
+import { Database } from '../../../src/implementations/database';
+import { SQLiteTaskRepository } from '../../../src/implementations/task-repository';
+import { DB_CONFIG, ERROR_MESSAGES, TEST_COUNTS, TIMEOUTS } from '../../constants';
+import { TaskFactory } from '../../fixtures/factories';
 
 describe('Database Failure Scenarios', () => {
   let repository: SQLiteTaskRepository;

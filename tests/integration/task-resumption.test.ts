@@ -11,21 +11,21 @@
  * For testing failure paths, we emit TaskFailed events manually.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { bootstrap } from '../../src/bootstrap.js';
-import { Container } from '../../src/core/container.js';
-import { TaskManager, CheckpointRepository, TaskRepository } from '../../src/core/interfaces.js';
-import { TaskId, TaskStatus, Priority } from '../../src/core/domain.js';
-import type { Task, TaskCheckpoint } from '../../src/core/domain.js';
-import type { CheckpointCreatedEvent } from '../../src/core/events/events.js';
-import { EventBus } from '../../src/core/events/event-bus.js';
-import { Database } from '../../src/implementations/database.js';
-import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
-import { TestResourceMonitor } from '../../src/implementations/resource-monitor.js';
-import { flushEventLoop, waitForEvent } from '../utils/event-helpers.js';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { bootstrap } from '../../src/bootstrap.js';
+import { Container } from '../../src/core/container.js';
+import type { Task, TaskCheckpoint } from '../../src/core/domain.js';
+import { Priority, TaskId, TaskStatus } from '../../src/core/domain.js';
+import { EventBus } from '../../src/core/events/event-bus.js';
+import type { CheckpointCreatedEvent } from '../../src/core/events/events.js';
+import { CheckpointRepository, TaskManager, TaskRepository } from '../../src/core/interfaces.js';
+import { Database } from '../../src/implementations/database.js';
+import { TestResourceMonitor } from '../../src/implementations/resource-monitor.js';
+import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
+import { flushEventLoop, waitForEvent } from '../utils/event-helpers.js';
 
 describe('Integration: Task Resumption - End-to-End Flow', () => {
   let container: Container;

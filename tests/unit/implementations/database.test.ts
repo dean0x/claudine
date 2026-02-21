@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { Database } from '../../../src/implementations/database';
-import { TaskFactory } from '../../fixtures/factories';
-import { TEST_COUNTS } from '../../constants';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TaskId } from '../../../src/core/domain';
+import { Database } from '../../../src/implementations/database';
+import { TEST_COUNTS } from '../../constants';
+import { TaskFactory } from '../../fixtures/factories';
 
 describe('Database - REAL Database Operations (In-Memory)', () => {
   let db: Database;

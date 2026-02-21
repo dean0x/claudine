@@ -6,8 +6,8 @@
  * to avoid unsafe type assertions while maintaining test flexibility
  */
 
-import { EventEmitter } from 'events';
 import type { ChildProcess } from 'child_process';
+import { EventEmitter } from 'events';
 import type { Readable, Writable } from 'stream';
 
 /**

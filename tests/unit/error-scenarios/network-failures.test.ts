@@ -5,11 +5,11 @@
  * ARCHITECTURE: These tests validate proper handling of network-related failures
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { TaskFactory, WorkerFactory } from '../../fixtures/factories';
-import { TestProcessSpawner, TestEventBus } from '../../fixtures/test-doubles';
-import { TIMEOUTS, ERROR_MESSAGES, WAIT_FOR, BUFFER_SIZES } from '../../constants';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Task, Worker } from '../../../src/core/domain';
+import { BUFFER_SIZES, ERROR_MESSAGES, TIMEOUTS, WAIT_FOR } from '../../constants';
+import { TaskFactory, WorkerFactory } from '../../fixtures/factories';
+import { TestEventBus, TestProcessSpawner } from '../../fixtures/test-doubles';
 
 describe('Network Failure Scenarios', () => {
   let taskFactory: TaskFactory;

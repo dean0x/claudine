@@ -8,7 +8,7 @@
  * - Output flooding (buffer overflow attacks)
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ConfigurationSchema } from '../../src/core/configuration';
 
 describe('Security: Configuration Schema Attack Prevention', () => {

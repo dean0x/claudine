@@ -1,16 +1,16 @@
-import { vi } from 'vitest';
 import type { EventEmitter } from 'events';
+import { vi } from 'vitest';
+import type { Task, Worker, WorkerOptions } from '../../src/core/domain';
 import type {
-  Logger,
   EventBus,
-  TaskRepository,
-  ProcessSpawner,
+  Logger,
   OutputCapture,
+  ProcessSpawner,
   ResourceMonitor,
   TaskQueue,
+  TaskRepository,
 } from '../../src/core/interfaces';
 import type { Result } from '../../src/core/result';
-import type { Task, Worker, WorkerOptions } from '../../src/core/domain';
 import { createMockTask, createMockWorker } from './index.js';
 
 export const createMockLogger = (): Logger => ({

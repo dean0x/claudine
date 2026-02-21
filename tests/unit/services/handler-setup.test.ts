@@ -3,27 +3,27 @@
  * Tests dependency extraction and handler setup functionality
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import {
-  extractHandlerDependencies,
-  setupEventHandlers,
-  HandlerDependencies,
-} from '../../../src/services/handler-setup';
+import { mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Container } from '../../../src/core/container';
 import { InMemoryEventBus } from '../../../src/core/events/event-bus';
 import { Database } from '../../../src/implementations/database';
-import { SQLiteTaskRepository } from '../../../src/implementations/task-repository';
 import { SQLiteDependencyRepository } from '../../../src/implementations/dependency-repository';
-import { PriorityTaskQueue } from '../../../src/implementations/task-queue';
+import { EventDrivenWorkerPool } from '../../../src/implementations/event-driven-worker-pool';
 import { BufferedOutputCapture } from '../../../src/implementations/output-capture';
 import { SystemResourceMonitor } from '../../../src/implementations/resource-monitor';
-import { EventDrivenWorkerPool } from '../../../src/implementations/event-driven-worker-pool';
+import { PriorityTaskQueue } from '../../../src/implementations/task-queue';
+import { SQLiteTaskRepository } from '../../../src/implementations/task-repository';
+import {
+  extractHandlerDependencies,
+  HandlerDependencies,
+  setupEventHandlers,
+} from '../../../src/services/handler-setup';
 import { GitWorktreeManager } from '../../../src/services/worktree-manager';
-import { TestLogger, TestProcessSpawner } from '../../fixtures/test-doubles';
 import { createTestConfiguration } from '../../fixtures/factories';
-import { mkdtemp, rm } from 'fs/promises';
-import { join } from 'path';
-import { tmpdir } from 'os';
+import { TestLogger, TestProcessSpawner } from '../../fixtures/test-doubles';
 
 describe('handler-setup', () => {
   let container: Container;

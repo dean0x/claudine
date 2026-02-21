@@ -8,14 +8,14 @@
  * Quality: 3-5 assertions per test, AAA pattern, behavioral testing
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { WorkerHandler } from '../../../../src/services/handlers/worker-handler';
-import { TestEventBus, TestLogger } from '../../../fixtures/test-doubles';
-import { TaskFactory, WorkerFactory } from '../../../fixtures/factories';
-import type { WorkerPool, ResourceMonitor } from '../../../../src/core/interfaces';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Configuration } from '../../../../src/core/configuration';
-import { ok, err } from '../../../../src/core/result';
 import { ClaudineError, ErrorCode, taskNotFound } from '../../../../src/core/errors';
+import type { ResourceMonitor, WorkerPool } from '../../../../src/core/interfaces';
+import { err, ok } from '../../../../src/core/result';
+import { WorkerHandler } from '../../../../src/services/handlers/worker-handler';
+import { TaskFactory, WorkerFactory } from '../../../fixtures/factories';
+import { TestEventBus, TestLogger } from '../../../fixtures/test-doubles';
 
 /**
  * Mock WorkerPool for testing

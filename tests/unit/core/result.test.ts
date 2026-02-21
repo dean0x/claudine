@@ -1,18 +1,18 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
-  ok,
+  combine,
   err,
-  isOk,
+  flatMap,
   isErr,
-  unwrap,
-  unwrapOr,
+  isOk,
   map,
   mapError,
-  flatMap,
+  ok,
+  Result,
   tryCatch,
   tryCatchAsync,
-  combine,
-  Result,
+  unwrap,
+  unwrapOr,
 } from '../../../src/core/result';
 
 describe('Result Type - REAL Behavior Tests', () => {

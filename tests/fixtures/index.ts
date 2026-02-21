@@ -1,4 +1,4 @@
-import type { Task, Worker, WorkerOptions, TaskSpecification } from '../../src/core/domain';
+import type { Task, TaskSpecification, Worker, WorkerOptions } from '../../src/core/domain';
 
 // Re-export test fixtures
 export { NoOpProcessSpawner } from './no-op-spawner.js';

@@ -1,5 +1,5 @@
-import type { Task, TaskSpecification } from '../../src/types/index';
 import { randomUUID } from 'crypto';
+import type { Task, TaskSpecification } from '../../src/types/index';
 
 export const createTestTask = (overrides?: Partial<Task>): Task => ({
   id: overrides?.id || `test-task-${randomUUID()}`,

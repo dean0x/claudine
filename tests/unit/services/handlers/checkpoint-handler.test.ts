@@ -4,18 +4,18 @@
  * Pattern: Behavior-driven testing with real event bus and in-memory database
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ok, err } from '../../../../src/core/result';
-import { CheckpointHandler } from '../../../../src/services/handlers/checkpoint-handler';
-import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
-import { Database } from '../../../../src/implementations/database';
-import { SQLiteCheckpointRepository } from '../../../../src/implementations/checkpoint-repository';
-import { SQLiteTaskRepository } from '../../../../src/implementations/task-repository';
-import { TestLogger, TestOutputCapture } from '../../../fixtures/test-doubles';
-import { createTestConfiguration } from '../../../fixtures/factories';
-import { createTask, TaskId } from '../../../../src/core/domain';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Task } from '../../../../src/core/domain';
+import { createTask, TaskId } from '../../../../src/core/domain';
 import { ClaudineError, ErrorCode } from '../../../../src/core/errors';
+import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
+import { err, ok } from '../../../../src/core/result';
+import { SQLiteCheckpointRepository } from '../../../../src/implementations/checkpoint-repository';
+import { Database } from '../../../../src/implementations/database';
+import { SQLiteTaskRepository } from '../../../../src/implementations/task-repository';
+import { CheckpointHandler } from '../../../../src/services/handlers/checkpoint-handler';
+import { createTestConfiguration } from '../../../fixtures/factories';
+import { TestLogger, TestOutputCapture } from '../../../fixtures/test-doubles';
 import { flushEventLoop } from '../../../utils/event-helpers';
 
 // Mock captureGitState to avoid real git commands
@@ -30,6 +30,7 @@ vi.mock('../../../../src/utils/git-state', () => ({
 }));
 
 import { captureGitState } from '../../../../src/utils/git-state';
+
 const mockCaptureGitState = vi.mocked(captureGitState);
 
 /**

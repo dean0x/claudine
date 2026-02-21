@@ -1,5 +1,5 @@
 import { ResourceMonitor, SystemResources } from '../../src/core/interfaces.js';
-import { Result, ok } from '../../src/core/result.js';
+import { ok, Result } from '../../src/core/result.js';
 
 /**
  * Mock resource monitor for integration testing

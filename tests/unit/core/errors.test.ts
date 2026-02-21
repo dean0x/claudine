@@ -1,19 +1,19 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   ClaudineError,
   ErrorCode,
-  taskNotFound,
-  taskAlreadyRunning,
-  taskTimeout,
   insufficientResources,
-  processSpawnFailed,
-  invalidInput,
   invalidDirectory,
-  systemError,
+  invalidInput,
   isClaudineError,
+  processSpawnFailed,
+  systemError,
+  taskAlreadyRunning,
+  taskNotFound,
+  taskTimeout,
   toClaudineError,
 } from '../../../src/core/errors';
-import { TIMEOUTS, TEST_COUNTS } from '../../constants';
+import { TEST_COUNTS, TIMEOUTS } from '../../constants';
 
 describe('ClaudineError - REAL Error Behavior', () => {
   describe('Error creation and properties', () => {

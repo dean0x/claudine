@@ -8,22 +8,22 @@
  * Pattern: Matches task-dependencies.test.ts integration test conventions
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { bootstrap } from '../../src/bootstrap.js';
-import { Container } from '../../src/core/container.js';
-import { ScheduleService, ScheduleRepository } from '../../src/core/interfaces.js';
-import { ScheduleType, ScheduleStatus, ScheduleId, MissedRunPolicy, Priority } from '../../src/core/domain.js';
-import type { Schedule, TaskId } from '../../src/core/domain.js';
-import type { TaskDelegatedEvent, ScheduleExecutedEvent } from '../../src/core/events/events.js';
-import { EventBus } from '../../src/core/events/event-bus.js';
-import { Database } from '../../src/implementations/database.js';
-import { ScheduleExecutor } from '../../src/services/schedule-executor.js';
-import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
-import { TestResourceMonitor } from '../../src/implementations/resource-monitor.js';
-import { flushEventLoop, waitForEvent } from '../utils/event-helpers.js';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { bootstrap } from '../../src/bootstrap.js';
+import { Container } from '../../src/core/container.js';
+import type { Schedule, TaskId } from '../../src/core/domain.js';
+import { MissedRunPolicy, Priority, ScheduleId, ScheduleStatus, ScheduleType } from '../../src/core/domain.js';
+import { EventBus } from '../../src/core/events/event-bus.js';
+import type { ScheduleExecutedEvent, TaskDelegatedEvent } from '../../src/core/events/events.js';
+import { ScheduleRepository, ScheduleService } from '../../src/core/interfaces.js';
+import { Database } from '../../src/implementations/database.js';
+import { TestResourceMonitor } from '../../src/implementations/resource-monitor.js';
+import { ScheduleExecutor } from '../../src/services/schedule-executor.js';
+import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
+import { flushEventLoop, waitForEvent } from '../utils/event-helpers.js';
 
 describe('Integration: Task Scheduling - End-to-End Flow', () => {
   let container: Container;

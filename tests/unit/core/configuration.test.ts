@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  type Configuration,
   ConfigurationSchema,
   loadConfiguration,
-  type Configuration,
   type TaskConfiguration,
 } from '../../../src/core/configuration';
-import { BUFFER_SIZES, TIMEOUTS, TEST_COUNTS } from '../../constants';
+import { BUFFER_SIZES, TEST_COUNTS, TIMEOUTS } from '../../constants';
 
 describe('ConfigurationSchema - REAL Validation Behavior', () => {
   describe('Valid configurations', () => {

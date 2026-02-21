@@ -5,11 +5,11 @@
  * Pattern: Mirrors dependency-repository.test.ts for consistency
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { SQLiteTaskRepository } from '../../../src/implementations/task-repository.js';
-import { Database } from '../../../src/implementations/database.js';
-import { createTestTask } from '../../fixtures/test-data.js';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Task } from '../../../src/core/domain.js';
+import { Database } from '../../../src/implementations/database.js';
+import { SQLiteTaskRepository } from '../../../src/implementations/task-repository.js';
+import { createTestTask } from '../../fixtures/test-data.js';
 
 describe('SQLiteTaskRepository', () => {
   let database: Database;

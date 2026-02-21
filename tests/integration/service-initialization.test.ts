@@ -3,20 +3,20 @@
  * Tests dependency injection, service bootstrap, and configuration validation
  */
 
-import { describe, it, expect } from 'vitest';
-import { bootstrap } from '../../src/bootstrap.js';
-import { InMemoryEventBus } from '../../src/core/events/event-bus.js';
-import { Container } from '../../src/core/container.js';
-import { Configuration, loadConfiguration } from '../../src/core/configuration.js';
 import { mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { describe, expect, it } from 'vitest';
+import { bootstrap } from '../../src/bootstrap.js';
+import { Configuration, loadConfiguration } from '../../src/core/configuration.js';
+import { Container } from '../../src/core/container.js';
+import { InMemoryEventBus } from '../../src/core/events/event-bus.js';
 import { Database } from '../../src/implementations/database.js';
-import { SQLiteTaskRepository } from '../../src/implementations/task-repository.js';
 import { EventDrivenWorkerPool } from '../../src/implementations/event-driven-worker-pool.js';
-import { TaskManagerService } from '../../src/services/task-manager.js';
 import { SystemResourceMonitor } from '../../src/implementations/resource-monitor.js';
 import { PriorityTaskQueue } from '../../src/implementations/task-queue.js';
+import { SQLiteTaskRepository } from '../../src/implementations/task-repository.js';
+import { TaskManagerService } from '../../src/services/task-manager.js';
 import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
 import { flushEventLoop } from '../utils/event-helpers.js';
 

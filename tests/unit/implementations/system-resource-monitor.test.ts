@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { SystemResourceMonitor } from '../../../src/implementations/resource-monitor';
+import * as os from 'os';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryEventBus } from '../../../src/core/events/event-bus';
 import { TestLogger } from '../../../src/implementations/logger';
+import { SystemResourceMonitor } from '../../../src/implementations/resource-monitor';
 import { createTestConfiguration } from '../../fixtures/factories';
-import * as os from 'os';
 
 // Mock os module
 let mockTotalmem = () => 16_000_000_000;

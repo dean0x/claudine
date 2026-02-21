@@ -4,12 +4,12 @@
  * Pattern: Behavior-driven testing with Result pattern validation
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { Database } from '../../../src/implementations/database';
-import { SQLiteCheckpointRepository } from '../../../src/implementations/checkpoint-repository';
-import { TaskId } from '../../../src/core/domain';
-import type { TaskCheckpoint } from '../../../src/core/domain';
 import type SQLite from 'better-sqlite3';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { TaskCheckpoint } from '../../../src/core/domain';
+import { TaskId } from '../../../src/core/domain';
+import { SQLiteCheckpointRepository } from '../../../src/implementations/checkpoint-repository';
+import { Database } from '../../../src/implementations/database';
 
 describe('SQLiteCheckpointRepository - Unit Tests', () => {
   let db: Database;

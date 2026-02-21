@@ -3,20 +3,19 @@
  * Tests worker lifecycle, resource monitoring, and autoscaling decisions
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { EventDrivenWorkerPool } from '../../src/implementations/event-driven-worker-pool.js';
-import { AutoscalingManager } from '../../src/services/autoscaling-manager.js';
-import { MockResourceMonitor } from '../fixtures/mock-resource-monitor.js';
-import { PriorityTaskQueue } from '../../src/implementations/task-queue.js';
-import { InMemoryEventBus } from '../../src/core/events/event-bus.js';
-import { TestLogger } from '../fixtures/test-doubles.js';
-import { MockProcessSpawner } from '../fixtures/mock-process-spawner.js';
-import { BufferedOutputCapture } from '../../src/implementations/output-capture.js';
-import { createTestTask as createTask } from '../fixtures/test-data.js';
-import { createTestConfiguration } from '../fixtures/factories.js';
-import { TestWorktreeManager } from '../fixtures/test-doubles.js';
 import { randomUUID } from 'crypto';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Task } from '../../src/core/domain.js';
+import { InMemoryEventBus } from '../../src/core/events/event-bus.js';
+import { EventDrivenWorkerPool } from '../../src/implementations/event-driven-worker-pool.js';
+import { BufferedOutputCapture } from '../../src/implementations/output-capture.js';
+import { PriorityTaskQueue } from '../../src/implementations/task-queue.js';
+import { AutoscalingManager } from '../../src/services/autoscaling-manager.js';
+import { createTestConfiguration } from '../fixtures/factories.js';
+import { MockProcessSpawner } from '../fixtures/mock-process-spawner.js';
+import { MockResourceMonitor } from '../fixtures/mock-resource-monitor.js';
+import { createTestTask as createTask } from '../fixtures/test-data.js';
+import { TestLogger, TestWorktreeManager } from '../fixtures/test-doubles.js';
 import { flushEventLoop } from '../utils/event-helpers.js';
 
 describe('Integration: Worker pool management', () => {

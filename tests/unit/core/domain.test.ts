@@ -1,20 +1,20 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
-  TaskId,
-  WorkerId,
-  TaskStatus,
-  Priority,
-  createTask,
-  updateTask,
-  isTerminalState,
   canCancel,
   comparePriority,
-  type Task,
-  type Worker,
+  createTask,
   type DelegateRequest,
-  type TaskUpdate,
+  isTerminalState,
+  Priority,
   type SystemResources,
+  type Task,
+  TaskId,
   type TaskOutput,
+  TaskStatus,
+  type TaskUpdate,
+  updateTask,
+  type Worker,
+  WorkerId,
 } from '../../../src/core/domain';
 import { BUFFER_SIZES, TIMEOUTS } from '../../constants';
 import { TaskFactory } from '../../fixtures/factories';

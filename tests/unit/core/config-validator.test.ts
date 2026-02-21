@@ -8,12 +8,12 @@
  * - Test recommendations are helpful
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import os from 'os';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  validateConfiguration,
   ConfigValidationWarning,
   formatValidationWarnings,
+  validateConfiguration,
 } from '../../../src/core/config-validator.js';
 import { Configuration } from '../../../src/core/configuration.js';
 import { createTestConfiguration } from '../../fixtures/factories.js';

@@ -1,16 +1,16 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { DependencyHandler } from '../../../../src/services/handlers/dependency-handler';
+import { mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createTask, type Task, type TaskCheckpoint, TaskId } from '../../../../src/core/domain';
 import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
-import { SQLiteTaskRepository } from '../../../../src/implementations/task-repository';
-import { SQLiteDependencyRepository } from '../../../../src/implementations/dependency-repository';
 import { SQLiteCheckpointRepository } from '../../../../src/implementations/checkpoint-repository';
 import { Database } from '../../../../src/implementations/database';
-import { TestLogger } from '../../../fixtures/test-doubles';
-import { createTask, TaskId, type Task, type TaskCheckpoint } from '../../../../src/core/domain';
-import { mkdtemp, rm } from 'fs/promises';
-import { join } from 'path';
-import { tmpdir } from 'os';
+import { SQLiteDependencyRepository } from '../../../../src/implementations/dependency-repository';
+import { SQLiteTaskRepository } from '../../../../src/implementations/task-repository';
+import { DependencyHandler } from '../../../../src/services/handlers/dependency-handler';
 import { createTestConfiguration } from '../../../fixtures/factories';
+import { TestLogger } from '../../../fixtures/test-doubles';
 import { flushEventLoop } from '../../../utils/event-helpers.js';
 
 describe('DependencyHandler - Behavioral Tests', () => {

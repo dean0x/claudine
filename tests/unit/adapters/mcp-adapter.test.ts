@@ -11,13 +11,13 @@
  * Quality: 3-5 assertions per test, AAA pattern, behavioral testing
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MCPAdapter } from '../../../src/adapters/mcp-adapter';
-import { TaskFactory } from '../../fixtures/factories';
-import type { TaskManager, Logger, ScheduleRepository } from '../../../src/core/interfaces';
-import type { EventBus } from '../../../src/core/events/event-bus';
-import { ok, err } from '../../../src/core/result';
 import { ClaudineError, ErrorCode, taskNotFound } from '../../../src/core/errors';
+import type { EventBus } from '../../../src/core/events/event-bus';
+import type { Logger, ScheduleRepository, TaskManager } from '../../../src/core/interfaces';
+import { err, ok } from '../../../src/core/result';
+import { TaskFactory } from '../../fixtures/factories';
 
 // Test constants
 const VALID_PROMPT = 'analyze the codebase';

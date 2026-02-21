@@ -2,19 +2,19 @@
  * Test data factories for consistent, maintainable test data generation
  */
 
-import { vi, expect } from 'vitest';
-import { createTask, Priority, TaskStatus, TaskId } from '../../src/core/domain';
+import { expect, vi } from 'vitest';
 import type { DelegateRequest, Task } from '../../src/core/domain';
+import { createTask, Priority, TaskId, TaskStatus } from '../../src/core/domain';
+import type { EventBus } from '../../src/core/events/event-bus';
 import type {
-  ProcessSpawner,
-  ResourceMonitor,
   Logger,
   OutputCapture,
+  ProcessSpawner,
+  ResourceMonitor,
   TaskQueue,
-  WorkerPool,
   TaskRepository,
+  WorkerPool,
 } from '../../src/core/interfaces';
-import type { EventBus } from '../../src/core/events/event-bus';
 import { ok } from '../../src/core/result';
 
 // Test Constants

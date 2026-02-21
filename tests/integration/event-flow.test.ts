@@ -3,24 +3,24 @@
  * Tests the coordination between EventBus, handlers, and services
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { InMemoryEventBus } from '../../src/core/events/event-bus.js';
-import { TaskManagerService } from '../../src/services/task-manager.js';
-import { EventDrivenWorkerPool } from '../../src/implementations/event-driven-worker-pool.js';
-import { PriorityTaskQueue } from '../../src/implementations/task-queue.js';
-import { loadConfiguration } from '../../src/core/configuration.js';
-import { SQLiteTaskRepository } from '../../src/implementations/task-repository.js';
-import { Database } from '../../src/implementations/database.js';
-import { TestLogger } from '../fixtures/test-doubles.js';
-import { MockProcessSpawner } from '../fixtures/mock-process-spawner.js';
-import { BufferedOutputCapture } from '../../src/implementations/output-capture.js';
-import { createTestTask as createTask } from '../fixtures/test-data.js';
-import { createTestConfiguration } from '../fixtures/factories.js';
 import { randomUUID } from 'crypto';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { loadConfiguration } from '../../src/core/configuration.js';
 import type { Task, WorkerId } from '../../src/core/domain.js';
+import { InMemoryEventBus } from '../../src/core/events/event-bus.js';
+import { Database } from '../../src/implementations/database.js';
+import { EventDrivenWorkerPool } from '../../src/implementations/event-driven-worker-pool.js';
+import { BufferedOutputCapture } from '../../src/implementations/output-capture.js';
+import { PriorityTaskQueue } from '../../src/implementations/task-queue.js';
+import { SQLiteTaskRepository } from '../../src/implementations/task-repository.js';
+import { TaskManagerService } from '../../src/services/task-manager.js';
+import { createTestConfiguration } from '../fixtures/factories.js';
+import { MockProcessSpawner } from '../fixtures/mock-process-spawner.js';
+import { createTestTask as createTask } from '../fixtures/test-data.js';
+import { TestLogger } from '../fixtures/test-doubles.js';
 import { flushEventLoop } from '../utils/event-helpers.js';
 
 describe('Integration: Event-driven task delegation flow', () => {

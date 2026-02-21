@@ -3,13 +3,13 @@
  * Validates correlation-based thread-safe implementation
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ClaudineError, ErrorCode } from '../../../../src/core/errors.js';
 import { InMemoryEventBus } from '../../../../src/core/events/event-bus.js';
 import { Logger } from '../../../../src/core/interfaces.js';
-import { ClaudineError, ErrorCode } from '../../../../src/core/errors.js';
-import { TestLogger } from '../../../fixtures/test-doubles.js';
-import { TIMEOUTS, TEST_COUNTS } from '../../../constants.js';
+import { TEST_COUNTS, TIMEOUTS } from '../../../constants.js';
 import { createTestConfiguration } from '../../../fixtures/factories.js';
+import { TestLogger } from '../../../fixtures/test-doubles.js';
 
 describe('EventBus Request-Response Pattern', () => {
   let eventBus: InMemoryEventBus;

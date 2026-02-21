@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { PriorityTaskQueue } from '../../../src/implementations/task-queue';
-import { Priority, TaskStatus, TaskId, createTask } from '../../../src/core/domain';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { Task } from '../../../src/core/domain';
+import { createTask, Priority, TaskId, TaskStatus } from '../../../src/core/domain';
+import { PriorityTaskQueue } from '../../../src/implementations/task-queue';
 import { TEST_COUNTS, TIMEOUTS } from '../../constants';
 import { TaskFactory } from '../../fixtures/factories';
 

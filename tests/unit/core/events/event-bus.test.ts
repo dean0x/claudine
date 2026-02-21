@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
 import type { ClaudineEvent } from '../../../../src/core/events/events';
 import type { Logger } from '../../../../src/core/interfaces';
-import { TestLogger } from '../../../fixtures/test-doubles';
 import { TEST_COUNTS, TIMEOUTS } from '../../../constants';
 import { createTestConfiguration } from '../../../fixtures/factories';
+import { TestLogger } from '../../../fixtures/test-doubles';
 
 describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
   let eventBus: InMemoryEventBus;
