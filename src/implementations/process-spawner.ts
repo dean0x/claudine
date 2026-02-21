@@ -15,10 +15,7 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
   private readonly killTimeouts = new Map<number, NodeJS.Timeout>();
   private readonly config: Configuration;
 
-  constructor(
-    config: Configuration,
-    claudeCommand = 'claude'
-  ) {
+  constructor(config: Configuration, claudeCommand = 'claude') {
     this.config = config;
     this.claudeCommand = claudeCommand;
     this.baseArgs = Object.freeze(['--print', '--dangerously-skip-permissions', '--output-format', 'json']);
@@ -31,12 +28,14 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
 
       // If the prompt looks like a simple command without explicit instructions,
       // wrap it to make Claude understand it should execute it
-      if (!prompt.toLowerCase().includes('run') &&
-          !prompt.toLowerCase().includes('execute') &&
-          !prompt.toLowerCase().includes('perform') &&
-          !prompt.toLowerCase().includes('bash') &&
-          !prompt.toLowerCase().includes('command') &&
-          prompt.split(' ').length <= 3) {
+      if (
+        !prompt.toLowerCase().includes('run') &&
+        !prompt.toLowerCase().includes('execute') &&
+        !prompt.toLowerCase().includes('perform') &&
+        !prompt.toLowerCase().includes('bash') &&
+        !prompt.toLowerCase().includes('command') &&
+        prompt.split(' ').length <= 3
+      ) {
         finalPrompt = `Execute the following bash command: ${prompt}`;
       }
 
@@ -52,7 +51,7 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
       const env = {
         ...process.env,
         CLAUDINE_WORKER: 'true',
-        ...(taskId && { CLAUDINE_TASK_ID: taskId })
+        ...(taskId && { CLAUDINE_TASK_ID: taskId }),
       };
 
       const child = spawn(this.claudeCommand, args, {
@@ -95,11 +94,8 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
         // Track timeout for cleanup
         this.killTimeouts.set(pid, timeoutId);
       },
-      (error) => new ClaudineError(
-        ErrorCode.PROCESS_KILL_FAILED,
-        `Failed to kill process ${pid}: ${error}`,
-        { pid, error }
-      )
+      (error) =>
+        new ClaudineError(ErrorCode.PROCESS_KILL_FAILED, `Failed to kill process ${pid}: ${error}`, { pid, error }),
     );
   }
 
@@ -138,4 +134,3 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
     this.killTimeouts.clear();
   }
 }
-

@@ -77,11 +77,13 @@ describe('BufferedOutputCapture - REAL Buffer Management', () => {
       expect(result.ok).toBe(true);
       // FIX: TestEventBus doesn't have spy, use hasEmitted() method
       const testEventBus = mockEventBus as any; // Cast to access TestEventBus methods
-      expect(testEventBus.hasEmitted('OutputCaptured', {
-        taskId: 'task-123',
-        outputType: 'stdout',
-        data: 'test data'
-      })).toBe(true);
+      expect(
+        testEventBus.hasEmitted('OutputCaptured', {
+          taskId: 'task-123',
+          outputType: 'stdout',
+          data: 'test data',
+        }),
+      ).toBe(true);
 
       const output = capture.getOutput('task-123');
       expect(output.ok).toBe(true);
@@ -93,7 +95,7 @@ describe('BufferedOutputCapture - REAL Buffer Management', () => {
 
   describe('Buffer size management', () => {
     it('should track total buffer size', () => {
-      const result1 = capture.capture('task-123', 'stdout', 'Hello');  // 5 bytes
+      const result1 = capture.capture('task-123', 'stdout', 'Hello'); // 5 bytes
       const result2 = capture.capture('task-123', 'stderr', 'World'); // 5 bytes
 
       expect(result1.ok).toBe(true);
@@ -226,13 +228,7 @@ describe('BufferedOutputCapture - REAL Buffer Management', () => {
 
       const output = capture.getOutput('task-tail', 5);
       if (output.ok) {
-        expect(output.value.stdout).toEqual([
-          'Line 6',
-          'Line 7',
-          'Line 8',
-          'Line 9',
-          'Line 10'
-        ]);
+        expect(output.value.stdout).toEqual(['Line 6', 'Line 7', 'Line 8', 'Line 9', 'Line 10']);
       }
     });
 
@@ -279,11 +275,11 @@ describe('BufferedOutputCapture - REAL Buffer Management', () => {
     it('should handle multiple concurrent tasks', () => {
       const taskIds = ['task-1', 'task-2', 'task-3'];
 
-      taskIds.forEach(id => {
+      taskIds.forEach((id) => {
         capture.capture(id, 'stdout', `Output for ${id}`);
       });
 
-      taskIds.forEach(id => {
+      taskIds.forEach((id) => {
         const output = capture.getOutput(id);
         if (output.ok) {
           expect(output.value.stdout).toEqual([`Output for ${id}`]);
@@ -448,12 +444,12 @@ describe('BufferedOutputCapture - REAL Buffer Management', () => {
 
     it('should track total size accurately', () => {
       const outputs = [
-        'Short',           // 5 bytes
-        'Medium line',     // 11 bytes
-        'A longer line',   // 13 bytes
+        'Short', // 5 bytes
+        'Medium line', // 11 bytes
+        'A longer line', // 13 bytes
       ];
 
-      outputs.forEach(out => {
+      outputs.forEach((out) => {
         capture.capture('task-size', 'stdout', out);
       });
 
@@ -510,7 +506,7 @@ describe('BufferedOutputCapture - REAL Buffer Management', () => {
 
     it('should handle binary-like output', () => {
       // Simulate binary data in output
-      const binaryLike = Buffer.from([0x00, 0x01, 0x02, 0xFF]).toString();
+      const binaryLike = Buffer.from([0x00, 0x01, 0x02, 0xff]).toString();
       capture.capture('task-binary', 'stdout', binaryLike);
 
       const output = capture.getOutput('task-binary');
@@ -520,14 +516,9 @@ describe('BufferedOutputCapture - REAL Buffer Management', () => {
 
     it('should handle streaming output pattern', () => {
       // Simulate streaming chunks
-      const chunks = [
-        'Starting',
-        ' processing',
-        '...',
-        'done!'
-      ];
+      const chunks = ['Starting', ' processing', '...', 'done!'];
 
-      chunks.forEach(chunk => {
+      chunks.forEach((chunk) => {
         capture.capture('task-stream', 'stdout', chunk);
       });
 

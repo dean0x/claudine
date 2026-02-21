@@ -28,14 +28,14 @@ export enum ErrorCode {
   SPAWN_FAILED = 'SPAWN_FAILED',
   INVALID_PROMPT = 'INVALID_PROMPT',
   TASK_TIMEOUT = 'TASK_TIMEOUT',
-  INTERNAL_ERROR = 'INTERNAL_ERROR'
+  INTERNAL_ERROR = 'INTERNAL_ERROR',
 }
 
 export class ClaudineError extends Error {
   constructor(
     public code: ErrorCode,
     message: string,
-    public taskId?: string
+    public taskId?: string,
   ) {
     super(message);
     this.name = 'ClaudineError';

@@ -14,7 +14,7 @@ import {
   TaskCancellationRequestedEvent,
   TaskQueuedEvent,
   NextTaskQueryEvent,
-  createEvent
+  createEvent,
 } from '../../core/events/events.js';
 import { Task, TaskId, TaskStatus, Worker } from '../../core/domain.js';
 import { ClaudineError, ErrorCode, taskNotFound } from '../../core/errors.js';
@@ -66,7 +66,7 @@ export class WorkerHandler extends BaseEventHandler {
     private readonly workerPool: WorkerPool,
     private readonly resourceMonitor: ResourceMonitor,
     private readonly eventBus: EventBus,
-    logger: Logger
+    logger: Logger,
   ) {
     super(logger, 'WorkerHandler');
     // Config schema guarantees minSpawnDelayMs has a value (default: 10s)
@@ -79,7 +79,7 @@ export class WorkerHandler extends BaseEventHandler {
   async setup(eventBus: EventBus): Promise<Result<void>> {
     const subscriptions = [
       eventBus.subscribe('TaskQueued', this.handleTaskQueued.bind(this)),
-      eventBus.subscribe('TaskCancellationRequested', this.handleTaskCancellation.bind(this))
+      eventBus.subscribe('TaskCancellationRequested', this.handleTaskCancellation.bind(this)),
     ];
 
     // Check if any subscription failed
@@ -99,7 +99,7 @@ export class WorkerHandler extends BaseEventHandler {
   async teardown(): Promise<void> {
     // Kill all workers
     await this.workerPool.killAll();
-    
+
     this.logger.info('WorkerHandler shutdown complete');
   }
 
@@ -108,11 +108,11 @@ export class WorkerHandler extends BaseEventHandler {
    */
   private async handleTaskQueued(event: TaskQueuedEvent): Promise<void> {
     this.logger.debug('Received TaskQueued event', {
-      taskId: event.taskId
+      taskId: event.taskId,
     });
     await this.handleEvent(event, async (event) => {
       this.logger.debug('Task queued, attempting to process', {
-        taskId: event.taskId
+        taskId: event.taskId,
       });
 
       this.logger.debug('About to call processNextTask()');
@@ -133,10 +133,7 @@ export class WorkerHandler extends BaseEventHandler {
       const { taskId, reason } = event;
 
       // First validate that task can be cancelled using event-driven query
-      const taskResult = await this.eventBus.request<TaskStatusQueryEvent, Task | null>(
-        'TaskStatusQuery',
-        { taskId }
-      );
+      const taskResult = await this.eventBus.request<TaskStatusQueryEvent, Task | null>('TaskStatusQuery', { taskId });
 
       if (!taskResult.ok) {
         this.logger.error('Failed to find task for cancellation', taskResult.error, { taskId });
@@ -155,13 +152,15 @@ export class WorkerHandler extends BaseEventHandler {
         this.logger.warn('Cannot cancel task in current state', {
           taskId,
           status: task.status,
-          reason
+          reason,
         });
-        return err(new ClaudineError(
-          ErrorCode.TASK_CANNOT_CANCEL,
-          `Task ${taskId} cannot be cancelled in state ${task.status}`,
-          { taskId, status: task.status, reason }
-        ));
+        return err(
+          new ClaudineError(
+            ErrorCode.TASK_CANNOT_CANCEL,
+            `Task ${taskId} cannot be cancelled in state ${task.status}`,
+            { taskId, status: task.status, reason },
+          ),
+        );
       }
 
       // Check if we have a worker for this task
@@ -169,19 +168,19 @@ export class WorkerHandler extends BaseEventHandler {
 
       if (workerResult.ok && workerResult.value) {
         const worker = workerResult.value;
-        
+
         this.logger.info('Killing worker for cancelled task', {
           taskId,
-          workerId: worker.id
+          workerId: worker.id,
         });
 
         // Kill the worker
         const killResult = await this.workerPool.kill(worker.id);
-        
+
         if (!killResult.ok) {
           this.logger.error('Failed to kill worker for cancelled task', killResult.error, {
             taskId,
-            workerId: worker.id
+            workerId: worker.id,
           });
           return killResult;
         }
@@ -189,9 +188,9 @@ export class WorkerHandler extends BaseEventHandler {
         // Emit worker killed event
         const result = await this.eventBus.emit('WorkerKilled', {
           workerId: worker.id,
-          taskId
+          taskId,
         });
-        
+
         if (!result.ok) {
           this.logger.error('Failed to emit WorkerKilled event', result.error);
         }
@@ -228,7 +227,7 @@ export class WorkerHandler extends BaseEventHandler {
 
     // Create a new promise that will resolve when we're done
     let releaseLock!: () => void;
-    const ourLock = new Promise<void>(resolve => {
+    const ourLock = new Promise<void>((resolve) => {
       releaseLock = resolve;
     });
 
@@ -263,7 +262,7 @@ export class WorkerHandler extends BaseEventHandler {
     if (timeSinceLastSpawn < this.minSpawnDelayMs) {
       return {
         shouldDelay: true,
-        delayMs: this.minSpawnDelayMs - timeSinceLastSpawn
+        delayMs: this.minSpawnDelayMs - timeSinceLastSpawn,
       };
     }
 
@@ -278,7 +277,7 @@ export class WorkerHandler extends BaseEventHandler {
     this.logger.debug('Delaying spawn to prevent burst overload', {
       delay: delayMs,
       timeSinceLastSpawn,
-      reason: 'fork-bomb prevention'
+      reason: 'fork-bomb prevention',
     });
 
     setTimeout(() => this.processNextTask(), delayMs);
@@ -290,7 +289,7 @@ export class WorkerHandler extends BaseEventHandler {
    */
   private handleResourcesConstrained(): void {
     this.logger.debug('Resources constrained, applying backoff', {
-      backoffMs: this.SPAWN_BACKOFF_MS
+      backoffMs: this.SPAWN_BACKOFF_MS,
     });
 
     setTimeout(() => this.processNextTask(), this.SPAWN_BACKOFF_MS);
@@ -302,7 +301,7 @@ export class WorkerHandler extends BaseEventHandler {
    */
   private async handleTaskStartingFailure(task: Task, error: Error): Promise<void> {
     this.logger.error('Failed to emit TaskStarting event', error, {
-      taskId: task.id
+      taskId: task.id,
     });
 
     await this.eventBus.emit('RequeueTask', { task });
@@ -314,7 +313,7 @@ export class WorkerHandler extends BaseEventHandler {
    */
   private async handleSpawnFailure(task: Task, error: Error): Promise<void> {
     this.logger.error('Failed to spawn worker', error, {
-      taskId: task.id
+      taskId: task.id,
     });
 
     // INVARIANT: Both RequeueTask AND TaskFailed must be emitted
@@ -322,7 +321,7 @@ export class WorkerHandler extends BaseEventHandler {
     await this.eventBus.emit('TaskFailed', {
       taskId: task.id,
       error,
-      exitCode: 1
+      exitCode: 1,
     });
   }
 
@@ -346,18 +345,18 @@ export class WorkerHandler extends BaseEventHandler {
     await Promise.all([
       this.eventBus.emit('WorkerSpawned', {
         worker,
-        taskId: task.id
+        taskId: task.id,
       }),
       this.eventBus.emit('TaskStarted', {
         taskId: task.id,
-        workerId: worker.id
-      })
+        workerId: worker.id,
+      }),
     ]);
 
     this.logger.info('Task started with worker', {
       taskId: task.id,
       workerId: worker.id,
-      pid: worker.pid
+      pid: worker.pid,
     });
   }
 
@@ -394,10 +393,7 @@ export class WorkerHandler extends BaseEventHandler {
         }
 
         // Step 3: Get next task from queue
-        const taskResult = await this.eventBus.request<NextTaskQueryEvent, Task | null>(
-          'NextTaskQuery',
-          {}
-        );
+        const taskResult = await this.eventBus.request<NextTaskQueryEvent, Task | null>('NextTaskQuery', {});
         if (!taskResult.ok || !taskResult.value) {
           return; // No tasks or error
         }
@@ -405,12 +401,12 @@ export class WorkerHandler extends BaseEventHandler {
         const task = taskResult.value;
         this.logger.info('Starting task processing', {
           taskId: task.id,
-          priority: task.priority
+          priority: task.priority,
         });
 
         // Step 4: Emit TaskStarting event
         const startingResult = await this.eventBus.emit('TaskStarting', {
-          taskId: task.id
+          taskId: task.id,
         });
         if (!startingResult.ok) {
           await this.handleTaskStartingFailure(task, startingResult.error);
@@ -426,12 +422,9 @@ export class WorkerHandler extends BaseEventHandler {
 
         // Step 6: Record success and emit events (atomic success path)
         await this.recordSpawnSuccessAndEmitEvents(workerResult.value, task);
-
       } catch (error) {
         // Normalize unknown error to Error object for type safety
-        const normalizedError = error instanceof Error
-          ? error
-          : new Error(String(error));
+        const normalizedError = error instanceof Error ? error : new Error(String(error));
         this.logger.error('Error in task processing', normalizedError);
       }
     });
@@ -447,10 +440,7 @@ export class WorkerHandler extends BaseEventHandler {
 
       // Calculate duration using task startedAt timestamp via event query
       let duration = 0;
-      const taskResult = await this.eventBus.request<TaskStatusQueryEvent, Task | null>(
-        'TaskStatusQuery',
-        { taskId }
-      );
+      const taskResult = await this.eventBus.request<TaskStatusQueryEvent, Task | null>('TaskStatusQuery', { taskId });
       if (taskResult.ok && taskResult.value?.startedAt) {
         duration = Date.now() - taskResult.value.startedAt;
       }
@@ -459,7 +449,7 @@ export class WorkerHandler extends BaseEventHandler {
         await this.eventBus.emit('TaskCompleted', {
           taskId,
           exitCode,
-          duration
+          duration,
         });
       } else {
         await this.eventBus.emit('TaskFailed', {
@@ -472,13 +462,12 @@ export class WorkerHandler extends BaseEventHandler {
       this.logger.info('Worker completed', {
         taskId,
         exitCode,
-        duration
+        duration,
       });
-
     } catch (error) {
       this.logger.error('Error handling worker completion', error as Error, {
         taskId,
-        exitCode
+        exitCode,
       });
     }
   }
@@ -493,17 +482,16 @@ export class WorkerHandler extends BaseEventHandler {
 
       await this.eventBus.emit('TaskTimeout', {
         taskId,
-        error
+        error,
       });
 
       this.logger.warn('Worker timed out', {
         taskId,
-        error: error.message
+        error: error.message,
       });
-
     } catch (err) {
       this.logger.error('Error handling worker timeout', err as Error, {
-        taskId
+        taskId,
       });
     }
   }
@@ -517,11 +505,11 @@ export class WorkerHandler extends BaseEventHandler {
     canSpawn: boolean;
   } {
     const workersResult = this.workerPool.getWorkers();
-    
+
     return {
       workerCount: this.workerPool.getWorkerCount(),
       workers: workersResult.ok ? workersResult.value : [],
-      canSpawn: false // Would need async call to determine
+      canSpawn: false, // Would need async call to determine
     };
   }
 }

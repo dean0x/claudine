@@ -10,7 +10,7 @@ import { createTestConfiguration } from '../../fixtures/factories';
 // Mock child_process module
 let mockSpawnImpl: any = () => null;
 vi.mock('child_process', () => ({
-  spawn: (...args: any[]) => mockSpawnImpl(...args)
+  spawn: (...args: any[]) => mockSpawnImpl(...args),
 }));
 
 describe('ClaudeProcessSpawner - Behavioral Tests', () => {
@@ -23,7 +23,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
 
     // Create a properly typed mock child process
     mockProcess = createMockChildProcess({
-      kill: function(this: ChildProcess, signal?: string) {
+      kill: function (this: ChildProcess, signal?: string) {
         // Simulate real process.kill behavior
         if (signal === 'SIGTERM' || signal === 'SIGKILL') {
           setImmediate(() => {
@@ -32,7 +32,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
           return true;
         }
         return false;
-      }
+      },
     }) as ChildProcess & EventEmitter;
 
     // Create a spy function that tracks calls
@@ -160,7 +160,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
       // Test BEHAVIOR: simple commands get wrapped for Claude
       const simpleCommands = ['ls', 'pwd', 'echo test', 'cat file.txt'];
 
-      simpleCommands.forEach(cmd => {
+      simpleCommands.forEach((cmd) => {
         spawnSpy.mockClear();
         const result = spawner.spawn(cmd, '/dir');
 
@@ -178,10 +178,10 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
         'Execute npm install',
         'Please perform a code review',
         'Use bash to list files',
-        'Run this command: echo hello'
+        'Run this command: echo hello',
       ];
 
-      complexPrompts.forEach(prompt => {
+      complexPrompts.forEach((prompt) => {
         spawnSpy.mockClear();
         const result = spawner.spawn(prompt, '/dir');
 
@@ -296,7 +296,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
     it('should handle relative and absolute paths correctly', () => {
       const paths = ['.', '..', '/absolute/path', './relative', '../parent'];
 
-      paths.forEach(path => {
+      paths.forEach((path) => {
         spawnSpy.mockClear();
         const result = spawner.spawn('pwd', path);
 
@@ -343,10 +343,10 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
         new Error('spawn claude ENOENT'),
         'string error',
         null,
-        undefined
+        undefined,
       ];
 
-      errors.forEach(error => {
+      errors.forEach((error) => {
         spawnSpy.mockImplementation(() => {
           throw error;
         });

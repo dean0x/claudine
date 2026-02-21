@@ -35,7 +35,7 @@ export class SQLiteOutputRepository implements OutputRepository {
     // Set up output directory for large files
     const dbPath = this.db.name;
     this.outputDir = path.join(path.dirname(dbPath), 'output');
-    
+
     // Note: We intentionally keep sync operation in constructor
     // Async constructors are not supported in JS/TS
     // This runs once at startup, not in hot path
@@ -65,21 +65,17 @@ export class SQLiteOutputRepository implements OutputRepository {
     try {
       const fullOutput = { ...output, taskId };
       const totalSize = this.calculateTotalSize(fullOutput);
-      
+
       // Check if we should use file storage
       if (totalSize > this.fileStorageThreshold) {
         await this.saveToFile(taskId, fullOutput);
       } else {
         this.saveToDatabase(taskId, fullOutput, totalSize);
       }
-      
+
       return ok(undefined);
     } catch (error) {
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to save output: ${error}`,
-        { taskId }
-      ));
+      return err(new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to save output: ${error}`, { taskId }));
     }
   }
 
@@ -88,14 +84,14 @@ export class SQLiteOutputRepository implements OutputRepository {
       async () => {
         // Get existing output
         const existingResult = await this.get(taskId);
-        
+
         let output: TaskOutput;
         if (existingResult.ok && existingResult.value) {
           // Append to existing
           output = {
             ...existingResult.value,
             [stream]: [...existingResult.value[stream], data],
-            totalSize: existingResult.value.totalSize + data.length
+            totalSize: existingResult.value.totalSize + data.length,
           };
         } else {
           // Create new
@@ -103,17 +99,13 @@ export class SQLiteOutputRepository implements OutputRepository {
             taskId,
             stdout: stream === 'stdout' ? [data] : [],
             stderr: stream === 'stderr' ? [data] : [],
-            totalSize: data.length
+            totalSize: data.length,
           };
         }
 
         await this.save(taskId, output);
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to append output: ${error}`,
-        { taskId, stream }
-      )
+      (error) => new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to append output: ${error}`, { taskId, stream }),
     );
   }
 
@@ -121,7 +113,7 @@ export class SQLiteOutputRepository implements OutputRepository {
     return tryCatchAsync(
       async () => {
         const row = this.getStmt.get(taskId) as Record<string, any> | undefined;
-        
+
         if (!row) {
           return null;
         }
@@ -136,14 +128,10 @@ export class SQLiteOutputRepository implements OutputRepository {
           taskId: row.task_id as TaskId,
           stdout: JSON.parse(row.stdout || '[]'),
           stderr: JSON.parse(row.stderr || '[]'),
-          totalSize: row.total_size || 0
+          totalSize: row.total_size || 0,
         };
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to get output: ${error}`,
-        { taskId }
-      )
+      (error) => new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to get output: ${error}`, { taskId }),
     );
   }
 
@@ -152,7 +140,7 @@ export class SQLiteOutputRepository implements OutputRepository {
       async () => {
         // Get the row to check for file
         const row = this.getStmt.get(taskId) as Record<string, any> | undefined;
-        
+
         if (row?.file_path) {
           // Delete the file
           const filePath = path.join(this.outputDir, row.file_path);
@@ -169,11 +157,7 @@ export class SQLiteOutputRepository implements OutputRepository {
         // Delete from database
         this.deleteStmt.run(taskId);
       },
-      (error) => new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to delete output: ${error}`,
-        { taskId }
-      )
+      (error) => new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to delete output: ${error}`, { taskId }),
     );
   }
 
@@ -189,30 +173,30 @@ export class SQLiteOutputRepository implements OutputRepository {
       stdout: JSON.stringify(output.stdout),
       stderr: JSON.stringify(output.stderr),
       totalSize,
-      filePath: null
+      filePath: null,
     });
   }
 
   private async saveToFile(taskId: TaskId, output: TaskOutput): Promise<void> {
     const fileName = `${taskId}.json`;
     const filePath = path.join(this.outputDir, fileName);
-    
+
     // Write to file asynchronously
     await fsPromises.writeFile(filePath, JSON.stringify(output));
-    
+
     // Save reference in database
     this.saveStmt.run({
       taskId,
       stdout: null,
       stderr: null,
       totalSize: this.calculateTotalSize(output),
-      filePath: fileName
+      filePath: fileName,
     });
   }
 
   private async loadFromFile(taskId: TaskId, fileName: string): Promise<TaskOutput> {
     const filePath = path.join(this.outputDir, fileName);
-    
+
     try {
       const content = await fsPromises.readFile(filePath, 'utf-8');
       return JSON.parse(content);

@@ -15,12 +15,12 @@ import type {
   DelegateRequest,
   TaskStatus,
   Priority,
-  SystemResources
+  SystemResources,
 } from '../../src/core/domain';
 import {
   createTask as domainCreateTask,
   TaskId as createTaskId,
-  WorkerId as createWorkerId
+  WorkerId as createWorkerId,
 } from '../../src/core/domain';
 import type { Configuration } from '../../src/core/configuration';
 
@@ -40,7 +40,7 @@ export class TaskFactory {
     priority: 'P2' as Priority,
     timeout: 30000,
     maxOutputBuffer: 1048576,
-    workingDirectory: '/workspace'
+    workingDirectory: '/workspace',
   };
 
   private overrides: Partial<Task> = {};
@@ -153,9 +153,7 @@ export class TaskFactory {
 
   buildMany(count: number, modifier?: (factory: TaskFactory, index: number) => void): Task[] {
     return Array.from({ length: count }, (_, i) => {
-      const factory = new TaskFactory()
-        .withPrompt(`Task ${i + 1}`)
-        .withId(`task-${i + 1}`);
+      const factory = new TaskFactory().withPrompt(`Task ${i + 1}`).withId(`task-${i + 1}`);
 
       if (modifier) {
         modifier(factory, i);
@@ -178,7 +176,7 @@ export class WorkerFactory {
     startedAt: Date.now(),
     lastHeartbeat: Date.now(),
     tasksCompleted: 0,
-    tasksFailed: 0
+    tasksFailed: 0,
   };
 
   withId(id: string): this {
@@ -244,9 +242,7 @@ export class WorkerFactory {
 
   buildMany(count: number, modifier?: (factory: WorkerFactory, index: number) => void): Worker[] {
     return Array.from({ length: count }, (_, i) => {
-      const factory = new WorkerFactory()
-        .withId(`worker-${i + 1}`)
-        .withPid(1000 + i);
+      const factory = new WorkerFactory().withId(`worker-${i + 1}`).withPid(1000 + i);
 
       if (modifier) {
         modifier(factory, i);
@@ -288,7 +284,7 @@ export class ConfigFactory {
     retryInitialDelayMs: 100, // Fast for tests
     retryMaxDelayMs: 1000, // Fast for tests
     // Recovery defaults
-    taskRetentionDays: 7
+    taskRetentionDays: 7,
   };
 
   withTimeout(timeout: number): this {
@@ -399,7 +395,7 @@ export class EventFactory {
     return {
       type: this.eventType,
       payload: this.payload,
-      timestamp: this.timestamp
+      timestamp: this.timestamp,
     };
   }
 }
@@ -415,7 +411,7 @@ export class ResourceFactory {
     memoryFree: 4000000000,
     memoryTotal: 8000000000,
     loadAverage: [1.5, 1.2, 1.0],
-    canSpawnWorker: true
+    canSpawnWorker: true,
   };
 
   withCpuUsage(percent: number): this {
@@ -485,7 +481,7 @@ export function createTaskSet(): {
     running: factory.buildMany(2, (f, i) => f.running(`worker-${i}`)),
     completed: factory.buildMany(2, (f, i) => f.completed(0)),
     failed: factory.buildMany(2, (f, i) => f.failed(`Error in task ${i}`)),
-    cancelled: factory.buildMany(1, (f, i) => f.withStatus('cancelled' as TaskStatus))
+    cancelled: factory.buildMany(1, (f, i) => f.withStatus('cancelled' as TaskStatus)),
   };
 }
 
@@ -500,7 +496,7 @@ export function createWorkerPool(): Worker[] {
     factory.withId('worker-2').busy('task-1').build(),
     factory.withId('worker-3').busy('task-2').build(),
     factory.withId('worker-4').error('Connection lost').build(),
-    factory.withId('worker-5').idle().withTasksCompleted(10).build()
+    factory.withId('worker-5').idle().withTasksCompleted(10).build(),
   ];
 }
 

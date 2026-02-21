@@ -3,7 +3,17 @@
  * All system state changes flow through these events
  */
 
-import { Task, TaskId, Worker, WorkerId, Schedule, ScheduleId, ScheduleStatus, MissedRunPolicy, TaskCheckpoint } from '../domain.js';
+import {
+  Task,
+  TaskId,
+  Worker,
+  WorkerId,
+  Schedule,
+  ScheduleId,
+  ScheduleStatus,
+  MissedRunPolicy,
+  TaskCheckpoint,
+} from '../domain.js';
 import { ClaudineError } from '../errors.js';
 
 /**
@@ -26,7 +36,7 @@ export interface TaskDelegatedEvent extends BaseEvent {
 export interface TaskPersistedEvent extends BaseEvent {
   type: 'TaskPersisted';
   taskId: TaskId;
-  task: Task;  // Include full task for QueueHandler
+  task: Task; // Include full task for QueueHandler
 }
 
 export interface TaskQueuedEvent extends BaseEvent {
@@ -103,7 +113,6 @@ export interface WorkerKilledEvent extends BaseEvent {
   taskId: TaskId;
 }
 
-
 /**
  * Output and configuration events
  */
@@ -129,7 +138,7 @@ export interface TaskConfiguredEvent extends BaseEvent {
  */
 export interface TaskStatusQueryEvent extends BaseEvent {
   type: 'TaskStatusQuery';
-  taskId?: TaskId;  // If omitted, return all tasks
+  taskId?: TaskId; // If omitted, return all tasks
 }
 
 export interface TaskStatusResponseEvent extends BaseEvent {
@@ -206,7 +215,7 @@ export interface TaskDependencyResolvedEvent extends BaseEvent {
 export interface TaskUnblockedEvent extends BaseEvent {
   type: 'TaskUnblocked';
   taskId: TaskId;
-  task: Task;  // ARCHITECTURE: Include task to prevent layer violation in QueueHandler
+  task: Task; // ARCHITECTURE: Include task to prevent layer violation in QueueHandler
 }
 
 export interface TaskDependencyFailedEvent extends BaseEvent {
@@ -229,21 +238,21 @@ export interface ScheduleCreatedEvent extends BaseEvent {
 export interface ScheduleTriggeredEvent extends BaseEvent {
   type: 'ScheduleTriggered';
   scheduleId: ScheduleId;
-  triggeredAt: number;  // Epoch ms when trigger occurred
+  triggeredAt: number; // Epoch ms when trigger occurred
 }
 
 export interface ScheduleExecutedEvent extends BaseEvent {
   type: 'ScheduleExecuted';
   scheduleId: ScheduleId;
-  taskId: TaskId;       // ID of the task created from this execution
-  executedAt: number;   // Epoch ms when execution started
+  taskId: TaskId; // ID of the task created from this execution
+  executedAt: number; // Epoch ms when execution started
 }
 
 export interface ScheduleMissedEvent extends BaseEvent {
   type: 'ScheduleMissed';
   scheduleId: ScheduleId;
-  missedAt: number;     // Epoch ms of the missed run time
-  policy: MissedRunPolicy;  // Policy that will be applied
+  missedAt: number; // Epoch ms of the missed run time
+  policy: MissedRunPolicy; // Policy that will be applied
 }
 
 export interface ScheduleCancelledEvent extends BaseEvent {
@@ -270,7 +279,7 @@ export interface ScheduleExpiredEvent extends BaseEvent {
 export interface ScheduleUpdatedEvent extends BaseEvent {
   type: 'ScheduleUpdated';
   scheduleId: ScheduleId;
-  update: Partial<Schedule>;  // Fields that were updated
+  update: Partial<Schedule>; // Fields that were updated
 }
 
 /**
@@ -279,8 +288,8 @@ export interface ScheduleUpdatedEvent extends BaseEvent {
  */
 export interface ScheduleQueryEvent extends BaseEvent {
   type: 'ScheduleQuery';
-  scheduleId?: ScheduleId;    // If omitted, return all schedules
-  status?: ScheduleStatus;    // Optional filter by status
+  scheduleId?: ScheduleId; // If omitted, return all schedules
+  status?: ScheduleStatus; // Optional filter by status
 }
 
 export interface ScheduleQueryResponseEvent extends BaseEvent {
@@ -395,15 +404,15 @@ export type EventHandler<T extends ClaudineEvent = ClaudineEvent> = (event: T) =
  * Helper to create events with consistent metadata
  */
 export function createEvent<T extends ClaudineEvent>(
-  type: T['type'], 
+  type: T['type'],
   payload: Omit<T, keyof BaseEvent | 'type'>,
-  source = 'claudine'
+  source = 'claudine',
 ): T {
   return {
     type,
     eventId: crypto.randomUUID(),
     timestamp: Date.now(),
     source,
-    ...payload
+    ...payload,
   } as T;
 }

@@ -51,10 +51,7 @@ function getSystemInfo(): SystemInfo {
 /**
  * Validate CPU configuration against system
  */
-function validateCpuConfig(
-  config: Configuration,
-  system: SystemInfo
-): ConfigValidationWarning[] {
+function validateCpuConfig(config: Configuration, system: SystemInfo): ConfigValidationWarning[] {
   const warnings: ConfigValidationWarning[] = [];
 
   // Check if reserved cores exceed available
@@ -100,21 +97,18 @@ function validateCpuConfig(
 /**
  * Validate memory configuration against system
  */
-function validateMemoryConfig(
-  config: Configuration,
-  system: SystemInfo
-): ConfigValidationWarning[] {
+function validateMemoryConfig(config: Configuration, system: SystemInfo): ConfigValidationWarning[] {
   const warnings: ConfigValidationWarning[] = [];
 
   // Check if reserved memory exceeds total
   if (config.memoryReserve > system.totalMemoryBytes) {
-    const totalGB = (system.totalMemoryBytes / (1024 ** 3)).toFixed(1);
-    const reservedGB = (config.memoryReserve / (1024 ** 3)).toFixed(1);
+    const totalGB = (system.totalMemoryBytes / 1024 ** 3).toFixed(1);
+    const reservedGB = (config.memoryReserve / 1024 ** 3).toFixed(1);
     warnings.push({
       field: 'memoryReserve',
       severity: 'warning',
       message: `Reserved memory (${reservedGB}GB) exceeds total system memory (${totalGB}GB)`,
-      suggestion: `Reduce memoryReserve to ${Math.floor(system.totalMemoryBytes * 0.3)} bytes (~${(system.totalMemoryBytes * 0.3 / (1024 ** 3)).toFixed(1)}GB)`,
+      suggestion: `Reduce memoryReserve to ${Math.floor(system.totalMemoryBytes * 0.3)} bytes (~${((system.totalMemoryBytes * 0.3) / 1024 ** 3).toFixed(1)}GB)`,
       currentValue: config.memoryReserve,
       recommendedValue: Math.floor(system.totalMemoryBytes * 0.3),
     });
@@ -124,7 +118,7 @@ function validateMemoryConfig(
   const reservedPercent = (config.memoryReserve / system.totalMemoryBytes) * 100;
   if (reservedPercent > 40) {
     const recommendedBytes = Math.floor(system.totalMemoryBytes * 0.25);
-    const recommendedGB = (recommendedBytes / (1024 ** 3)).toFixed(1);
+    const recommendedGB = (recommendedBytes / 1024 ** 3).toFixed(1);
     warnings.push({
       field: 'memoryReserve',
       severity: 'info',
@@ -138,7 +132,7 @@ function validateMemoryConfig(
   // Warn if very low memory reserve (<500MB)
   const minReserveBytes = 500 * 1024 * 1024;
   if (config.memoryReserve < minReserveBytes) {
-    const currentMB = (config.memoryReserve / (1024 ** 2)).toFixed(0);
+    const currentMB = (config.memoryReserve / 1024 ** 2).toFixed(0);
     warnings.push({
       field: 'memoryReserve',
       severity: 'warning',
@@ -155,9 +149,7 @@ function validateMemoryConfig(
 /**
  * Validate timeout configuration
  */
-function validateTimeoutConfig(
-  config: Configuration
-): ConfigValidationWarning[] {
+function validateTimeoutConfig(config: Configuration): ConfigValidationWarning[] {
   const warnings: ConfigValidationWarning[] = [];
 
   // Warn if timeout is very low (<5 minutes)
@@ -192,9 +184,7 @@ function validateTimeoutConfig(
 /**
  * Validate EventBus configuration
  */
-function validateEventBusConfig(
-  config: Configuration
-): ConfigValidationWarning[] {
+function validateEventBusConfig(config: Configuration): ConfigValidationWarning[] {
   const warnings: ConfigValidationWarning[] = [];
 
   // Warn if maxListenersPerEvent is too low
@@ -227,15 +217,13 @@ function validateEventBusConfig(
 /**
  * Validate output buffer configuration
  */
-function validateOutputConfig(
-  config: Configuration
-): ConfigValidationWarning[] {
+function validateOutputConfig(config: Configuration): ConfigValidationWarning[] {
   const warnings: ConfigValidationWarning[] = [];
 
   // Warn if output buffer is very large (>100MB)
   const hundredMB = 100 * 1024 * 1024;
   if (config.maxOutputBuffer > hundredMB) {
-    const currentMB = (config.maxOutputBuffer / (1024 ** 2)).toFixed(0);
+    const currentMB = (config.maxOutputBuffer / 1024 ** 2).toFixed(0);
     warnings.push({
       field: 'maxOutputBuffer',
       severity: 'info',
@@ -249,7 +237,7 @@ function validateOutputConfig(
   // Warn if file storage threshold is too high (>10MB)
   const tenMB = 10 * 1024 * 1024;
   if (config.fileStorageThresholdBytes! > tenMB) {
-    const currentMB = (config.fileStorageThresholdBytes! / (1024 ** 2)).toFixed(1);
+    const currentMB = (config.fileStorageThresholdBytes! / 1024 ** 2).toFixed(1);
     warnings.push({
       field: 'fileStorageThresholdBytes',
       severity: 'info',
@@ -272,10 +260,7 @@ function validateOutputConfig(
  * - Logs warnings but doesn't prevent startup
  * - Helps operators tune configuration
  */
-export function validateConfiguration(
-  config: Configuration,
-  logger?: Logger
-): ConfigValidationWarning[] {
+export function validateConfiguration(config: Configuration, logger?: Logger): ConfigValidationWarning[] {
   const system = getSystemInfo();
   const warnings: ConfigValidationWarning[] = [];
 
@@ -290,7 +275,7 @@ export function validateConfiguration(
   if (logger && warnings.length > 0) {
     logger.warn('Configuration validation warnings', {
       count: warnings.length,
-      warnings: warnings.map(w => ({
+      warnings: warnings.map((w) => ({
         field: w.field,
         severity: w.severity,
         message: w.message,
@@ -298,7 +283,7 @@ export function validateConfiguration(
     });
 
     // Log each warning with suggestions
-    warnings.forEach(warning => {
+    warnings.forEach((warning) => {
       if (warning.severity === 'warning') {
         logger.warn(`Config: ${warning.field}`, {
           message: warning.message,

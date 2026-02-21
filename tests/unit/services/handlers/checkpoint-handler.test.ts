@@ -20,11 +20,13 @@ import { flushEventLoop } from '../../../utils/event-helpers';
 
 // Mock captureGitState to avoid real git commands
 vi.mock('../../../../src/utils/git-state', () => ({
-  captureGitState: vi.fn().mockResolvedValue(ok({
-    branch: 'main',
-    commitSha: 'abc123',
-    dirtyFiles: ['file1.ts'],
-  })),
+  captureGitState: vi.fn().mockResolvedValue(
+    ok({
+      branch: 'main',
+      commitSha: 'abc123',
+      dirtyFiles: ['file1.ts'],
+    }),
+  ),
 }));
 
 import { captureGitState } from '../../../../src/utils/git-state';
@@ -61,20 +63,16 @@ describe('CheckpointHandler - Behavioral Tests', () => {
     outputCapture = new TestOutputCapture();
 
     // Reset the mock before each test
-    mockCaptureGitState.mockResolvedValue(ok({
-      branch: 'main',
-      commitSha: 'abc123',
-      dirtyFiles: ['file1.ts'],
-    }));
+    mockCaptureGitState.mockResolvedValue(
+      ok({
+        branch: 'main',
+        commitSha: 'abc123',
+        dirtyFiles: ['file1.ts'],
+      }),
+    );
 
     // Create handler using factory pattern
-    const handlerResult = await CheckpointHandler.create(
-      checkpointRepo,
-      outputCapture,
-      taskRepo,
-      eventBus,
-      logger,
-    );
+    const handlerResult = await CheckpointHandler.create(checkpointRepo, outputCapture, taskRepo, eventBus, logger);
 
     if (!handlerResult.ok) {
       throw new Error(`Failed to create CheckpointHandler: ${handlerResult.error.message}`);
@@ -387,9 +385,7 @@ describe('CheckpointHandler - Behavioral Tests', () => {
 
     it('should handle git state capture failure gracefully', async () => {
       // Arrange
-      mockCaptureGitState.mockResolvedValue(err(
-        new ClaudineError(ErrorCode.SYSTEM_ERROR, 'git not available')
-      ));
+      mockCaptureGitState.mockResolvedValue(err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'git not available')));
 
       const task = buildTask();
       await taskRepo.save(task);
@@ -448,9 +444,9 @@ describe('CheckpointHandler - Behavioral Tests', () => {
   describe('task repository error handling', () => {
     it('should handle task repository findById failure', async () => {
       // Arrange - spy on findById to simulate failure
-      const findByIdSpy = vi.spyOn(taskRepo, 'findById').mockResolvedValue(
-        err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'Database connection lost'))
-      );
+      const findByIdSpy = vi
+        .spyOn(taskRepo, 'findById')
+        .mockResolvedValue(err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'Database connection lost')));
 
       // Act
       const ghostId = TaskId('task-repo-err');

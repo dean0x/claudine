@@ -7,13 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Database } from '../../../src/implementations/database.js';
 import { SQLiteScheduleRepository } from '../../../src/implementations/schedule-repository.js';
-import {
-  ScheduleId,
-  ScheduleType,
-  ScheduleStatus,
-  MissedRunPolicy,
-  createSchedule,
-} from '../../../src/core/domain.js';
+import { ScheduleId, ScheduleType, ScheduleStatus, MissedRunPolicy, createSchedule } from '../../../src/core/domain.js';
 import type { Schedule } from '../../../src/core/domain.js';
 
 describe('SQLiteScheduleRepository - Unit Tests', () => {

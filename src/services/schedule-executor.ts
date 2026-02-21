@@ -9,11 +9,7 @@ import { EventBus } from '../core/events/event-bus.js';
 import { ScheduleRepository, Logger } from '../core/interfaces.js';
 import { Result, ok, err } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
-import {
-  ScheduleStatus,
-  ScheduleType,
-  MissedRunPolicy,
-} from '../core/domain.js';
+import { ScheduleStatus, ScheduleType, MissedRunPolicy } from '../core/domain.js';
 import type { Schedule } from '../core/domain.js';
 import type {
   TaskCompletedEvent,
@@ -77,10 +73,11 @@ export class ScheduleExecutor {
     private readonly scheduleRepo: ScheduleRepository,
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
-    options?: ScheduleExecutorOptions
+    options?: ScheduleExecutorOptions,
   ) {
     this.checkIntervalMs = options?.checkIntervalMs ?? ScheduleExecutor.DEFAULT_CHECK_INTERVAL_MS;
-    this.missedRunGracePeriodMs = options?.missedRunGracePeriodMs ?? ScheduleExecutor.DEFAULT_MISSED_RUN_GRACE_PERIOD_MS;
+    this.missedRunGracePeriodMs =
+      options?.missedRunGracePeriodMs ?? ScheduleExecutor.DEFAULT_MISSED_RUN_GRACE_PERIOD_MS;
   }
 
   /**
@@ -92,7 +89,7 @@ export class ScheduleExecutor {
     scheduleRepo: ScheduleRepository,
     eventBus: EventBus,
     logger: Logger,
-    options?: ScheduleExecutorOptions
+    options?: ScheduleExecutorOptions,
   ): Result<ScheduleExecutor, ClaudineError> {
     const executor = new ScheduleExecutor(scheduleRepo, eventBus, logger, options);
 
@@ -141,11 +138,11 @@ export class ScheduleExecutor {
     // Verify all subscriptions succeeded and store IDs for cleanup
     for (const result of subscriptions) {
       if (!result.ok) {
-        return err(new ClaudineError(
-          ErrorCode.SYSTEM_ERROR,
-          `Failed to subscribe to events: ${result.error.message}`,
-          { error: result.error }
-        ));
+        return err(
+          new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to subscribe to events: ${result.error.message}`, {
+            error: result.error,
+          }),
+        );
       }
       this.subscriptionIds.push(result.value);
     }
@@ -194,24 +191,18 @@ export class ScheduleExecutor {
    */
   start(): Result<void, ClaudineError> {
     if (this.isRunning) {
-      return err(new ClaudineError(
-        ErrorCode.INVALID_OPERATION,
-        'ScheduleExecutor is already running'
-      ));
+      return err(new ClaudineError(ErrorCode.INVALID_OPERATION, 'ScheduleExecutor is already running'));
     }
 
     this.isRunning = true;
-    this.timer = setInterval(
-      () => void this.tick(),
-      this.checkIntervalMs
-    );
+    this.timer = setInterval(() => void this.tick(), this.checkIntervalMs);
 
     // Don't block process exit - timer will be cleaned up naturally
     this.timer.unref();
 
     this.logger.info('ScheduleExecutor started', {
       intervalMs: this.checkIntervalMs,
-      missedRunGracePeriodMs: this.missedRunGracePeriodMs
+      missedRunGracePeriodMs: this.missedRunGracePeriodMs,
     });
 
     // Run initial tick immediately
@@ -262,7 +253,7 @@ export class ScheduleExecutor {
     const now = Date.now();
     this.logger.debug('Scheduler tick', {
       now,
-      nowDate: new Date(now).toISOString()
+      nowDate: new Date(now).toISOString(),
     });
 
     try {
@@ -281,7 +272,7 @@ export class ScheduleExecutor {
 
       this.logger.info('Found due schedules', {
         count: dueSchedules.length,
-        scheduleIds: dueSchedules.map(s => s.id)
+        scheduleIds: dueSchedules.map((s) => s.id),
       });
 
       // Process each due schedule
@@ -336,11 +327,11 @@ export class ScheduleExecutor {
         scheduledFor: scheduledTime,
         actualTime: now,
         delayMs,
-        type: schedule.scheduleType
+        type: schedule.scheduleType,
       });
     } catch (error) {
       this.logger.error('Failed to execute schedule', error as Error, {
-        scheduleId: schedule.id
+        scheduleId: schedule.id,
       });
     }
   }
@@ -363,7 +354,7 @@ export class ScheduleExecutor {
       scheduledForDate: new Date(missedAt).toISOString(),
       currentTime: now,
       delayMs: now - missedAt,
-      gracePeriodMs: this.missedRunGracePeriodMs
+      gracePeriodMs: this.missedRunGracePeriodMs,
     });
 
     switch (schedule.missedRunPolicy) {
@@ -454,11 +445,7 @@ export class ScheduleExecutor {
 
     // Calculate next cron run from now
     if (schedule.cronExpression) {
-      const nextResult = getNextRunTime(
-        schedule.cronExpression,
-        schedule.timezone,
-        new Date()
-      );
+      const nextResult = getNextRunTime(schedule.cronExpression, schedule.timezone, new Date());
 
       if (nextResult.ok) {
         const updateResult = await this.scheduleRepo.update(schedule.id, {
@@ -474,12 +461,12 @@ export class ScheduleExecutor {
         this.logger.debug('Updated nextRunAt for schedule', {
           scheduleId: schedule.id,
           nextRunAt: nextResult.value,
-          nextRunAtDate: new Date(nextResult.value).toISOString()
+          nextRunAtDate: new Date(nextResult.value).toISOString(),
         });
       } else {
         this.logger.error('Failed to calculate next run time', nextResult.error, {
           scheduleId: schedule.id,
-          cronExpression: schedule.cronExpression
+          cronExpression: schedule.cronExpression,
         });
       }
     }

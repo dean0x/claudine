@@ -19,7 +19,7 @@ export class MockResourceMonitor implements ResourceMonitor {
       freeMemory: this.freeMemory,
       loadAverage: [1.0, 1.0, 1.0] as readonly [number, number, number],
       workerCount: this.workerCount,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 

@@ -46,4 +46,4 @@ export const createMockWorkerOptions = (overrides?: Partial<WorkerOptions>): Wor
   ...overrides,
 });
 
-export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

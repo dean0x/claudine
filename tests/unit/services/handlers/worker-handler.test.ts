@@ -29,9 +29,7 @@ class MockWorkerPool implements WorkerPool {
 
   async spawn(task: any) {
     this.spawnCalls.push(task);
-    const worker = new WorkerFactory()
-      .withTaskId(task.id)
-      .build();
+    const worker = new WorkerFactory().withTaskId(task.id).build();
     this.workers.set(worker.id, worker);
     this.workerCount++;
     return ok(worker);
@@ -110,7 +108,7 @@ class MockResourceMonitor implements ResourceMonitor {
       cpuUsagePercent: 50,
       availableMemoryBytes: 1024 * 1024 * 1024,
       totalMemoryBytes: 2 * 1024 * 1024 * 1024,
-      activeWorkers: this.workerCount
+      activeWorkers: this.workerCount,
     });
   }
 
@@ -142,16 +140,10 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       logLevel: 'info',
       maxListenersPerEvent: 100,
       maxTotalSubscriptions: 1000,
-      killGracePeriodMs: 5000
+      killGracePeriodMs: 5000,
     } as Configuration;
 
-    workerHandler = new WorkerHandler(
-      config,
-      workerPool,
-      resourceMonitor,
-      eventBus,
-      logger
-    );
+    workerHandler = new WorkerHandler(config, workerPool, resourceMonitor, eventBus, logger);
 
     await workerHandler.setup(eventBus);
   });
@@ -165,13 +157,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
   describe('Setup and Teardown', () => {
     it('should subscribe to TaskQueued events during setup', async () => {
       const newEventBus = new TestEventBus();
-      const newHandler = new WorkerHandler(
-        config,
-        workerPool,
-        resourceMonitor,
-        newEventBus,
-        logger
-      );
+      const newHandler = new WorkerHandler(config, workerPool, resourceMonitor, newEventBus, logger);
 
       const result = await newHandler.setup(newEventBus);
 
@@ -181,13 +167,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
     it('should subscribe to TaskCancellationRequested events during setup', async () => {
       const newEventBus = new TestEventBus();
-      const newHandler = new WorkerHandler(
-        config,
-        workerPool,
-        resourceMonitor,
-        newEventBus,
-        logger
-      );
+      const newHandler = new WorkerHandler(config, workerPool, resourceMonitor, newEventBus, logger);
 
       const result = await newHandler.setup(newEventBus);
 
@@ -203,13 +183,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
     it('should return success result after setup', async () => {
       const newEventBus = new TestEventBus();
-      const newHandler = new WorkerHandler(
-        config,
-        workerPool,
-        resourceMonitor,
-        newEventBus,
-        logger
-      );
+      const newHandler = new WorkerHandler(config, workerPool, resourceMonitor, newEventBus, logger);
 
       const result = await newHandler.setup(newEventBus);
 
@@ -219,10 +193,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
   describe('TaskQueued Event Handling', () => {
     it('should process task immediately when TaskQueued event received', async () => {
-      const task = new TaskFactory()
-        .withPrompt('test task')
-        .withStatus('queued')
-        .build();
+      const task = new TaskFactory().withPrompt('test task').withStatus('queued').build();
 
       // Set up event response for NextTaskQuery
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
@@ -236,10 +207,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
     });
 
     it('should emit TaskStarting event when processing queued task', async () => {
-      const task = new TaskFactory()
-        .withPrompt('test task')
-        .withStatus('queued')
-        .build();
+      const task = new TaskFactory().withPrompt('test task').withStatus('queued').build();
 
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
 
@@ -250,10 +218,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
     });
 
     it('should spawn worker for queued task when resources available', async () => {
-      const task = new TaskFactory()
-        .withPrompt('test task')
-        .withStatus('queued')
-        .build();
+      const task = new TaskFactory().withPrompt('test task').withStatus('queued').build();
 
       resourceMonitor.setCanSpawn(true);
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
@@ -265,10 +230,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
     });
 
     it('should increment resource monitor worker count after spawn', async () => {
-      const task = new TaskFactory()
-        .withPrompt('test task')
-        .withStatus('queued')
-        .build();
+      const task = new TaskFactory().withPrompt('test task').withStatus('queued').build();
 
       resourceMonitor.setCanSpawn(true);
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
@@ -280,10 +242,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
     });
 
     it('should emit WorkerSpawned and TaskStarted events after successful spawn', async () => {
-      const task = new TaskFactory()
-        .withPrompt('test task')
-        .withStatus('queued')
-        .build();
+      const task = new TaskFactory().withPrompt('test task').withStatus('queued').build();
 
       resourceMonitor.setCanSpawn(true);
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
@@ -348,16 +307,13 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
   describe('Task Cancellation', () => {
     it('should validate task status before cancellation', async () => {
-      const task = new TaskFactory()
-        .withPrompt('test task')
-        .withStatus('completed')
-        .build();
+      const task = new TaskFactory().withPrompt('test task').withStatus('completed').build();
 
       eventBus.setRequestResponse('TaskStatusQuery', ok(task));
 
       const result = await eventBus.emit('TaskCancellationRequested', {
         taskId: task.id,
-        reason: 'User requested'
+        reason: 'User requested',
       });
 
       // Should not cancel completed task
@@ -365,16 +321,13 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
     });
 
     it('should attempt to find worker when cancelling running task', async () => {
-      const task = new TaskFactory()
-        .withPrompt('test task')
-        .withStatus('running')
-        .build();
+      const task = new TaskFactory().withPrompt('test task').withStatus('running').build();
 
       eventBus.setRequestResponse('TaskStatusQuery', ok(task));
 
       await eventBus.emit('TaskCancellationRequested', {
         taskId: task.id,
-        reason: 'User requested'
+        reason: 'User requested',
       });
 
       await eventBus.flushHandlers();
@@ -384,16 +337,13 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
     });
 
     it('should handle cancellation request gracefully', async () => {
-      const task = new TaskFactory()
-        .withPrompt('test task')
-        .withStatus('running')
-        .build();
+      const task = new TaskFactory().withPrompt('test task').withStatus('running').build();
 
       eventBus.setRequestResponse('TaskStatusQuery', ok(task));
 
       const result = await eventBus.emit('TaskCancellationRequested', {
         taskId: task.id,
-        reason: 'User requested'
+        reason: 'User requested',
       });
 
       // Should complete without errors
@@ -401,16 +351,13 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
     });
 
     it('should handle cancellation request for queued task', async () => {
-      const task = new TaskFactory()
-        .withPrompt('test task')
-        .withStatus('queued')
-        .build();
+      const task = new TaskFactory().withPrompt('test task').withStatus('queued').build();
 
       eventBus.setRequestResponse('TaskStatusQuery', ok(task));
 
       const result = await eventBus.emit('TaskCancellationRequested', {
         taskId: task.id,
-        reason: 'User requested'
+        reason: 'User requested',
       });
 
       expect(result.ok).toBe(true);
@@ -421,7 +368,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
       await eventBus.emit('TaskCancellationRequested', {
         taskId: 'non-existent-task',
-        reason: 'User requested'
+        reason: 'User requested',
       });
 
       await eventBus.flushHandlers();
@@ -443,9 +390,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
     });
 
     it('should emit TaskCompleted event for successful completion (exit code 0)', async () => {
-      const task = new TaskFactory()
-        .withStatus('running')
-        .build();
+      const task = new TaskFactory().withStatus('running').build();
 
       eventBus.setRequestResponse('TaskStatusQuery', ok(task));
 
@@ -455,9 +400,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
     });
 
     it('should emit TaskFailed event for failed completion (non-zero exit code)', async () => {
-      const task = new TaskFactory()
-        .withStatus('running')
-        .build();
+      const task = new TaskFactory().withStatus('running').build();
 
       eventBus.setRequestResponse('TaskStatusQuery', ok(task));
 
@@ -485,9 +428,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
     });
 
     it('should handle completion for task without startedAt timestamp', async () => {
-      const task = new TaskFactory()
-        .withStatus('running')
-        .build();
+      const task = new TaskFactory().withStatus('running').build();
 
       eventBus.setRequestResponse('TaskStatusQuery', ok(task));
 
@@ -501,11 +442,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
     it('should decrement resource monitor worker count on timeout', async () => {
       resourceMonitor.incrementWorkerCount();
       const task = new TaskFactory().build();
-      const error = new ClaudineError(
-        ErrorCode.TASK_TIMEOUT,
-        'Task timed out',
-        { taskId: task.id }
-      );
+      const error = new ClaudineError(ErrorCode.TASK_TIMEOUT, 'Task timed out', { taskId: task.id });
 
       await workerHandler.onWorkerTimeout(task.id, error);
 
@@ -514,11 +451,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
     it('should emit TaskTimeout event when worker times out', async () => {
       const task = new TaskFactory().build();
-      const error = new ClaudineError(
-        ErrorCode.TASK_TIMEOUT,
-        'Task timed out',
-        { taskId: task.id }
-      );
+      const error = new ClaudineError(ErrorCode.TASK_TIMEOUT, 'Task timed out', { taskId: task.id });
 
       await workerHandler.onWorkerTimeout(task.id, error);
 
@@ -527,11 +460,10 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
     it('should include error in TaskTimeout event', async () => {
       const task = new TaskFactory().build();
-      const error = new ClaudineError(
-        ErrorCode.TASK_TIMEOUT,
-        'Task exceeded 5 minute limit',
-        { taskId: task.id, timeoutMs: 300000 }
-      );
+      const error = new ClaudineError(ErrorCode.TASK_TIMEOUT, 'Task exceeded 5 minute limit', {
+        taskId: task.id,
+        timeoutMs: 300000,
+      });
 
       await workerHandler.onWorkerTimeout(task.id, error);
 
@@ -586,9 +518,9 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       const task = new TaskFactory().withPrompt('test task').build();
 
       // Make spawn fail
-      workerPool.spawn = vi.fn().mockResolvedValue(
-        err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {}))
-      );
+      workerPool.spawn = vi
+        .fn()
+        .mockResolvedValue(err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {})));
 
       resourceMonitor.setCanSpawn(true);
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
@@ -602,9 +534,9 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
     it('should emit TaskFailed event when spawn fails', async () => {
       const task = new TaskFactory().withPrompt('test task').build();
 
-      workerPool.spawn = vi.fn().mockResolvedValue(
-        err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {}))
-      );
+      workerPool.spawn = vi
+        .fn()
+        .mockResolvedValue(err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {})));
 
       resourceMonitor.setCanSpawn(true);
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
@@ -619,9 +551,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       const task = new TaskFactory().withPrompt('test task').build();
 
       // Simulate error in event processing
-      eventBus.setRequestResponse('NextTaskQuery',
-        err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'Query failed', {}))
-      );
+      eventBus.setRequestResponse('NextTaskQuery', err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'Query failed', {})));
 
       resourceMonitor.setCanSpawn(true);
 
@@ -635,16 +565,13 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
   describe('Pure Event-Driven Architecture', () => {
     it('should use event queries for task status instead of direct repository access', async () => {
-      const task = new TaskFactory()
-        .withPrompt('test task')
-        .withStatus('running')
-        .build();
+      const task = new TaskFactory().withPrompt('test task').withStatus('running').build();
 
       eventBus.setRequestResponse('TaskStatusQuery', ok(task));
 
       await eventBus.emit('TaskCancellationRequested', {
         taskId: task.id,
-        reason: 'Test'
+        reason: 'Test',
       });
 
       await eventBus.flushHandlers();
@@ -722,9 +649,9 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         // This tests the invariant: spawn failure -> RequeueTask + TaskFailed
         const task = new TaskFactory().withPrompt('test task').build();
 
-        workerPool.spawn = vi.fn().mockResolvedValue(
-          err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {}))
-        );
+        workerPool.spawn = vi
+          .fn()
+          .mockResolvedValue(err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {})));
 
         resourceMonitor.setCanSpawn(true);
         eventBus.setRequestResponse('NextTaskQuery', ok(task));
@@ -768,8 +695,8 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
         // Verify they were emitted in close succession (within 10ms of each other)
         const events = eventBus.getAllEmittedEvents();
-        const workerSpawnedEvent = events.find(e => e.type === 'WorkerSpawned');
-        const taskStartedEvent = events.find(e => e.type === 'TaskStarted');
+        const workerSpawnedEvent = events.find((e) => e.type === 'WorkerSpawned');
+        const taskStartedEvent = events.find((e) => e.type === 'TaskStarted');
 
         expect(workerSpawnedEvent).toBeDefined();
         expect(taskStartedEvent).toBeDefined();
@@ -796,9 +723,9 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       it('INVARIANT: Worker count NOT incremented on spawn failure', async () => {
         const task = new TaskFactory().withPrompt('test task').build();
 
-        workerPool.spawn = vi.fn().mockResolvedValue(
-          err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {}))
-        );
+        workerPool.spawn = vi
+          .fn()
+          .mockResolvedValue(err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {})));
 
         resourceMonitor.setCanSpawn(true);
         eventBus.setRequestResponse('NextTaskQuery', ok(task));
@@ -850,9 +777,9 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       it('INVARIANT: No partial state on spawn failure', async () => {
         const task = new TaskFactory().withPrompt('test task').build();
 
-        workerPool.spawn = vi.fn().mockResolvedValue(
-          err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {}))
-        );
+        workerPool.spawn = vi
+          .fn()
+          .mockResolvedValue(err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {})));
 
         resourceMonitor.setCanSpawn(true);
         eventBus.setRequestResponse('NextTaskQuery', ok(task));
@@ -893,7 +820,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
           const start = Date.now();
 
           // NOTE: This setTimeout simulates real spawn time and is intentional for timing tests
-          await new Promise(resolve => setTimeout(resolve, 15));
+          await new Promise((resolve) => setTimeout(resolve, 15));
 
           const end = Date.now();
           spawnEvents.push({ start, end });
@@ -908,7 +835,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         await Promise.all([
           eventBus.emit('TaskQueued', { taskId: task1.id, task: task1 }),
           eventBus.emit('TaskQueued', { taskId: task1.id, task: task1 }),
-          eventBus.emit('TaskQueued', { taskId: task1.id, task: task1 })
+          eventBus.emit('TaskQueued', { taskId: task1.id, task: task1 }),
         ]);
 
         // Wait for first spawn to complete (we expect at least one WorkerSpawned)
@@ -937,7 +864,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         workerPool.spawn = vi.fn().mockImplementation(async () => {
           spawnTimestamps.push(Date.now());
           // NOTE: This setTimeout simulates real spawn time and is intentional for timing tests
-          await new Promise(resolve => setTimeout(resolve, 15));
+          await new Promise((resolve) => setTimeout(resolve, 15));
           return ok(new WorkerFactory().build());
         });
 
@@ -947,7 +874,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         // Fire two events simultaneously
         await Promise.all([
           eventBus.emit('TaskQueued', { taskId: task1.id, task: task1 }),
-          eventBus.emit('TaskQueued', { taskId: task2.id, task: task2 })
+          eventBus.emit('TaskQueued', { taskId: task2.id, task: task2 }),
         ]);
 
         // Wait for first spawn to complete

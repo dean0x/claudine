@@ -14,16 +14,9 @@ import type {
   ResourceMonitor,
   OutputCapture,
   TaskQueue,
-  WorkerPool
+  WorkerPool,
 } from '../../src/core/interfaces';
-import type {
-  Task,
-  TaskId,
-  Worker,
-  WorkerId,
-  SystemResources,
-  TaskOutput
-} from '../../src/core/domain';
+import type { Task, TaskId, Worker, WorkerId, SystemResources, TaskOutput } from '../../src/core/domain';
 import type { Result } from '../../src/core/result';
 import { ok, err } from '../../src/core/result';
 import { taskNotFound } from '../../src/core/errors';
@@ -47,7 +40,7 @@ export class TestEventBus implements EventBus {
     this.emittedEvents.push({
       type: eventType,
       payload,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
 
     // Test helper: simulate emit failure for specific event types
@@ -69,7 +62,7 @@ export class TestEventBus implements EventBus {
     }
 
     if (errors.length > 0) {
-      return err(new Error(`Event handler errors: ${errors.map(e => e.message).join(', ')}`));
+      return err(new Error(`Event handler errors: ${errors.map((e) => e.message).join(', ')}`));
     }
 
     return ok(undefined);
@@ -121,15 +114,12 @@ export class TestEventBus implements EventBus {
     this.subscriptionCount = 0;
   }
 
-  async request<TRequest, TResponse>(
-    eventType: string,
-    payload: TRequest
-  ): Promise<Result<TResponse, Error>> {
+  async request<TRequest, TResponse>(eventType: string, payload: TRequest): Promise<Result<TResponse, Error>> {
     // Track request events for testing
     this.emittedEvents.push({
       type: `request:${eventType}`,
       payload,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
 
     const handler = this.requestHandlers.get(eventType);
@@ -142,7 +132,7 @@ export class TestEventBus implements EventBus {
 
   onRequest<TRequest, TResponse>(
     eventType: string,
-    handler: (event: TRequest) => Promise<Result<TResponse, Error>>
+    handler: (event: TRequest) => Promise<Result<TResponse, Error>>,
   ): Result<string, Error> {
     this.requestHandlers.set(eventType, handler as any);
     return ok(`req-handler-${eventType}`);
@@ -161,7 +151,7 @@ export class TestEventBus implements EventBus {
   }
 
   hasEmitted(eventType: string, payload?: any): boolean {
-    return this.emittedEvents.some(e => {
+    return this.emittedEvents.some((e) => {
       if (e.type !== eventType) return false;
       if (payload === undefined) return true;
       return JSON.stringify(e.payload) === JSON.stringify(payload);
@@ -169,7 +159,7 @@ export class TestEventBus implements EventBus {
   }
 
   getEventCount(eventType: string): number {
-    return this.emittedEvents.filter(e => e.type === eventType).length;
+    return this.emittedEvents.filter((e) => e.type === eventType).length;
   }
 
   clearEmittedEvents(): void {
@@ -185,10 +175,7 @@ export class TestEventBus implements EventBus {
   }
 
   // Additional test helpers for worker-handler tests
-  setRequestResponse<TRequest, TResponse>(
-    eventType: string,
-    response: Result<TResponse, Error>
-  ): void {
+  setRequestResponse<TRequest, TResponse>(eventType: string, response: Result<TResponse, Error>): void {
     this.requestHandlers.set(eventType, async (payload: TRequest) => response);
   }
 
@@ -197,16 +184,12 @@ export class TestEventBus implements EventBus {
   }
 
   getEmittedEvents(eventType: string): any[] {
-    return this.emittedEvents
-      .filter(e => e.type === eventType)
-      .map(e => e.payload);
+    return this.emittedEvents.filter((e) => e.type === eventType).map((e) => e.payload);
   }
 
   getRequestedEvents(eventType: string): any[] {
     // Track requested events (simplified for testing)
-    return this.emittedEvents
-      .filter(e => e.type === `request:${eventType}`)
-      .map(e => e.payload);
+    return this.emittedEvents.filter((e) => e.type === `request:${eventType}`).map((e) => e.payload);
   }
 
   // Event synchronization methods for replacing timing-based waits
@@ -217,15 +200,13 @@ export class TestEventBus implements EventBus {
    */
   async waitFor<T = any>(
     eventType: string,
-    options: { timeout?: number; filter?: (payload: T) => boolean } = {}
+    options: { timeout?: number; filter?: (payload: T) => boolean } = {},
   ): Promise<T> {
     const timeout = options.timeout ?? 5000;
     const filter = options.filter ?? (() => true);
 
     // Check already-emitted events first
-    const existing = this.emittedEvents.find(
-      e => e.type === eventType && filter(e.payload)
-    );
+    const existing = this.emittedEvents.find((e) => e.type === eventType && filter(e.payload));
     if (existing) {
       return existing.payload;
     }
@@ -266,7 +247,7 @@ export class TestEventBus implements EventBus {
     // Process microtasks first
     await Promise.resolve();
     // Then process any setImmediate callbacks
-    await new Promise(resolve => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
   }
 
   /**
@@ -334,7 +315,7 @@ export class TestLogger implements Logger {
       level: 'error',
       message,
       context: { ...context, error } as Record<string, unknown>,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
@@ -353,15 +334,15 @@ export class TestLogger implements Logger {
   }
 
   hasLog(level: string, message: string): boolean {
-    return this.logs.some(log => log.level === level && log.message === message);
+    return this.logs.some((log) => log.level === level && log.message === message);
   }
 
   hasLogContaining(substring: string): boolean {
-    return this.logs.some(log => log.message.includes(substring));
+    return this.logs.some((log) => log.message.includes(substring));
   }
 
   getLogsByLevel(level: string): typeof this.logs {
-    return this.logs.filter(log => log.level === level);
+    return this.logs.filter((log) => log.level === level);
   }
 
   clear(): void {
@@ -437,7 +418,7 @@ export class TestTaskRepository implements TaskRepository {
     }
     // Sort by created_at DESC to match production behavior
     const tasks = Array.from(this.tasks.values())
-      .filter(t => t.status === status)
+      .filter((t) => t.status === status)
       .sort((a, b) => b.createdAt - a.createdAt);
     return ok(tasks);
   }
@@ -508,7 +489,7 @@ export class TestProcessSpawner implements ProcessSpawner {
   async spawn(
     command: string,
     args: string[],
-    options?: any
+    options?: any,
   ): Promise<Result<{ process: ChildProcess; workerId: string }, Error>> {
     if (this.spawnError) {
       return err(this.spawnError);
@@ -536,15 +517,15 @@ export class TestProcessSpawner implements ProcessSpawner {
           if (event === 'data') {
             this.outputHandlers.set(`${workerId}-stdout`, handler as any);
           }
-        }
+        },
       },
       stderr: {
         on: (event: string, handler: Function) => {
           if (event === 'data') {
             this.outputHandlers.set(`${workerId}-stderr`, handler as any);
           }
-        }
-      }
+        },
+      },
     };
 
     return ok({ process: mockProcess, workerId });
@@ -677,10 +658,7 @@ export class TestResourceMonitor implements ResourceMonitor {
     if (!this.canSpawn) {
       return ok(false);
     }
-    return ok(
-      this.cpuUsage < this.cpuThreshold &&
-      this.availableMemory > this.memoryReserve
-    );
+    return ok(this.cpuUsage < this.cpuThreshold && this.availableMemory > this.memoryReserve);
   }
 
   getThresholds(): { readonly maxCpuPercent: number; readonly minMemoryBytes: number } {
@@ -777,7 +755,7 @@ export class TestOutputCapture implements OutputCapture {
         taskId,
         stdout: [],
         stderr: [],
-        totalSize: 0
+        totalSize: 0,
       });
     }
 
@@ -785,7 +763,7 @@ export class TestOutputCapture implements OutputCapture {
       taskId,
       stdout: output.stdout,
       stderr: output.stderr,
-      totalSize: output.totalSize
+      totalSize: output.totalSize,
     });
   }
 

@@ -36,7 +36,7 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
       // Emit event
       await eventBus.emit('TestEvent', {
         data: 'test data',
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
 
       // Subscriber should receive event
@@ -80,7 +80,7 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
       });
 
       // Verify ordering is maintained
-      expect(received.map(r => r.subscriber)).toEqual([1, 2, 3]);
+      expect(received.map((r) => r.subscriber)).toEqual([1, 2, 3]);
     });
 
     it('should not deliver events to wrong event type subscribers', async () => {
@@ -104,7 +104,7 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
 
     it('should handle events with no subscribers gracefully', async () => {
       const result = await eventBus.emit('UnsubscribedEvent', {
-        data: 'nobody listening'
+        data: 'nobody listening',
       });
 
       expect(result.ok).toBe(true);
@@ -173,14 +173,14 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
         value: 'test',
         eventId: expect.any(String),
         timestamp: expect.any(Number),
-        source: 'claudine'
+        source: 'claudine',
       });
       expect(allData).toMatchObject({
         type: 'SpecificEvent',
         value: 'test',
         eventId: expect.any(String),
         timestamp: expect.any(Number),
-        source: 'claudine'
+        source: 'claudine',
       });
     });
   });
@@ -222,9 +222,15 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
       let count2 = 0;
       let countAll = 0;
 
-      eventBus.subscribe('Event1', async () => { count1++; });
-      eventBus.subscribe('Event2', async () => { count2++; });
-      eventBus.subscribeAll(async () => { countAll++; });
+      eventBus.subscribe('Event1', async () => {
+        count1++;
+      });
+      eventBus.subscribe('Event2', async () => {
+        count2++;
+      });
+      eventBus.subscribeAll(async () => {
+        countAll++;
+      });
 
       // Emit before unsubscribeAll
       await eventBus.emit('Event1', {});
@@ -250,7 +256,9 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
     it('should allow re-subscribing after unsubscribe', async () => {
       let received = 0;
 
-      const handler = async () => { received++; };
+      const handler = async () => {
+        received++;
+      };
 
       // Subscribe, emit, unsubscribe
       const sub1 = eventBus.subscribe('TestEvent', handler);
@@ -326,7 +334,7 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
       vi.useFakeTimers();
 
       eventBus.subscribe('TestEvent', async () => {
-        await new Promise(resolve => setTimeout(resolve, 1));
+        await new Promise((resolve) => setTimeout(resolve, 1));
         throw new Error('Async error');
       });
 
@@ -371,9 +379,7 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
       });
 
       // Emit multiple events concurrently
-      const promises = Array.from({ length: 10 }, () =>
-        eventBus.emit('ConcurrentEvent', {})
-      );
+      const promises = Array.from({ length: 10 }, () => eventBus.emit('ConcurrentEvent', {}));
 
       await Promise.all(promises);
 
@@ -386,7 +392,7 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
 
       // Slow handler
       eventBus.subscribe('TestEvent', async () => {
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
         results.push('slow');
       });
 
@@ -442,13 +448,13 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
           deep: {
             value: 42,
             array: [1, 2, 3],
-            fn: () => 'function'
-          }
+            fn: () => 'function',
+          },
         },
         date: new Date(),
         symbol: Symbol('test'),
         undefined: undefined,
-        null: null
+        null: null,
       };
 
       await eventBus.emit('ComplexEvent', complexData);
@@ -472,7 +478,7 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
         // Process request and emit response
         await eventBus.emit('Response', {
           requestId: event.id,
-          result: event.value * 2
+          result: event.value * 2,
         });
       });
 

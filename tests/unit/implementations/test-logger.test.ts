@@ -29,7 +29,7 @@ describe('TestLogger - Test Capture Behavior', () => {
       const logs = logger.logs;
       expect(logs[0].context).toEqual({
         userId: '123',
-        action: 'login'
+        action: 'login',
       });
     });
 
@@ -45,7 +45,6 @@ describe('TestLogger - Test Capture Behavior', () => {
       expect(logs[2].level).toBe('warn');
       expect(logs[3].level).toBe('error');
     });
-
   });
 
   describe('Clear functionality', () => {
@@ -82,8 +81,8 @@ describe('TestLogger - Test Capture Behavior', () => {
     it('should find logs by partial message', () => {
       logger.error('Failed to connect to database');
 
-      expect(logger.logs.some(l => l.message.includes('Failed to connect'))).toBe(true);
-      expect(logger.logs.some(l => l.message.includes('database'))).toBe(true);
+      expect(logger.logs.some((l) => l.message.includes('Failed to connect'))).toBe(true);
+      expect(logger.logs.some((l) => l.message.includes('database'))).toBe(true);
     });
   });
 
@@ -144,9 +143,9 @@ describe('TestLogger - Test Capture Behavior', () => {
       logger.warn('Warning message');
       logger.error('Error message');
 
-      const errorLogs = logger.logs.filter(l => l.level === 'error');
-      const warnLogs = logger.logs.filter(l => l.level === 'warn');
-      const infoLogs = logger.logs.filter(l => l.level === 'info');
+      const errorLogs = logger.logs.filter((l) => l.level === 'error');
+      const warnLogs = logger.logs.filter((l) => l.level === 'warn');
+      const infoLogs = logger.logs.filter((l) => l.level === 'info');
 
       expect(errorLogs).toHaveLength(1);
       expect(warnLogs).toHaveLength(1);

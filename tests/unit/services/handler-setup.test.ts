@@ -4,7 +4,11 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { extractHandlerDependencies, setupEventHandlers, HandlerDependencies } from '../../../src/services/handler-setup';
+import {
+  extractHandlerDependencies,
+  setupEventHandlers,
+  HandlerDependencies,
+} from '../../../src/services/handler-setup';
 import { Container } from '../../../src/core/container';
 import { InMemoryEventBus } from '../../../src/core/events/event-bus';
 import { Database } from '../../../src/implementations/database';
@@ -51,11 +55,7 @@ describe('handler-setup', () => {
     container.registerValue('outputCapture', new BufferedOutputCapture(config.maxOutputBuffer, eventBus));
 
     // Resource monitor with mocked system resources
-    const resourceMonitor = new SystemResourceMonitor(
-      config,
-      eventBus,
-      logger.child({ module: 'ResourceMonitor' })
-    );
+    const resourceMonitor = new SystemResourceMonitor(config, eventBus, logger.child({ module: 'ResourceMonitor' }));
     container.registerValue('resourceMonitor', resourceMonitor);
 
     // Worker pool with test spawner
@@ -65,10 +65,13 @@ describe('handler-setup', () => {
       logger.child({ module: 'WorkerPool' }),
       eventBus,
       new GitWorktreeManager(logger.child({ module: 'WorktreeManager' }), eventBus),
-      new BufferedOutputCapture(config.maxOutputBuffer, eventBus)
+      new BufferedOutputCapture(config.maxOutputBuffer, eventBus),
     );
     container.registerValue('workerPool', workerPool);
-    container.registerValue('worktreeManager', new GitWorktreeManager(logger.child({ module: 'WorktreeManager' }), eventBus));
+    container.registerValue(
+      'worktreeManager',
+      new GitWorktreeManager(logger.child({ module: 'WorktreeManager' }), eventBus),
+    );
   });
 
   afterEach(async () => {
@@ -208,10 +211,11 @@ describe('handler-setup', () => {
       await setupEventHandlers(depsResult.value);
 
       // Check that success was logged
-      const infoLogs = logger.logs.filter(log => log.level === 'info');
-      const successLog = infoLogs.find(log =>
-        log.message.includes('Event handlers initialized successfully') ||
-        log.message.includes('Event handler registry initialized')
+      const infoLogs = logger.logs.filter((log) => log.level === 'info');
+      const successLog = infoLogs.find(
+        (log) =>
+          log.message.includes('Event handlers initialized successfully') ||
+          log.message.includes('Event handler registry initialized'),
       );
       expect(successLog).toBeDefined();
     });
@@ -227,9 +231,9 @@ describe('handler-setup', () => {
       const { ClaudineError, ErrorCode } = await import('../../../src/core/errors');
 
       const originalCreate = DependencyHandler.create;
-      DependencyHandler.create = vi.fn().mockResolvedValue(
-        err(new ClaudineError(ErrorCode.INTERNAL_ERROR, 'DependencyHandler creation failed'))
-      );
+      DependencyHandler.create = vi
+        .fn()
+        .mockResolvedValue(err(new ClaudineError(ErrorCode.INTERNAL_ERROR, 'DependencyHandler creation failed')));
 
       try {
         const result = await setupEventHandlers(depsResult.value);
@@ -243,7 +247,7 @@ describe('handler-setup', () => {
         // Verify registry.shutdown() was called (cleanup happened)
         // We can verify cleanup by checking that subscriptions were cleared
         // or by checking error logs
-        const errorLogs = logger.logs.filter(log => log.level === 'error');
+        const errorLogs = logger.logs.filter((log) => log.level === 'error');
         // If cleanup worked, no additional errors should appear from unhandled subscriptions
       } finally {
         // Restore original implementation

@@ -19,7 +19,7 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
           dependsOnTaskId: TaskId('task-B'),
           createdAt: Date.now(),
           resolvedAt: null,
-          resolution: 'pending'
+          resolution: 'pending',
         },
         {
           id: 2,
@@ -27,8 +27,8 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
           dependsOnTaskId: TaskId('task-C'),
           createdAt: Date.now(),
           resolvedAt: null,
-          resolution: 'pending'
-        }
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -68,8 +68,8 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
           dependsOnTaskId: TaskId('task-B'),
           createdAt: Date.now(),
           resolvedAt: null,
-          resolution: 'pending'
-        }
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -92,7 +92,7 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
           dependsOnTaskId: TaskId('task-B'),
           createdAt: Date.now(),
           resolvedAt: null,
-          resolution: 'pending'
+          resolution: 'pending',
         },
         {
           id: 2,
@@ -100,8 +100,8 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
           dependsOnTaskId: TaskId('task-C'),
           createdAt: Date.now(),
           resolvedAt: null,
-          resolution: 'pending'
-        }
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -122,7 +122,7 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
           dependsOnTaskId: TaskId('task-B'),
           createdAt: Date.now(),
           resolvedAt: null,
-          resolution: 'pending'
+          resolution: 'pending',
         },
         {
           id: 2,
@@ -130,7 +130,7 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
           dependsOnTaskId: TaskId('task-C'),
           createdAt: Date.now(),
           resolvedAt: null,
-          resolution: 'pending'
+          resolution: 'pending',
         },
         {
           id: 3,
@@ -138,7 +138,7 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
           dependsOnTaskId: TaskId('task-D'),
           createdAt: Date.now(),
           resolvedAt: null,
-          resolution: 'pending'
+          resolution: 'pending',
         },
         {
           id: 4,
@@ -146,8 +146,8 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
           dependsOnTaskId: TaskId('task-D'),
           createdAt: Date.now(),
           resolvedAt: null,
-          resolution: 'pending'
-        }
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -173,7 +173,7 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
           dependsOnTaskId: TaskId('task-B'),
           createdAt: Date.now(),
           resolvedAt: null,
-          resolution: 'pending'
+          resolution: 'pending',
         },
         {
           id: 2,
@@ -181,7 +181,7 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
           dependsOnTaskId: TaskId('task-C'),
           createdAt: Date.now(),
           resolvedAt: null,
-          resolution: 'pending'
+          resolution: 'pending',
         },
         {
           id: 3,
@@ -189,7 +189,7 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
           dependsOnTaskId: TaskId('task-D'),
           createdAt: Date.now(),
           resolvedAt: null,
-          resolution: 'pending'
+          resolution: 'pending',
         },
         {
           id: 4,
@@ -197,8 +197,8 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
           dependsOnTaskId: TaskId('task-D'),
           createdAt: Date.now(),
           resolvedAt: null,
-          resolution: 'pending'
-        }
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -211,10 +211,38 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     it('should detect long cycle chain', () => {
       // A -> B -> C -> D -> E
       const dependencies: TaskDependency[] = [
-        { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 2, taskId: TaskId('task-B'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 3, taskId: TaskId('task-C'), dependsOnTaskId: TaskId('task-D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 4, taskId: TaskId('task-D'), dependsOnTaskId: TaskId('task-E'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        {
+          id: 1,
+          taskId: TaskId('task-A'),
+          dependsOnTaskId: TaskId('task-B'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 2,
+          taskId: TaskId('task-B'),
+          dependsOnTaskId: TaskId('task-C'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 3,
+          taskId: TaskId('task-C'),
+          dependsOnTaskId: TaskId('task-D'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 4,
+          taskId: TaskId('task-D'),
+          dependsOnTaskId: TaskId('task-E'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -229,10 +257,38 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     it('should detect cycle in middle of chain', () => {
       // A -> B -> C -> D -> E
       const dependencies: TaskDependency[] = [
-        { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 2, taskId: TaskId('task-B'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 3, taskId: TaskId('task-C'), dependsOnTaskId: TaskId('task-D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 4, taskId: TaskId('task-D'), dependsOnTaskId: TaskId('task-E'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        {
+          id: 1,
+          taskId: TaskId('task-A'),
+          dependsOnTaskId: TaskId('task-B'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 2,
+          taskId: TaskId('task-B'),
+          dependsOnTaskId: TaskId('task-C'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 3,
+          taskId: TaskId('task-C'),
+          dependsOnTaskId: TaskId('task-D'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 4,
+          taskId: TaskId('task-D'),
+          dependsOnTaskId: TaskId('task-E'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -341,8 +397,22 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     it('should get direct dependencies', () => {
       // A depends on B and C
       const dependencies: TaskDependency[] = [
-        { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 2, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        {
+          id: 1,
+          taskId: TaskId('task-A'),
+          dependsOnTaskId: TaskId('task-B'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 2,
+          taskId: TaskId('task-A'),
+          dependsOnTaskId: TaskId('task-C'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -358,8 +428,22 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     it('should get direct dependents', () => {
       // A and B depend on C
       const dependencies: TaskDependency[] = [
-        { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 2, taskId: TaskId('task-B'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        {
+          id: 1,
+          taskId: TaskId('task-A'),
+          dependsOnTaskId: TaskId('task-C'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 2,
+          taskId: TaskId('task-B'),
+          dependsOnTaskId: TaskId('task-C'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -375,9 +459,30 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     it('should get all transitive dependencies', () => {
       // A -> B -> C -> D
       const dependencies: TaskDependency[] = [
-        { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 2, taskId: TaskId('task-B'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 3, taskId: TaskId('task-C'), dependsOnTaskId: TaskId('task-D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        {
+          id: 1,
+          taskId: TaskId('task-A'),
+          dependsOnTaskId: TaskId('task-B'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 2,
+          taskId: TaskId('task-B'),
+          dependsOnTaskId: TaskId('task-C'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 3,
+          taskId: TaskId('task-C'),
+          dependsOnTaskId: TaskId('task-D'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -394,9 +499,30 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     it('should get all transitive dependents', () => {
       // A -> B -> C -> D
       const dependencies: TaskDependency[] = [
-        { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 2, taskId: TaskId('task-B'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 3, taskId: TaskId('task-C'), dependsOnTaskId: TaskId('task-D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        {
+          id: 1,
+          taskId: TaskId('task-A'),
+          dependsOnTaskId: TaskId('task-B'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 2,
+          taskId: TaskId('task-B'),
+          dependsOnTaskId: TaskId('task-C'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 3,
+          taskId: TaskId('task-C'),
+          dependsOnTaskId: TaskId('task-D'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -424,8 +550,22 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     it('should sort simple chain', () => {
       // A -> B -> C
       const dependencies: TaskDependency[] = [
-        { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 2, taskId: TaskId('task-B'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        {
+          id: 1,
+          taskId: TaskId('task-A'),
+          dependsOnTaskId: TaskId('task-B'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 2,
+          taskId: TaskId('task-B'),
+          dependsOnTaskId: TaskId('task-C'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -442,10 +582,38 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     it('should sort diamond pattern', () => {
       // A -> B, A -> C, B -> D, C -> D
       const dependencies: TaskDependency[] = [
-        { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 2, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 3, taskId: TaskId('task-B'), dependsOnTaskId: TaskId('task-D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 4, taskId: TaskId('task-C'), dependsOnTaskId: TaskId('task-D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        {
+          id: 1,
+          taskId: TaskId('task-A'),
+          dependsOnTaskId: TaskId('task-B'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 2,
+          taskId: TaskId('task-A'),
+          dependsOnTaskId: TaskId('task-C'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 3,
+          taskId: TaskId('task-B'),
+          dependsOnTaskId: TaskId('task-D'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 4,
+          taskId: TaskId('task-C'),
+          dependsOnTaskId: TaskId('task-D'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -467,8 +635,22 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     it('should fail for graph with cycles', () => {
       // A -> B -> A (cycle)
       const dependencies: TaskDependency[] = [
-        { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 2, taskId: TaskId('task-B'), dependsOnTaskId: TaskId('task-A'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        {
+          id: 1,
+          taskId: TaskId('task-A'),
+          dependsOnTaskId: TaskId('task-B'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 2,
+          taskId: TaskId('task-B'),
+          dependsOnTaskId: TaskId('task-A'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -505,8 +687,22 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     it('should handle disconnected graph components', () => {
       // A -> B and C -> D (disconnected)
       const dependencies: TaskDependency[] = [
-        { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 2, taskId: TaskId('task-C'), dependsOnTaskId: TaskId('task-D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        {
+          id: 1,
+          taskId: TaskId('task-A'),
+          dependsOnTaskId: TaskId('task-B'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 2,
+          taskId: TaskId('task-C'),
+          dependsOnTaskId: TaskId('task-D'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -525,9 +721,30 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     it('should handle build pipeline dependencies', () => {
       // test -> lint -> build -> deploy
       const dependencies: TaskDependency[] = [
-        { id: 1, taskId: TaskId('deploy'), dependsOnTaskId: TaskId('build'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 2, taskId: TaskId('build'), dependsOnTaskId: TaskId('lint'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 3, taskId: TaskId('build'), dependsOnTaskId: TaskId('test'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        {
+          id: 1,
+          taskId: TaskId('deploy'),
+          dependsOnTaskId: TaskId('build'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 2,
+          taskId: TaskId('build'),
+          dependsOnTaskId: TaskId('lint'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 3,
+          taskId: TaskId('build'),
+          dependsOnTaskId: TaskId('test'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -548,8 +765,22 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     it('should prevent circular pipeline', () => {
       // deploy -> build -> test -> deploy (circular!)
       const dependencies: TaskDependency[] = [
-        { id: 1, taskId: TaskId('deploy'), dependsOnTaskId: TaskId('build'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 2, taskId: TaskId('build'), dependsOnTaskId: TaskId('test'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        {
+          id: 1,
+          taskId: TaskId('deploy'),
+          dependsOnTaskId: TaskId('build'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 2,
+          taskId: TaskId('build'),
+          dependsOnTaskId: TaskId('test'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -579,8 +810,8 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
           dependsOnTaskId: TaskId('task-B'),
           createdAt: Date.now(),
           resolvedAt: null,
-          resolution: 'pending'
-        }
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -593,9 +824,30 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     it('should return correct depth for linear chain', () => {
       // A -> B -> C -> D (depth 3)
       const dependencies: TaskDependency[] = [
-        { id: 1, taskId: TaskId('A'), dependsOnTaskId: TaskId('B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 2, taskId: TaskId('B'), dependsOnTaskId: TaskId('C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 3, taskId: TaskId('C'), dependsOnTaskId: TaskId('D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        {
+          id: 1,
+          taskId: TaskId('A'),
+          dependsOnTaskId: TaskId('B'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 2,
+          taskId: TaskId('B'),
+          dependsOnTaskId: TaskId('C'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 3,
+          taskId: TaskId('C'),
+          dependsOnTaskId: TaskId('D'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -617,10 +869,38 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
       // C -> D
       // Max depth for A is 2 (A -> B -> D or A -> C -> D)
       const dependencies: TaskDependency[] = [
-        { id: 1, taskId: TaskId('A'), dependsOnTaskId: TaskId('B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 2, taskId: TaskId('A'), dependsOnTaskId: TaskId('C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 3, taskId: TaskId('B'), dependsOnTaskId: TaskId('D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 4, taskId: TaskId('C'), dependsOnTaskId: TaskId('D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        {
+          id: 1,
+          taskId: TaskId('A'),
+          dependsOnTaskId: TaskId('B'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 2,
+          taskId: TaskId('A'),
+          dependsOnTaskId: TaskId('C'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 3,
+          taskId: TaskId('B'),
+          dependsOnTaskId: TaskId('D'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 4,
+          taskId: TaskId('C'),
+          dependsOnTaskId: TaskId('D'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -636,11 +916,46 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
       // C (depth 0 from C)
       // Max depth for A is 4 (A -> B -> D -> E -> F)
       const dependencies: TaskDependency[] = [
-        { id: 1, taskId: TaskId('A'), dependsOnTaskId: TaskId('B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 2, taskId: TaskId('A'), dependsOnTaskId: TaskId('C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 3, taskId: TaskId('B'), dependsOnTaskId: TaskId('D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 4, taskId: TaskId('D'), dependsOnTaskId: TaskId('E'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 5, taskId: TaskId('E'), dependsOnTaskId: TaskId('F'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        {
+          id: 1,
+          taskId: TaskId('A'),
+          dependsOnTaskId: TaskId('B'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 2,
+          taskId: TaskId('A'),
+          dependsOnTaskId: TaskId('C'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 3,
+          taskId: TaskId('B'),
+          dependsOnTaskId: TaskId('D'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 4,
+          taskId: TaskId('D'),
+          dependsOnTaskId: TaskId('E'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 5,
+          taskId: TaskId('E'),
+          dependsOnTaskId: TaskId('F'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -660,7 +975,7 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
           dependsOnTaskId: TaskId(`task-${i + 1}`),
           createdAt: Date.now(),
           resolvedAt: null,
-          resolution: 'pending'
+          resolution: 'pending',
         });
       }
 
@@ -679,14 +994,70 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
       // D -> F
       // E -> F
       const dependencies: TaskDependency[] = [
-        { id: 1, taskId: TaskId('A'), dependsOnTaskId: TaskId('B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 2, taskId: TaskId('A'), dependsOnTaskId: TaskId('C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 3, taskId: TaskId('B'), dependsOnTaskId: TaskId('D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 4, taskId: TaskId('B'), dependsOnTaskId: TaskId('E'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 5, taskId: TaskId('C'), dependsOnTaskId: TaskId('D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 6, taskId: TaskId('C'), dependsOnTaskId: TaskId('E'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 7, taskId: TaskId('D'), dependsOnTaskId: TaskId('F'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-        { id: 8, taskId: TaskId('E'), dependsOnTaskId: TaskId('F'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+        {
+          id: 1,
+          taskId: TaskId('A'),
+          dependsOnTaskId: TaskId('B'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 2,
+          taskId: TaskId('A'),
+          dependsOnTaskId: TaskId('C'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 3,
+          taskId: TaskId('B'),
+          dependsOnTaskId: TaskId('D'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 4,
+          taskId: TaskId('B'),
+          dependsOnTaskId: TaskId('E'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 5,
+          taskId: TaskId('C'),
+          dependsOnTaskId: TaskId('D'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 6,
+          taskId: TaskId('C'),
+          dependsOnTaskId: TaskId('E'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 7,
+          taskId: TaskId('D'),
+          dependsOnTaskId: TaskId('F'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
+        {
+          id: 8,
+          taskId: TaskId('E'),
+          dependsOnTaskId: TaskId('F'),
+          createdAt: Date.now(),
+          resolvedAt: null,
+          resolution: 'pending',
+        },
       ];
 
       const graph = new DependencyGraph(dependencies);
@@ -736,7 +1107,14 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
 
       it('should add edge to existing graph', () => {
         const dependencies: TaskDependency[] = [
-          { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+          {
+            id: 1,
+            taskId: TaskId('task-A'),
+            dependsOnTaskId: TaskId('task-B'),
+            createdAt: Date.now(),
+            resolvedAt: null,
+            resolution: 'pending',
+          },
         ];
         const graph = new DependencyGraph(dependencies);
 
@@ -791,7 +1169,14 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     describe('removeEdge', () => {
       it('should remove edge from graph', () => {
         const dependencies: TaskDependency[] = [
-          { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+          {
+            id: 1,
+            taskId: TaskId('task-A'),
+            dependsOnTaskId: TaskId('task-B'),
+            createdAt: Date.now(),
+            resolvedAt: null,
+            resolution: 'pending',
+          },
         ];
         const graph = new DependencyGraph(dependencies);
 
@@ -804,7 +1189,14 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
 
       it('should remove edge from reverse graph', () => {
         const dependencies: TaskDependency[] = [
-          { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+          {
+            id: 1,
+            taskId: TaskId('task-A'),
+            dependsOnTaskId: TaskId('task-B'),
+            createdAt: Date.now(),
+            resolvedAt: null,
+            resolution: 'pending',
+          },
         ];
         const graph = new DependencyGraph(dependencies);
 
@@ -837,8 +1229,22 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
 
       it('should break cycle when edge removed', () => {
         const dependencies: TaskDependency[] = [
-          { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-          { id: 2, taskId: TaskId('task-B'), dependsOnTaskId: TaskId('task-A'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+          {
+            id: 1,
+            taskId: TaskId('task-A'),
+            dependsOnTaskId: TaskId('task-B'),
+            createdAt: Date.now(),
+            resolvedAt: null,
+            resolution: 'pending',
+          },
+          {
+            id: 2,
+            taskId: TaskId('task-B'),
+            dependsOnTaskId: TaskId('task-A'),
+            createdAt: Date.now(),
+            resolvedAt: null,
+            resolution: 'pending',
+          },
         ];
         const graph = new DependencyGraph(dependencies);
 
@@ -858,8 +1264,22 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
     describe('removeTask', () => {
       it('should remove all outgoing edges', () => {
         const dependencies: TaskDependency[] = [
-          { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-          { id: 2, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+          {
+            id: 1,
+            taskId: TaskId('task-A'),
+            dependsOnTaskId: TaskId('task-B'),
+            createdAt: Date.now(),
+            resolvedAt: null,
+            resolution: 'pending',
+          },
+          {
+            id: 2,
+            taskId: TaskId('task-A'),
+            dependsOnTaskId: TaskId('task-C'),
+            createdAt: Date.now(),
+            resolvedAt: null,
+            resolution: 'pending',
+          },
         ];
         const graph = new DependencyGraph(dependencies);
 
@@ -878,8 +1298,22 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
 
       it('should remove all incoming edges', () => {
         const dependencies: TaskDependency[] = [
-          { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-          { id: 2, taskId: TaskId('task-B'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+          {
+            id: 1,
+            taskId: TaskId('task-A'),
+            dependsOnTaskId: TaskId('task-C'),
+            createdAt: Date.now(),
+            resolvedAt: null,
+            resolution: 'pending',
+          },
+          {
+            id: 2,
+            taskId: TaskId('task-B'),
+            dependsOnTaskId: TaskId('task-C'),
+            createdAt: Date.now(),
+            resolvedAt: null,
+            resolution: 'pending',
+          },
         ];
         const graph = new DependencyGraph(dependencies);
 
@@ -899,8 +1333,22 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
       it('should handle removing task with both incoming and outgoing edges', () => {
         // A -> B -> C
         const dependencies: TaskDependency[] = [
-          { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-          { id: 2, taskId: TaskId('task-B'), dependsOnTaskId: TaskId('task-C'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+          {
+            id: 1,
+            taskId: TaskId('task-A'),
+            dependsOnTaskId: TaskId('task-B'),
+            createdAt: Date.now(),
+            resolvedAt: null,
+            resolution: 'pending',
+          },
+          {
+            id: 2,
+            taskId: TaskId('task-B'),
+            dependsOnTaskId: TaskId('task-C'),
+            createdAt: Date.now(),
+            resolvedAt: null,
+            resolution: 'pending',
+          },
         ];
         const graph = new DependencyGraph(dependencies);
 
@@ -926,8 +1374,22 @@ describe('DependencyGraph - Cycle Detection and DAG Operations', () => {
       it('should maintain graph consistency for remaining tasks', () => {
         // A -> B, C -> D
         const dependencies: TaskDependency[] = [
-          { id: 1, taskId: TaskId('task-A'), dependsOnTaskId: TaskId('task-B'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' },
-          { id: 2, taskId: TaskId('task-C'), dependsOnTaskId: TaskId('task-D'), createdAt: Date.now(), resolvedAt: null, resolution: 'pending' }
+          {
+            id: 1,
+            taskId: TaskId('task-A'),
+            dependsOnTaskId: TaskId('task-B'),
+            createdAt: Date.now(),
+            resolvedAt: null,
+            resolution: 'pending',
+          },
+          {
+            id: 2,
+            taskId: TaskId('task-C'),
+            dependsOnTaskId: TaskId('task-D'),
+            createdAt: Date.now(),
+            resolvedAt: null,
+            resolution: 'pending',
+          },
         ];
         const graph = new DependencyGraph(dependencies);
 

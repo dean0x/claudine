@@ -3,20 +3,12 @@
  * Responds to system events and emits scaling decisions
  */
 
-import {
-  TaskQueue,
-  WorkerPool,
-  ResourceMonitor,
-  Logger
-} from '../core/interfaces.js';
+import { TaskQueue, WorkerPool, ResourceMonitor, Logger } from '../core/interfaces.js';
 import { EventBus } from '../core/events/event-bus.js';
 import { Result, ok, err } from '../core/result.js';
 import { ClaudineError, ErrorCode } from '../core/errors.js';
 import { BaseEventHandler } from '../core/events/handlers.js';
-import {
-  WorkerKilledEvent,
-  SystemResourcesUpdatedEvent
-} from '../core/events/events.js';
+import { WorkerKilledEvent, SystemResourcesUpdatedEvent } from '../core/events/events.js';
 
 export class AutoscalingManager extends BaseEventHandler {
   private running = false;
@@ -26,7 +18,7 @@ export class AutoscalingManager extends BaseEventHandler {
     private readonly workers: WorkerPool,
     private readonly monitor: ResourceMonitor,
     private readonly eventBus: EventBus,
-    logger: Logger
+    logger: Logger,
   ) {
     super(logger, 'AutoscalingManager');
   }
@@ -78,7 +70,6 @@ export class AutoscalingManager extends BaseEventHandler {
     this.logger.info('Event-driven autoscaling stopped');
   }
 
-
   /**
    * Handle worker killed events - check if we need to scale up for remaining queue
    */
@@ -90,7 +81,7 @@ export class AutoscalingManager extends BaseEventHandler {
     this.logger.debug('Worker killed, checking for scaling opportunity', {
       workerId: event.workerId,
       taskId: event.taskId,
-      eventId: event.eventId
+      eventId: event.eventId,
     });
 
     // Small delay to let the queue handler process any completed tasks
@@ -107,11 +98,12 @@ export class AutoscalingManager extends BaseEventHandler {
 
     // Only check scaling if resources look favorable
     const { cpuPercent, memoryUsed } = event;
-    if (cpuPercent < 70) { // Good CPU availability
+    if (cpuPercent < 70) {
+      // Good CPU availability
       this.logger.debug('Resources favorable for scaling', {
         cpuPercent,
         memoryUsed,
-        eventId: event.eventId
+        eventId: event.eventId,
       });
 
       await this.checkScaling();
@@ -142,7 +134,7 @@ export class AutoscalingManager extends BaseEventHandler {
 
       // Check if we can spawn more workers
       const canSpawnResult = await this.monitor.canSpawnWorker();
-      
+
       if (!canSpawnResult.ok) {
         this.logger.error('Failed to check resources for scaling', canSpawnResult.error);
         return;
@@ -156,7 +148,7 @@ export class AutoscalingManager extends BaseEventHandler {
 
       // Get next task to spawn worker for
       const peekResult = this.queue.peek();
-      
+
       if (!peekResult.ok || !peekResult.value) {
         this.logger.debug('No task available in queue for scaling');
         return;
@@ -169,9 +161,8 @@ export class AutoscalingManager extends BaseEventHandler {
         queueSize,
         currentWorkers: workerCount,
         taskId: task.id,
-        reason: 'Resources available, WorkerHandler should spawn worker'
+        reason: 'Resources available, WorkerHandler should spawn worker',
       });
-
     } catch (error) {
       this.logger.error('Scaling check failed', error as Error);
     }
@@ -182,11 +173,11 @@ export class AutoscalingManager extends BaseEventHandler {
    */
   private async logResourceConstraints(): Promise<void> {
     const resourcesResult = await this.monitor.getResources();
-    
+
     if (resourcesResult.ok) {
       const resources = resourcesResult.value;
       const thresholds = this.monitor.getThresholds();
-      
+
       this.logger.debug('Cannot scale - resource constraints', {
         cpuUsage: resources.cpuUsage,
         cpuThreshold: thresholds.maxCpuPercent,
@@ -212,15 +203,17 @@ export class AutoscalingManager extends BaseEventHandler {
   }> {
     const queueSize = this.queue.size();
     const workerCount = this.workers.getWorkerCount();
-    
+
     const canSpawnResult = await this.monitor.canSpawnWorker();
     const canSpawn = canSpawnResult.ok && canSpawnResult.value;
 
     const resourcesResult = await this.monitor.getResources();
-    const resources = resourcesResult.ok ? {
-      cpuUsage: resourcesResult.value.cpuUsage,
-      availableMemory: resourcesResult.value.availableMemory,
-    } : undefined;
+    const resources = resourcesResult.ok
+      ? {
+          cpuUsage: resourcesResult.value.cpuUsage,
+          availableMemory: resourcesResult.value.availableMemory,
+        }
+      : undefined;
 
     return {
       running: this.running,
@@ -236,24 +229,11 @@ export class AutoscalingManager extends BaseEventHandler {
  * Autoscaling policy for more sophisticated scaling decisions
  */
 export interface AutoscalingPolicy {
-  shouldScaleUp(
-    queueSize: number,
-    workerCount: number,
-    cpuUsage: number,
-    memoryAvailable: number
-  ): boolean;
+  shouldScaleUp(queueSize: number, workerCount: number, cpuUsage: number, memoryAvailable: number): boolean;
 
-  shouldScaleDown(
-    queueSize: number,
-    workerCount: number,
-    cpuUsage: number,
-    memoryAvailable: number
-  ): boolean;
+  shouldScaleDown(queueSize: number, workerCount: number, cpuUsage: number, memoryAvailable: number): boolean;
 
-  getTargetWorkerCount(
-    queueSize: number,
-    currentWorkers: number
-  ): number;
+  getTargetWorkerCount(queueSize: number, currentWorkers: number): number;
 }
 
 /**
@@ -263,15 +243,10 @@ export class DefaultAutoscalingPolicy implements AutoscalingPolicy {
   constructor(
     private readonly maxCpuPercent = 80,
     private readonly minMemoryBytes = 1_000_000_000,
-    private readonly maxWorkersPerTask = 1
+    private readonly maxWorkersPerTask = 1,
   ) {}
 
-  shouldScaleUp(
-    queueSize: number,
-    workerCount: number,
-    cpuUsage: number,
-    memoryAvailable: number
-  ): boolean {
+  shouldScaleUp(queueSize: number, workerCount: number, cpuUsage: number, memoryAvailable: number): boolean {
     // Don't scale if no tasks in queue
     if (queueSize === 0) {
       return false;
@@ -290,21 +265,13 @@ export class DefaultAutoscalingPolicy implements AutoscalingPolicy {
     return workerCount < queueSize;
   }
 
-  shouldScaleDown(
-    queueSize: number,
-    workerCount: number,
-    cpuUsage: number,
-    memoryAvailable: number
-  ): boolean {
+  shouldScaleDown(queueSize: number, workerCount: number, cpuUsage: number, memoryAvailable: number): boolean {
     // For now, we don't scale down - workers terminate when done
     // Could implement idle worker termination in the future
     return false;
   }
 
-  getTargetWorkerCount(
-    queueSize: number,
-    currentWorkers: number
-  ): number {
+  getTargetWorkerCount(queueSize: number, currentWorkers: number): number {
     // Simple policy: one worker per task
     return Math.min(queueSize, currentWorkers + 1);
   }
@@ -314,29 +281,16 @@ export class DefaultAutoscalingPolicy implements AutoscalingPolicy {
  * Aggressive autoscaling policy for maximum throughput
  */
 export class AggressiveAutoscalingPolicy implements AutoscalingPolicy {
-  shouldScaleUp(
-    queueSize: number,
-    workerCount: number,
-    cpuUsage: number,
-    memoryAvailable: number
-  ): boolean {
+  shouldScaleUp(queueSize: number, workerCount: number, cpuUsage: number, memoryAvailable: number): boolean {
     // Scale up as long as we have any tasks and any resources
     return queueSize > 0 && cpuUsage < 95 && memoryAvailable > 500_000_000;
   }
 
-  shouldScaleDown(
-    queueSize: number,
-    workerCount: number,
-    cpuUsage: number,
-    memoryAvailable: number
-  ): boolean {
+  shouldScaleDown(queueSize: number, workerCount: number, cpuUsage: number, memoryAvailable: number): boolean {
     return false;
   }
 
-  getTargetWorkerCount(
-    queueSize: number,
-    currentWorkers: number
-  ): number {
+  getTargetWorkerCount(queueSize: number, currentWorkers: number): number {
     // Try to spawn multiple workers at once
     return currentWorkers + Math.min(queueSize, 5);
   }

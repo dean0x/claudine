@@ -10,19 +10,15 @@ import { TaskId } from '../core/domain.js';
 export class ProcessConnector {
   constructor(
     private readonly outputCapture: OutputCapture,
-    private readonly logger: Logger
+    private readonly logger: Logger,
   ) {}
 
   /**
    * Connect a process to output capture
    */
-  connect(
-    process: ChildProcess,
-    taskId: TaskId,
-    onExit: (code: number | null) => void
-  ): void {
+  connect(process: ChildProcess, taskId: TaskId, onExit: (code: number | null) => void): void {
     let exitHandled = false;
-    
+
     const safeOnExit = (code?: number | null) => {
       if (exitHandled) {
         this.logger.debug('Multiple onExit calls prevented', { taskId, code });
@@ -36,7 +32,7 @@ export class ProcessConnector {
       process.stdout.on('data', (data: Buffer) => {
         const text = data.toString();
         const result = this.outputCapture.capture(taskId, 'stdout', text);
-        
+
         if (!result.ok) {
           this.logger.error('Failed to capture stdout', result.error, { taskId });
         }
@@ -48,7 +44,7 @@ export class ProcessConnector {
       process.stderr.on('data', (data: Buffer) => {
         const text = data.toString();
         const result = this.outputCapture.capture(taskId, 'stderr', text);
-        
+
         if (!result.ok) {
           this.logger.error('Failed to capture stderr', result.error, { taskId });
         }
@@ -65,16 +61,12 @@ export class ProcessConnector {
     // Handle process error
     process.on('error', (error) => {
       this.logger.error('Process error', error, { taskId });
-      const result = this.outputCapture.capture(
-        taskId,
-        'stderr',
-        `Process error: ${error.message}\n`
-      );
-      
+      const result = this.outputCapture.capture(taskId, 'stderr', `Process error: ${error.message}\n`);
+
       if (!result.ok) {
         this.logger.error('Failed to capture error', result.error, { taskId });
       }
-      
+
       safeOnExit(1);
     });
   }

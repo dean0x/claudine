@@ -94,7 +94,7 @@ export class SQLiteTaskRepository implements TaskRepository {
 
   constructor(database: Database) {
     this.db = database.getDatabase();
-    
+
     // Prepare statements for better performance
     this.saveStmt = this.db.prepare(`
       INSERT OR IGNORE INTO tasks (
@@ -206,12 +206,12 @@ export class SQLiteTaskRepository implements TaskRepository {
           parentTaskId: task.parentTaskId || null,
           retryCount: task.retryCount || null,
           retryOf: task.retryOf || null,
-          continueFrom: task.continueFrom || null
+          continueFrom: task.continueFrom || null,
         };
 
         this.saveStmt.run(dbTask);
       },
-      operationErrorHandler('save task', { taskId: task.id })
+      operationErrorHandler('save task', { taskId: task.id }),
     );
   }
 
@@ -224,10 +224,7 @@ export class SQLiteTaskRepository implements TaskRepository {
     }
 
     if (!existingResult.value) {
-      return err(new ClaudineError(
-        ErrorCode.TASK_NOT_FOUND,
-        `Task ${taskId} not found`
-      ));
+      return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Task ${taskId} not found`));
     }
 
     // Merge updates with existing task
@@ -266,7 +263,7 @@ export class SQLiteTaskRepository implements TaskRepository {
           continueFrom: updatedTask.continueFrom || null,
         });
       },
-      operationErrorHandler('update task', { taskId })
+      operationErrorHandler('update task', { taskId }),
     );
   }
 
@@ -274,57 +271,48 @@ export class SQLiteTaskRepository implements TaskRepository {
     return tryCatchAsync(
       async () => {
         const row = this.findByIdStmt.get(taskId) as TaskRow | undefined;
-        
+
         if (!row) {
           return null;
         }
 
         return this.rowToTask(row);
       },
-      operationErrorHandler('find task', { taskId })
+      operationErrorHandler('find task', { taskId }),
     );
   }
 
   async findAll(limit?: number, offset?: number): Promise<Result<readonly Task[]>> {
-    return tryCatchAsync(
-      async () => {
-        const effectiveLimit = limit ?? SQLiteTaskRepository.DEFAULT_LIMIT;
-        const effectiveOffset = offset ?? 0;
+    return tryCatchAsync(async () => {
+      const effectiveLimit = limit ?? SQLiteTaskRepository.DEFAULT_LIMIT;
+      const effectiveOffset = offset ?? 0;
 
-        const rows = this.findAllPaginatedStmt.all(effectiveLimit, effectiveOffset) as TaskRow[];
-        return rows.map(row => this.rowToTask(row));
-      },
-      operationErrorHandler('find all tasks')
-    );
+      const rows = this.findAllPaginatedStmt.all(effectiveLimit, effectiveOffset) as TaskRow[];
+      return rows.map((row) => this.rowToTask(row));
+    }, operationErrorHandler('find all tasks'));
   }
 
   async findAllUnbounded(): Promise<Result<readonly Task[]>> {
-    return tryCatchAsync(
-      async () => {
-        const rows = this.findAllUnboundedStmt.all() as TaskRow[];
-        return rows.map(row => this.rowToTask(row));
-      },
-      operationErrorHandler('find all tasks (unbounded)')
-    );
+    return tryCatchAsync(async () => {
+      const rows = this.findAllUnboundedStmt.all() as TaskRow[];
+      return rows.map((row) => this.rowToTask(row));
+    }, operationErrorHandler('find all tasks (unbounded)'));
   }
 
   async count(): Promise<Result<number>> {
-    return tryCatchAsync(
-      async () => {
-        const result = this.countStmt.get() as { count: number };
-        return result.count;
-      },
-      operationErrorHandler('count tasks')
-    );
+    return tryCatchAsync(async () => {
+      const result = this.countStmt.get() as { count: number };
+      return result.count;
+    }, operationErrorHandler('count tasks'));
   }
 
   async findByStatus(status: string): Promise<Result<readonly Task[]>> {
     return tryCatchAsync(
       async () => {
         const rows = this.findByStatusStmt.all(status) as TaskRow[];
-        return rows.map(row => this.rowToTask(row));
+        return rows.map((row) => this.rowToTask(row));
       },
-      operationErrorHandler('find tasks by status', { status })
+      operationErrorHandler('find tasks by status', { status }),
     );
   }
 
@@ -333,19 +321,16 @@ export class SQLiteTaskRepository implements TaskRepository {
       async () => {
         this.deleteStmt.run(taskId);
       },
-      operationErrorHandler('delete task', { taskId })
+      operationErrorHandler('delete task', { taskId }),
     );
   }
 
   async cleanupOldTasks(olderThanMs: number): Promise<Result<number>> {
-    return tryCatchAsync(
-      async () => {
-        const cutoffTime = Date.now() - olderThanMs;
-        const result = this.cleanupOldTasksStmt.run(cutoffTime);
-        return result.changes || 0;
-      },
-      operationErrorHandler('cleanup old tasks')
-    );
+    return tryCatchAsync(async () => {
+      const cutoffTime = Date.now() - olderThanMs;
+      const result = this.cleanupOldTasksStmt.run(cutoffTime);
+      return result.changes || 0;
+    }, operationErrorHandler('cleanup old tasks'));
   }
 
   async transaction<T>(fn: (repo: TaskRepository) => Promise<Result<T>>): Promise<Result<T>> {
@@ -355,14 +340,11 @@ export class SQLiteTaskRepository implements TaskRepository {
         const txRepo = new TransactionTaskRepository(this);
         return await fn(txRepo);
       });
-      
+
       // Execute the transaction and return the result
       return await transactionFn();
     } catch (error) {
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Transaction failed: ${error}`
-      ));
+      return err(new ClaudineError(ErrorCode.SYSTEM_ERROR, `Transaction failed: ${error}`));
     }
   }
 
@@ -392,15 +374,15 @@ export class SQLiteTaskRepository implements TaskRepository {
       prBody: data.pr_body || undefined,
       timeout: data.timeout || undefined,
       maxOutputBuffer: data.max_output_buffer || undefined,
-      parentTaskId: data.parent_task_id ? data.parent_task_id as TaskId : undefined,
+      parentTaskId: data.parent_task_id ? (data.parent_task_id as TaskId) : undefined,
       retryCount: data.retry_count || undefined,
-      retryOf: data.retry_of ? data.retry_of as TaskId : undefined,
-      continueFrom: data.continue_from ? data.continue_from as TaskId : undefined,
+      retryOf: data.retry_of ? (data.retry_of as TaskId) : undefined,
+      continueFrom: data.continue_from ? (data.continue_from as TaskId) : undefined,
       createdAt: data.created_at,
       startedAt: data.started_at || undefined,
       completedAt: data.completed_at || undefined,
-      workerId: data.worker_id ? data.worker_id as WorkerId : undefined,
-      exitCode: data.exit_code ?? undefined
+      workerId: data.worker_id ? (data.worker_id as WorkerId) : undefined,
+      exitCode: data.exit_code ?? undefined,
     };
   }
 }

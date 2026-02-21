@@ -19,7 +19,7 @@ import {
   ResourceMonitor,
   WorktreeManager,
   ScheduleRepository,
-  CheckpointRepository
+  CheckpointRepository,
 } from '../core/interfaces.js';
 import { Configuration } from '../core/configuration.js';
 
@@ -69,17 +69,15 @@ export interface HandlerSetupResult {
 /**
  * Extract a single dependency from container with typed error
  */
-function getDependency<T>(
-  container: Container,
-  key: string
-): Result<T> {
+function getDependency<T>(container: Container, key: string): Result<T> {
   const result = container.get(key);
   if (!result.ok) {
-    return err(new ClaudineError(
-      ErrorCode.DEPENDENCY_INJECTION_FAILED,
-      `Handler setup requires '${key}' service`,
-      { service: key, error: result.error.message }
-    ));
+    return err(
+      new ClaudineError(ErrorCode.DEPENDENCY_INJECTION_FAILED, `Handler setup requires '${key}' service`, {
+        service: key,
+        error: result.error.message,
+      }),
+    );
   }
   return ok(result.value as T);
 }
@@ -104,9 +102,7 @@ function getDependency<T>(
  * const deps = depsResult.value;
  * ```
  */
-export function extractHandlerDependencies(
-  container: Container
-): Result<HandlerDependencies> {
+export function extractHandlerDependencies(container: Container): Result<HandlerDependencies> {
   // Extract all 11 dependencies - fail fast on any missing
   const configResult = getDependency<Configuration>(container, 'config');
   if (!configResult.ok) return configResult;
@@ -156,7 +152,7 @@ export function extractHandlerDependencies(
     resourceMonitor: resourceMonitorResult.value,
     worktreeManager: worktreeManagerResult.value,
     scheduleRepository: scheduleRepositoryResult.value,
-    checkpointRepository: checkpointRepositoryResult.value
+    checkpointRepository: checkpointRepositoryResult.value,
   });
 }
 
@@ -187,9 +183,7 @@ export function extractHandlerDependencies(
  * container.registerValue('scheduleHandler', scheduleHandler);
  * ```
  */
-export async function setupEventHandlers(
-  deps: HandlerDependencies
-): Promise<Result<HandlerSetupResult>> {
+export async function setupEventHandlers(deps: HandlerDependencies): Promise<Result<HandlerSetupResult>> {
   const { logger, eventBus } = deps;
   const setupLogger = logger.child({ module: 'HandlerSetup' });
 
@@ -203,53 +197,27 @@ export async function setupEventHandlers(
   // ARCHITECTURE: All handlers are independent - no inter-handler dependencies
   const standardHandlers = [
     // 1. Persistence Handler - manages database operations
-    new PersistenceHandler(
-      deps.taskRepository,
-      childLogger('PersistenceHandler')
-    ),
+    new PersistenceHandler(deps.taskRepository, childLogger('PersistenceHandler')),
     // 2. Query Handler - handles read operations for pure event-driven architecture
-    new QueryHandler(
-      deps.taskRepository,
-      deps.outputCapture,
-      eventBus,
-      childLogger('QueryHandler')
-    ),
+    new QueryHandler(deps.taskRepository, deps.outputCapture, eventBus, childLogger('QueryHandler')),
     // 3. Queue Handler - manages task queue operations with dependency awareness
-    new QueueHandler(
-      deps.taskQueue,
-      deps.dependencyRepository,
-      deps.taskRepository,
-      childLogger('QueueHandler')
-    ),
+    new QueueHandler(deps.taskQueue, deps.dependencyRepository, deps.taskRepository, childLogger('QueueHandler')),
     // 4. Worker Handler - manages worker lifecycle
-    new WorkerHandler(
-      deps.config,
-      deps.workerPool,
-      deps.resourceMonitor,
-      eventBus,
-      childLogger('WorkerHandler')
-    ),
+    new WorkerHandler(deps.config, deps.workerPool, deps.resourceMonitor, eventBus, childLogger('WorkerHandler')),
     // 5. Output Handler - manages output and logs
-    new OutputHandler(
-      deps.outputCapture,
-      childLogger('OutputHandler')
-    ),
+    new OutputHandler(deps.outputCapture, childLogger('OutputHandler')),
     // 6. Worktree Handler - manages git worktree operations
-    new WorktreeHandler(
-      deps.worktreeManager,
-      eventBus,
-      childLogger('WorktreeHandler')
-    )
+    new WorktreeHandler(deps.worktreeManager, eventBus, childLogger('WorktreeHandler')),
   ];
 
   // Register all standard handlers
   const registerResult = registry.registerAll(standardHandlers);
   if (!registerResult.ok) {
-    return err(new ClaudineError(
-      ErrorCode.SYSTEM_ERROR,
-      `Failed to register event handlers: ${registerResult.error.message}`,
-      { error: registerResult.error }
-    ));
+    return err(
+      new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to register event handlers: ${registerResult.error.message}`, {
+        error: registerResult.error,
+      }),
+    );
   }
 
   // Initialize all standard handlers (calls setup(eventBus) on each)
@@ -257,11 +225,11 @@ export async function setupEventHandlers(
   if (!initResult.ok) {
     // Cleanup any handlers that were already initialized
     await registry.shutdown();
-    return err(new ClaudineError(
-      ErrorCode.SYSTEM_ERROR,
-      `Failed to initialize event handlers: ${initResult.error.message}`,
-      { error: initResult.error }
-    ));
+    return err(
+      new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to initialize event handlers: ${initResult.error.message}`, {
+        error: initResult.error,
+      }),
+    );
   }
 
   // 7. Dependency Handler - uses factory pattern for async graph initialization
@@ -272,16 +240,18 @@ export async function setupEventHandlers(
     deps.taskRepository,
     logger,
     eventBus,
-    { checkpointLookup: deps.checkpointRepository }
+    { checkpointLookup: deps.checkpointRepository },
   );
   if (!dependencyHandlerResult.ok) {
     // Cleanup standard handlers on failure
     await registry.shutdown();
-    return err(new ClaudineError(
-      ErrorCode.SYSTEM_ERROR,
-      `Failed to create DependencyHandler: ${dependencyHandlerResult.error.message}`,
-      { error: dependencyHandlerResult.error }
-    ));
+    return err(
+      new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Failed to create DependencyHandler: ${dependencyHandlerResult.error.message}`,
+        { error: dependencyHandlerResult.error },
+      ),
+    );
   }
 
   const dependencyHandler = dependencyHandlerResult.value;
@@ -293,16 +263,18 @@ export async function setupEventHandlers(
     deps.scheduleRepository,
     deps.taskRepository,
     eventBus,
-    childLogger('ScheduleHandler')
+    childLogger('ScheduleHandler'),
   );
   if (!scheduleHandlerResult.ok) {
     // Cleanup previous handlers on failure
     await registry.shutdown();
-    return err(new ClaudineError(
-      ErrorCode.SYSTEM_ERROR,
-      `Failed to create ScheduleHandler: ${scheduleHandlerResult.error.message}`,
-      { error: scheduleHandlerResult.error }
-    ));
+    return err(
+      new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Failed to create ScheduleHandler: ${scheduleHandlerResult.error.message}`,
+        { error: scheduleHandlerResult.error },
+      ),
+    );
   }
 
   const scheduleHandler = scheduleHandlerResult.value;
@@ -314,23 +286,25 @@ export async function setupEventHandlers(
     deps.outputCapture,
     deps.taskRepository,
     eventBus,
-    childLogger('CheckpointHandler')
+    childLogger('CheckpointHandler'),
   );
   if (!checkpointHandlerResult.ok) {
     // Cleanup previous handlers on failure
     await registry.shutdown();
-    return err(new ClaudineError(
-      ErrorCode.SYSTEM_ERROR,
-      `Failed to create CheckpointHandler: ${checkpointHandlerResult.error.message}`,
-      { error: checkpointHandlerResult.error }
-    ));
+    return err(
+      new ClaudineError(
+        ErrorCode.SYSTEM_ERROR,
+        `Failed to create CheckpointHandler: ${checkpointHandlerResult.error.message}`,
+        { error: checkpointHandlerResult.error },
+      ),
+    );
   }
 
   const checkpointHandler = checkpointHandlerResult.value;
 
   setupLogger.info('Event handlers initialized successfully', {
     standardHandlers: standardHandlers.length,
-    totalHandlers: standardHandlers.length + 3 // +3 for DependencyHandler, ScheduleHandler, CheckpointHandler
+    totalHandlers: standardHandlers.length + 3, // +3 for DependencyHandler, ScheduleHandler, CheckpointHandler
   });
 
   return ok({ registry, dependencyHandler, scheduleHandler, checkpointHandler });

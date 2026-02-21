@@ -18,14 +18,14 @@ describe('Cron Utilities - Unit Tests', () => {
   describe('validateCronExpression()', () => {
     it('should accept valid 5-field cron expressions', () => {
       const validExpressions = [
-        '* * * * *',        // Every minute
-        '0 * * * *',        // Every hour
-        '0 9 * * *',        // 9am daily
-        '0 9 * * 1-5',      // 9am weekdays
-        '0 0 1 * *',        // Midnight on 1st of month
-        '*/5 * * * *',      // Every 5 minutes
+        '* * * * *', // Every minute
+        '0 * * * *', // Every hour
+        '0 9 * * *', // 9am daily
+        '0 9 * * 1-5', // 9am weekdays
+        '0 0 1 * *', // Midnight on 1st of month
+        '*/5 * * * *', // Every 5 minutes
         '0,15,30,45 * * * *', // Every 15 minutes
-        '0 2 * * 0',        // 2am on Sundays
+        '0 2 * * 0', // 2am on Sundays
       ];
 
       for (const expr of validExpressions) {
@@ -36,12 +36,12 @@ describe('Cron Utilities - Unit Tests', () => {
 
     it('should reject invalid cron expressions', () => {
       const invalidExpressions = [
-        'not-a-cron',       // Not a cron expression
-        '60 * * * *',       // Invalid minute (0-59)
-        '* 24 * * *',       // Invalid hour (0-23)
-        '* * 32 * *',       // Invalid day (1-31)
-        '* * * 13 *',       // Invalid month (1-12)
-        '* * * * 8',        // Invalid weekday (0-7)
+        'not-a-cron', // Not a cron expression
+        '60 * * * *', // Invalid minute (0-59)
+        '* 24 * * *', // Invalid hour (0-23)
+        '* * 32 * *', // Invalid day (1-31)
+        '* * * 13 *', // Invalid month (1-12)
+        '* * * * 8', // Invalid weekday (0-7)
       ];
 
       for (const expr of invalidExpressions) {
@@ -166,7 +166,7 @@ describe('Cron Utilities - Unit Tests', () => {
         'NotATimezone',
         'US/Fake',
         '',
-        'GMT+5',  // Not a valid IANA identifier
+        'GMT+5', // Not a valid IANA identifier
       ];
 
       for (const tz of invalidTimezones) {

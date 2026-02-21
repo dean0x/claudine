@@ -58,7 +58,7 @@ describe('SQLiteTaskRepository', () => {
       for (let i = 0; i < 5; i++) {
         const task = createTestTask({
           id: `task-${i}`,
-          createdAt: Date.now() + i * 100 // Ensure distinct timestamps
+          createdAt: Date.now() + i * 100, // Ensure distinct timestamps
         });
         tasks.push(task);
         await repo.save(task);

@@ -29,11 +29,13 @@ export class PriorityTaskQueue implements TaskQueue {
   enqueue(task: Task): Result<void> {
     // SECURITY: Prevent unbounded queue growth (DoS protection)
     if (this.heap.length >= this.maxQueueSize) {
-      return err(new ClaudineError(
-        ErrorCode.RESOURCE_EXHAUSTED,
-        `Queue is full (max size: ${this.maxQueueSize}). Cannot enqueue more tasks.`,
-        { taskId: task.id, queueSize: this.heap.length, maxQueueSize: this.maxQueueSize }
-      ));
+      return err(
+        new ClaudineError(
+          ErrorCode.RESOURCE_EXHAUSTED,
+          `Queue is full (max size: ${this.maxQueueSize}). Cannot enqueue more tasks.`,
+          { taskId: task.id, queueSize: this.heap.length, maxQueueSize: this.maxQueueSize },
+        ),
+      );
     }
 
     // Add insertion order for FIFO within same priority
@@ -222,11 +224,13 @@ export class FIFOTaskQueue implements TaskQueue {
   enqueue(task: Task): Result<void> {
     // SECURITY: Prevent unbounded queue growth (DoS protection)
     if (this.tasks.length >= this.maxQueueSize) {
-      return err(new ClaudineError(
-        ErrorCode.RESOURCE_EXHAUSTED,
-        `Queue is full (max size: ${this.maxQueueSize}). Cannot enqueue more tasks.`,
-        { taskId: task.id, queueSize: this.tasks.length, maxQueueSize: this.maxQueueSize }
-      ));
+      return err(
+        new ClaudineError(
+          ErrorCode.RESOURCE_EXHAUSTED,
+          `Queue is full (max size: ${this.maxQueueSize}). Cannot enqueue more tasks.`,
+          { taskId: task.id, queueSize: this.tasks.length, maxQueueSize: this.maxQueueSize },
+        ),
+      );
     }
 
     this.tasks.push(task);
@@ -243,7 +247,7 @@ export class FIFOTaskQueue implements TaskQueue {
   }
 
   remove(taskId: TaskId): Result<boolean> {
-    const index = this.tasks.findIndex(t => t.id === taskId);
+    const index = this.tasks.findIndex((t) => t.id === taskId);
 
     if (index === -1) {
       return ok(false);
@@ -258,7 +262,7 @@ export class FIFOTaskQueue implements TaskQueue {
   }
 
   contains(taskId: TaskId): boolean {
-    return this.tasks.some(t => t.id === taskId);
+    return this.tasks.some((t) => t.id === taskId);
   }
 
   size(): number {

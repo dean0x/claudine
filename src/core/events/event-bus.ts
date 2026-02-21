@@ -17,7 +17,10 @@ import { Configuration } from '../configuration.js';
  */
 export interface EventBus {
   emit<T extends ClaudineEvent>(type: T['type'], payload: Omit<T, keyof BaseEvent | 'type'>): Promise<Result<void>>;
-  request<T extends ClaudineEvent, R = unknown>(type: T['type'], payload: Omit<T, keyof BaseEvent | 'type'>): Promise<Result<R>>;
+  request<T extends ClaudineEvent, R = unknown>(
+    type: T['type'],
+    payload: Omit<T, keyof BaseEvent | 'type'>,
+  ): Promise<Result<R>>;
   subscribe<T extends ClaudineEvent>(eventType: T['type'], handler: EventHandler<T>): Result<string>;
   unsubscribe(subscriptionId: string): Result<void>;
   subscribeAll(handler: EventHandler): Result<string>;
@@ -59,7 +62,7 @@ export class InMemoryEventBus implements EventBus {
 
   constructor(
     config: Configuration,
-    private readonly logger: Logger
+    private readonly logger: Logger,
   ) {
     // SECURITY: Use safe defaults instead of non-null assertions to prevent runtime crashes
     // These match ConfigurationSchema defaults from configuration.ts
@@ -133,20 +136,20 @@ export class InMemoryEventBus implements EventBus {
     this.logger.debug('EventBus disposed', {
       handlersCleared: true,
       subscriptionsCleared: true,
-      pendingRequestsCleared: true
+      pendingRequestsCleared: true,
     });
   }
 
   async emit<T extends ClaudineEvent>(
-    type: T['type'], 
-    payload: Omit<T, keyof BaseEvent | 'type'>
+    type: T['type'],
+    payload: Omit<T, keyof BaseEvent | 'type'>,
   ): Promise<Result<void>> {
     const event = createEvent(type, payload) as T;
-    
+
     this.logger.debug('Event emitted', {
       eventType: event.type,
       eventId: event.eventId,
-      timestamp: event.timestamp
+      timestamp: event.timestamp,
     });
 
     try {
@@ -175,7 +178,7 @@ export class InMemoryEventBus implements EventBus {
               eventType: type,
               handlerIndex: index,
               duration,
-              threshold: 100
+              threshold: 100,
             });
           }
 
@@ -195,40 +198,42 @@ export class InMemoryEventBus implements EventBus {
         eventId: event.eventId,
         handlerCount: allHandlers.length,
         totalDuration,
-        slowHandlers: results.filter(r => r.duration > 100).length
+        slowHandlers: results.filter((r) => r.duration > 100).length,
       });
 
       // Check for handler failures
-      const failures = results.filter(result => result.status === 'rejected');
+      const failures = results.filter((result) => result.status === 'rejected');
 
       if (failures.length > 0) {
         this.logger.error('Event handler failures', undefined, {
           eventType: type,
           eventId: event.eventId,
-          failures: failures.map(f => f.reason),
-          durations: failures.map(f => f.duration)
+          failures: failures.map((f) => f.reason),
+          durations: failures.map((f) => f.duration),
         });
 
         // Return error if any handler failed
-        return err(new ClaudineError(
-          ErrorCode.SYSTEM_ERROR,
-          `Event handler failures for ${type}: ${failures.map(f => f.reason).join(', ')}`,
-          { eventId: event.eventId, failures: failures.length }
-        ));
+        return err(
+          new ClaudineError(
+            ErrorCode.SYSTEM_ERROR,
+            `Event handler failures for ${type}: ${failures.map((f) => f.reason).join(', ')}`,
+            { eventId: event.eventId, failures: failures.length },
+          ),
+        );
       }
 
       return ok(undefined);
     } catch (error) {
       this.logger.error('Event emission failed', error as Error, {
         eventType: type,
-        eventId: event.eventId
+        eventId: event.eventId,
       });
 
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Event emission failed for ${type}: ${error}`,
-        { eventId: event.eventId }
-      ));
+      return err(
+        new ClaudineError(ErrorCode.SYSTEM_ERROR, `Event emission failed for ${type}: ${error}`, {
+          eventId: event.eventId,
+        }),
+      );
     }
   }
 
@@ -240,7 +245,7 @@ export class InMemoryEventBus implements EventBus {
   async request<T extends ClaudineEvent, R = any>(
     type: T['type'],
     payload: Omit<T, keyof BaseEvent | 'type'>,
-    timeoutMs: number = this.defaultRequestTimeoutMs
+    timeoutMs: number = this.defaultRequestTimeoutMs,
   ): Promise<Result<R>> {
     const correlationId = crypto.randomUUID();
 
@@ -253,12 +258,9 @@ export class InMemoryEventBus implements EventBus {
           this.logger.error('Request timeout', undefined, {
             eventType: type,
             correlationId,
-            timeoutMs
+            timeoutMs,
           });
-          resolve(err(new ClaudineError(
-            ErrorCode.SYSTEM_ERROR,
-            `Request timeout after ${timeoutMs}ms for ${type}`
-          )));
+          resolve(err(new ClaudineError(ErrorCode.SYSTEM_ERROR, `Request timeout after ${timeoutMs}ms for ${type}`)));
         }
       }, timeoutMs);
 
@@ -277,15 +279,14 @@ export class InMemoryEventBus implements EventBus {
             pendingRequest.resolved = true;
             clearTimeout(timeoutId);
             this.pendingRequests.delete(correlationId);
-            resolve(err(error instanceof ClaudineError ? error : new ClaudineError(
-              ErrorCode.SYSTEM_ERROR,
-              error.message
-            )));
+            resolve(
+              err(error instanceof ClaudineError ? error : new ClaudineError(ErrorCode.SYSTEM_ERROR, error.message)),
+            );
           }
         },
         timeoutId,
         timestamp: Date.now(),
-        resolved: false
+        resolved: false,
       };
 
       this.pendingRequests.set(correlationId, pendingRequest as PendingRequest);
@@ -293,13 +294,13 @@ export class InMemoryEventBus implements EventBus {
       // Emit event with correlation ID
       const event = createEvent(type, {
         ...payload,
-        __correlationId: correlationId
+        __correlationId: correlationId,
       } as any) as T;
 
       this.logger.debug('Request event emitted', {
         eventType: event.type,
         eventId: event.eventId,
-        correlationId
+        correlationId,
       });
 
       // Get handlers for this event type
@@ -308,10 +309,7 @@ export class InMemoryEventBus implements EventBus {
       if (handlers.length === 0) {
         const pending = this.pendingRequests.get(correlationId);
         if (pending) {
-          pending.reject(new ClaudineError(
-            ErrorCode.SYSTEM_ERROR,
-            `No handlers registered for query: ${type}`
-          ));
+          pending.reject(new ClaudineError(ErrorCode.SYSTEM_ERROR, `No handlers registered for query: ${type}`));
         }
         return;
       }
@@ -374,12 +372,14 @@ export class InMemoryEventBus implements EventBus {
     if (this.subscriptions.size >= this.maxTotalSubscriptions) {
       this.logger.error('Maximum total subscriptions reached', undefined, {
         limit: this.maxTotalSubscriptions,
-        current: this.subscriptions.size
+        current: this.subscriptions.size,
       });
-      return err(new ClaudineError(
-        ErrorCode.RESOURCE_LIMIT_EXCEEDED,
-        `Maximum subscription limit (${this.maxTotalSubscriptions}) reached`
-      ));
+      return err(
+        new ClaudineError(
+          ErrorCode.RESOURCE_LIMIT_EXCEEDED,
+          `Maximum subscription limit (${this.maxTotalSubscriptions}) reached`,
+        ),
+      );
     }
 
     if (!this.handlers.has(eventType)) {
@@ -393,7 +393,7 @@ export class InMemoryEventBus implements EventBus {
       this.logger.warn('Maximum listeners per event approaching limit', {
         eventType,
         limit: this.maxListenersPerEvent,
-        current: handlers.length
+        current: handlers.length,
       });
     }
 
@@ -404,13 +404,13 @@ export class InMemoryEventBus implements EventBus {
     this.subscriptions.set(subscriptionId, {
       eventType,
       handler: handler as EventHandler,
-      isGlobal: false
+      isGlobal: false,
     });
 
     this.logger.debug('Event handler subscribed', {
       eventType,
       subscriptionId,
-      handlerCount: handlers.length
+      handlerCount: handlers.length,
     });
 
     return ok(subscriptionId);
@@ -420,10 +420,7 @@ export class InMemoryEventBus implements EventBus {
     const subscription = this.subscriptions.get(subscriptionId);
 
     if (!subscription) {
-      return err(new ClaudineError(
-        ErrorCode.CONFIGURATION_ERROR,
-        `Subscription not found: ${subscriptionId}`
-      ));
+      return err(new ClaudineError(ErrorCode.CONFIGURATION_ERROR, `Subscription not found: ${subscriptionId}`));
     }
 
     // Remove from subscriptions map
@@ -448,7 +445,7 @@ export class InMemoryEventBus implements EventBus {
     this.logger.debug('Handler unsubscribed', {
       subscriptionId,
       eventType: subscription.eventType || 'global',
-      isGlobal: subscription.isGlobal
+      isGlobal: subscription.isGlobal,
     });
 
     return ok(undefined);
@@ -461,12 +458,12 @@ export class InMemoryEventBus implements EventBus {
     const subscriptionId = `global-${++this.subscriptionCounter}`;
     this.subscriptions.set(subscriptionId, {
       handler,
-      isGlobal: true
+      isGlobal: true,
     });
 
     this.logger.debug('Global event handler subscribed', {
       subscriptionId,
-      globalHandlerCount: this.globalHandlers.length
+      globalHandlerCount: this.globalHandlers.length,
     });
 
     return ok(subscriptionId);
@@ -485,13 +482,12 @@ export class InMemoryEventBus implements EventBus {
    * Get current subscription statistics
    */
   getStats(): { eventTypes: number; totalHandlers: number; globalHandlers: number } {
-    const totalHandlers = Array.from(this.handlers.values())
-      .reduce((sum, handlers) => sum + handlers.length, 0);
+    const totalHandlers = Array.from(this.handlers.values()).reduce((sum, handlers) => sum + handlers.length, 0);
 
     return {
       eventTypes: this.handlers.size,
       totalHandlers,
-      globalHandlers: this.globalHandlers.length
+      globalHandlers: this.globalHandlers.length,
     };
   }
 

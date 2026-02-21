@@ -11,7 +11,7 @@ export const createTestTask = (overrides?: Partial<Task>): Task => ({
   workingDirectory: '/workspace',
   timeout: 300000,
   maxOutputBuffer: 10485760,
-  ...overrides
+  ...overrides,
 });
 
 export const createTestTaskSpec = (overrides?: Partial<TaskSpecification>): TaskSpecification => ({
@@ -26,7 +26,7 @@ export const createTestTaskSpec = (overrides?: Partial<TaskSpecification>): Task
   baseBranch: 'main',
   autoCommit: false,
   pushToRemote: false,
-  ...overrides
+  ...overrides,
 });
 
 export const mockWorker = {
@@ -34,30 +34,30 @@ export const mockWorker = {
   status: 'idle' as const,
   pid: 12345,
   createdAt: Date.now(),
-  taskId: null
+  taskId: null,
 };
 
 export const mockProcessOutput = {
   stdout: 'Task completed successfully\n',
   stderr: '',
-  exitCode: 0
+  exitCode: 0,
 };
 
 export const mockDatabaseConfig = {
   path: ':memory:',
   walMode: false,
   busyTimeout: 5000,
-  maxConnections: 1
+  maxConnections: 1,
 };
 
 export const mockLoggerFactory = () => ({
   info: () => {},
   error: () => {},
   warn: () => {},
-  debug: () => {}
+  debug: () => {},
 });
 
-export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const createMockEventBus = () => {
   const handlers = new Map<string, Set<Function>>();
@@ -74,7 +74,7 @@ export const createMockEventBus = () => {
       const eventHandlers = handlers.get(event) || [];
       const wildcardHandlers = handlers.get('*') || [];
 
-      [...eventHandlers, ...wildcardHandlers].forEach(handler => {
+      [...eventHandlers, ...wildcardHandlers].forEach((handler) => {
         try {
           handler({ type: event, payload, timestamp: Date.now() });
         } catch (error) {
@@ -96,7 +96,7 @@ export const createMockEventBus = () => {
       } else {
         handlers.clear();
       }
-    }
+    },
   };
 };
 
@@ -106,7 +106,7 @@ export const createMockRepository = () => ({
   get: () => Promise.resolve({ ok: true, value: null }),
   getAll: () => Promise.resolve({ ok: true, value: [] }),
   delete: () => Promise.resolve({ ok: true, value: undefined }),
-  getByStatus: () => Promise.resolve({ ok: true, value: [] })
+  getByStatus: () => Promise.resolve({ ok: true, value: [] }),
 });
 
 export const createMockQueue = () => ({
@@ -115,7 +115,7 @@ export const createMockQueue = () => ({
   peek: () => ({ ok: true, value: null }),
   size: () => 0,
   isEmpty: () => true,
-  clear: () => {}
+  clear: () => {},
 });
 
 export const createMockWorkerPool = () => ({
@@ -125,30 +125,32 @@ export const createMockWorkerPool = () => ({
   updateWorker: () => ({ ok: true, value: undefined }),
   getActiveWorkers: () => [],
   getIdleWorkers: () => [],
-  size: () => 0
+  size: () => 0,
 });
 
 export const createMockProcessSpawner = () => ({
-  spawn: () => Promise.resolve({
-    ok: true,
-    value: {
-      id: 'worker-123',
-      process: { pid: 12345 }
-    }
-  }),
+  spawn: () =>
+    Promise.resolve({
+      ok: true,
+      value: {
+        id: 'worker-123',
+        process: { pid: 12345 },
+      },
+    }),
   kill: () => Promise.resolve({ ok: true, value: undefined }),
-  sendInput: () => Promise.resolve({ ok: true, value: undefined })
+  sendInput: () => Promise.resolve({ ok: true, value: undefined }),
 });
 
 export const createMockResourceMonitor = () => ({
-  getResources: () => Promise.resolve({
-    ok: true,
-    value: {
-      cpu: { usage: 50, available: 50 },
-      memory: { used: 4000, free: 4000, total: 8000 },
-      canSpawnWorker: true
-    }
-  }),
+  getResources: () =>
+    Promise.resolve({
+      ok: true,
+      value: {
+        cpu: { usage: 50, available: 50 },
+        memory: { used: 4000, free: 4000, total: 8000 },
+        canSpawnWorker: true,
+      },
+    }),
   startMonitoring: () => {},
-  stopMonitoring: () => {}
+  stopMonitoring: () => {},
 });

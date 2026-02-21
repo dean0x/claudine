@@ -16,11 +16,7 @@ import type { Task, TaskCheckpoint } from '../core/domain.js';
  * @param dependencyPrompt - The original prompt of the dependency task (for context)
  * @returns Enriched prompt string with dependency context prepended
  */
-export function buildContinuationPrompt(
-  task: Task,
-  checkpoint: TaskCheckpoint,
-  dependencyPrompt: string
-): string {
+export function buildContinuationPrompt(task: Task, checkpoint: TaskCheckpoint, dependencyPrompt: string): string {
   const parts: string[] = [];
 
   parts.push('DEPENDENCY CONTEXT:');

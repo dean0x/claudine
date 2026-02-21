@@ -27,7 +27,7 @@ process.on('unhandledRejection', (error) => {
 async function main() {
   // Set process title for easy identification in ps/pgrep/pkill
   process.title = 'claudine-mcp';
-  
+
   let container: Container | null = null;
   let autoscaler: AutoscalingManager | null = null;
 
@@ -112,15 +112,14 @@ async function main() {
 
     // Keep process alive
     process.stdin.resume();
-
   } catch (error) {
     console.error('Failed to start server:', error);
-    
+
     // Clean up if startup failed
     if (autoscaler) {
       autoscaler.stop();
     }
-    
+
     process.exit(1);
   }
 }

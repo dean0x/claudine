@@ -196,19 +196,18 @@ export class SQLiteDependencyRepository implements DependencyRepository {
   async addDependencies(taskId: TaskId, dependsOn: readonly TaskId[]): Promise<Result<readonly TaskDependency[]>> {
     // VALIDATION: Reject empty arrays
     if (dependsOn.length === 0) {
-      return err(new ClaudineError(
-        ErrorCode.INVALID_OPERATION,
-        'Cannot add dependencies: empty array provided'
-      ));
+      return err(new ClaudineError(ErrorCode.INVALID_OPERATION, 'Cannot add dependencies: empty array provided'));
     }
 
     // SECURITY: Prevent DoS attacks with excessive dependencies
     // Limit to MAX_DEPENDENCIES_PER_TASK for reasonable production workflows
     if (dependsOn.length > SQLiteDependencyRepository.MAX_DEPENDENCIES_PER_TASK) {
-      return err(new ClaudineError(
-        ErrorCode.INVALID_OPERATION,
-        `Cannot add ${dependsOn.length} dependencies: task cannot have more than ${SQLiteDependencyRepository.MAX_DEPENDENCIES_PER_TASK} dependencies`
-      ));
+      return err(
+        new ClaudineError(
+          ErrorCode.INVALID_OPERATION,
+          `Cannot add ${dependsOn.length} dependencies: task cannot have more than ${SQLiteDependencyRepository.MAX_DEPENDENCIES_PER_TASK} dependencies`,
+        ),
+      );
     }
 
     // SECURITY: TOCTOU Fix - Use synchronous .transaction() for true atomicity
@@ -219,10 +218,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
       // VALIDATION: Check dependent task exists
       const taskExistsResult = this.checkTaskExistsStmt.get(taskId) as { count: number };
       if (taskExistsResult.count === 0) {
-        throw new ClaudineError(
-          ErrorCode.TASK_NOT_FOUND,
-          `Task not found: ${taskId}`
-        );
+        throw new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Task not found: ${taskId}`);
       }
 
       // SECURITY: Check current dependency count to prevent exceeding MAX_DEPENDENCIES_PER_TASK total
@@ -230,7 +226,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
       if (existingDepsCount + dependsOn.length > SQLiteDependencyRepository.MAX_DEPENDENCIES_PER_TASK) {
         throw new ClaudineError(
           ErrorCode.INVALID_OPERATION,
-          `Cannot add ${dependsOn.length} dependencies: task would exceed maximum of ${SQLiteDependencyRepository.MAX_DEPENDENCIES_PER_TASK} dependencies (currently has ${existingDepsCount})`
+          `Cannot add ${dependsOn.length} dependencies: task would exceed maximum of ${SQLiteDependencyRepository.MAX_DEPENDENCIES_PER_TASK} dependencies (currently has ${existingDepsCount})`,
         );
       }
 
@@ -238,10 +234,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
       for (const depId of dependsOn) {
         const depExistsResult = this.checkTaskExistsStmt.get(depId) as { count: number };
         if (depExistsResult.count === 0) {
-          throw new ClaudineError(
-            ErrorCode.TASK_NOT_FOUND,
-            `Task not found: ${depId}`
-          );
+          throw new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Task not found: ${depId}`);
         }
       }
 
@@ -251,7 +244,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         if (existsResult.count > 0) {
           throw new ClaudineError(
             ErrorCode.INVALID_OPERATION,
-            `Dependency already exists: ${taskId} depends on ${depId}`
+            `Dependency already exists: ${taskId} depends on ${depId}`,
           );
         }
       }
@@ -287,17 +280,13 @@ export class SQLiteDependencyRepository implements DependencyRepository {
           return new ClaudineError(
             ErrorCode.INVALID_OPERATION,
             `One or more dependencies already exist for task: ${taskId}`,
-            { taskId, dependsOn }
+            { taskId, dependsOn },
           );
         }
 
         // Unknown errors become SYSTEM_ERROR
-        return new ClaudineError(
-          ErrorCode.SYSTEM_ERROR,
-          `Failed to add dependencies: ${error}`,
-          { taskId, dependsOn }
-        );
-      }
+        return new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to add dependencies: ${error}`, { taskId, dependsOn });
+      },
     );
   }
 
@@ -322,9 +311,9 @@ export class SQLiteDependencyRepository implements DependencyRepository {
     return tryCatchAsync(
       async () => {
         const rows = this.getDependenciesStmt.all(taskId) as DependencyRow[];
-        return rows.map(row => this.rowToDependency(row));
+        return rows.map((row) => this.rowToDependency(row));
       },
-      operationErrorHandler('get dependencies', { taskId })
+      operationErrorHandler('get dependencies', { taskId }),
     );
   }
 
@@ -349,9 +338,9 @@ export class SQLiteDependencyRepository implements DependencyRepository {
     return tryCatchAsync(
       async () => {
         const rows = this.getDependentsStmt.all(taskId) as DependencyRow[];
-        return rows.map(row => this.rowToDependency(row));
+        return rows.map((row) => this.rowToDependency(row));
       },
-      operationErrorHandler('get dependents', { taskId })
+      operationErrorHandler('get dependents', { taskId }),
     );
   }
 
@@ -381,7 +370,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
   async resolveDependency(
     taskId: TaskId,
     dependsOnTaskId: TaskId,
-    resolution: 'completed' | 'failed' | 'cancelled'
+    resolution: 'completed' | 'failed' | 'cancelled',
   ): Promise<Result<void>> {
     return tryCatchAsync(
       async () => {
@@ -391,11 +380,11 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         if (result.changes === 0) {
           throw new ClaudineError(
             ErrorCode.TASK_NOT_FOUND,
-            `Dependency not found: ${taskId} depends on ${dependsOnTaskId}`
+            `Dependency not found: ${taskId} depends on ${dependsOnTaskId}`,
           );
         }
       },
-      operationErrorHandler('resolve dependency', { taskId, dependsOnTaskId, resolution })
+      operationErrorHandler('resolve dependency', { taskId, dependsOnTaskId, resolution }),
     );
   }
 
@@ -423,7 +412,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
    */
   async resolveDependenciesBatch(
     dependsOnTaskId: TaskId,
-    resolution: 'completed' | 'failed' | 'cancelled'
+    resolution: 'completed' | 'failed' | 'cancelled',
   ): Promise<Result<number>> {
     return tryCatchAsync(
       async () => {
@@ -431,7 +420,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         const result = this.resolveDependenciesBatchStmt.run(resolution, resolvedAt, dependsOnTaskId);
         return result.changes;
       },
-      operationErrorHandler('batch resolve dependencies', { dependsOnTaskId, resolution })
+      operationErrorHandler('batch resolve dependencies', { dependsOnTaskId, resolution }),
     );
   }
 
@@ -456,9 +445,9 @@ export class SQLiteDependencyRepository implements DependencyRepository {
     return tryCatchAsync(
       async () => {
         const rows = this.getUnresolvedDependenciesStmt.all(taskId) as DependencyRow[];
-        return rows.map(row => this.rowToDependency(row));
+        return rows.map((row) => this.rowToDependency(row));
       },
-      operationErrorHandler('get unresolved dependencies', { taskId })
+      operationErrorHandler('get unresolved dependencies', { taskId }),
     );
   }
 
@@ -486,7 +475,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         const result = this.isBlockedStmt.get(taskId) as { count: number };
         return result.count > 0;
       },
-      operationErrorHandler('check if task is blocked', { taskId })
+      operationErrorHandler('check if task is blocked', { taskId }),
     );
   }
 
@@ -515,16 +504,13 @@ export class SQLiteDependencyRepository implements DependencyRepository {
    * ```
    */
   async findAll(limit?: number, offset?: number): Promise<Result<readonly TaskDependency[]>> {
-    return tryCatchAsync(
-      async () => {
-        const effectiveLimit = limit ?? SQLiteDependencyRepository.DEFAULT_LIMIT;
-        const effectiveOffset = offset ?? 0;
+    return tryCatchAsync(async () => {
+      const effectiveLimit = limit ?? SQLiteDependencyRepository.DEFAULT_LIMIT;
+      const effectiveOffset = offset ?? 0;
 
-        const rows = this.findAllPaginatedStmt.all(effectiveLimit, effectiveOffset) as DependencyRow[];
-        return rows.map(row => this.rowToDependency(row));
-      },
-      operationErrorHandler('find all dependencies')
-    );
+      const rows = this.findAllPaginatedStmt.all(effectiveLimit, effectiveOffset) as DependencyRow[];
+      return rows.map((row) => this.rowToDependency(row));
+    }, operationErrorHandler('find all dependencies'));
   }
 
   /**
@@ -547,13 +533,10 @@ export class SQLiteDependencyRepository implements DependencyRepository {
    * ```
    */
   async findAllUnbounded(): Promise<Result<readonly TaskDependency[]>> {
-    return tryCatchAsync(
-      async () => {
-        const rows = this.findAllUnboundedStmt.all() as DependencyRow[];
-        return rows.map(row => this.rowToDependency(row));
-      },
-      operationErrorHandler('find all dependencies (unbounded)')
-    );
+    return tryCatchAsync(async () => {
+      const rows = this.findAllUnboundedStmt.all() as DependencyRow[];
+      return rows.map((row) => this.rowToDependency(row));
+    }, operationErrorHandler('find all dependencies (unbounded)'));
   }
 
   /**
@@ -573,13 +556,10 @@ export class SQLiteDependencyRepository implements DependencyRepository {
    * ```
    */
   async count(): Promise<Result<number>> {
-    return tryCatchAsync(
-      async () => {
-        const result = this.countStmt.get() as { count: number };
-        return result.count;
-      },
-      operationErrorHandler('count dependencies')
-    );
+    return tryCatchAsync(async () => {
+      const result = this.countStmt.get() as { count: number };
+      return result.count;
+    }, operationErrorHandler('count dependencies'));
   }
 
   /**
@@ -612,7 +592,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
         // NOTE: Graph updates removed
         // ARCHITECTURE: DependencyHandler now owns graph and handles updates via events
       },
-      operationErrorHandler('delete dependencies', { taskId })
+      operationErrorHandler('delete dependencies', { taskId }),
     );
   }
 
@@ -631,7 +611,7 @@ export class SQLiteDependencyRepository implements DependencyRepository {
       dependsOnTaskId: data.depends_on_task_id as TaskId,
       createdAt: data.created_at,
       resolvedAt: data.resolved_at,
-      resolution: data.resolution
+      resolution: data.resolution,
     };
   }
 }

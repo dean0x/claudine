@@ -38,8 +38,13 @@ const DelegateTaskSchema = z.object({
   timeout: z.number().min(1000).max(86400000).optional(), // 1 second to 24 hours
   maxOutputBuffer: z.number().min(1024).max(1073741824).optional(), // 1KB to 1GB
   dependsOn: z.array(z.string()).optional(), // Task IDs this task depends on
-  continueFrom: z.string().regex(/^task-/).optional()
-    .describe('Task ID to continue from — receives checkpoint context from this dependency (must be in dependsOn list)'),
+  continueFrom: z
+    .string()
+    .regex(/^task-/)
+    .optional()
+    .describe(
+      'Task ID to continue from — receives checkpoint context from this dependency (must be in dependsOn list)',
+    ),
 });
 
 const TaskStatusSchema = z.object({
@@ -77,7 +82,10 @@ const ScheduleTaskSchema = z.object({
   workingDirectory: z.string().optional(),
   maxRuns: z.number().min(1).optional().describe('Maximum number of runs for cron schedules'),
   expiresAt: z.string().optional().describe('ISO 8601 datetime when schedule expires'),
-  afterSchedule: z.string().optional().describe('Schedule ID to chain after (new tasks depend on this schedule\'s latest task)'),
+  afterSchedule: z
+    .string()
+    .optional()
+    .describe("Schedule ID to chain after (new tasks depend on this schedule's latest task)"),
 });
 
 const ListSchedulesSchema = z.object({
@@ -117,7 +125,7 @@ export class MCPAdapter {
   constructor(
     private readonly taskManager: TaskManager,
     private readonly logger: Logger,
-    private readonly scheduleService: ScheduleService
+    private readonly scheduleService: ScheduleService,
   ) {
     this.server = new Server(
       {
@@ -128,7 +136,7 @@ export class MCPAdapter {
         capabilities: {
           tools: {},
         },
-      }
+      },
     );
 
     this.setupHandlers();
@@ -189,17 +197,23 @@ export class MCPAdapter {
           default:
             // ARCHITECTURE: Return error response instead of throwing
             return {
-              content: [{
-                type: 'text' as const,
-                text: JSON.stringify({
-                  error: `Unknown tool: ${name}`,
-                  code: 'INVALID_TOOL'
-                }, null, 2)
-              }],
-              isError: true
+              content: [
+                {
+                  type: 'text' as const,
+                  text: JSON.stringify(
+                    {
+                      error: `Unknown tool: ${name}`,
+                      code: 'INVALID_TOOL',
+                    },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+              isError: true,
             };
         }
-      }
+      },
     );
 
     // List available tools
@@ -297,7 +311,8 @@ export class MCPAdapter {
                   },
                   continueFrom: {
                     type: 'string',
-                    description: 'Task ID to continue from — receives checkpoint context when that dependency completes (must be in dependsOn list)',
+                    description:
+                      'Task ID to continue from — receives checkpoint context when that dependency completes (must be in dependsOn list)',
                     pattern: '^task-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
                   },
                 },
@@ -377,7 +392,8 @@ export class MCPAdapter {
             },
             {
               name: 'ResumeTask',
-              description: 'Resume a failed/completed task with enriched context from its checkpoint (smart retry with previous output, errors, and git state)',
+              description:
+                'Resume a failed/completed task with enriched context from its checkpoint (smart retry with previous output, errors, and git state)',
               inputSchema: {
                 type: 'object',
                 properties: {
@@ -398,7 +414,8 @@ export class MCPAdapter {
             // Schedule tools (v0.4.0 Task Scheduling)
             {
               name: 'ScheduleTask',
-              description: 'Schedule a task for future or recurring execution using cron expressions or one-time timestamps',
+              description:
+                'Schedule a task for future or recurring execution using cron expressions or one-time timestamps',
               inputSchema: {
                 type: 'object',
                 properties: {
@@ -445,7 +462,7 @@ export class MCPAdapter {
                   },
                   afterSchedule: {
                     type: 'string',
-                    description: 'Schedule ID to chain after (new tasks depend on this schedule\'s latest task)',
+                    description: "Schedule ID to chain after (new tasks depend on this schedule's latest task)",
                   },
                 },
                 required: ['prompt', 'scheduleType'],
@@ -538,7 +555,7 @@ export class MCPAdapter {
             },
           ],
         };
-      }
+      },
     );
   }
 
@@ -647,9 +664,7 @@ export class MCPAdapter {
 
     const { taskId } = parseResult.data;
 
-    const result = await this.taskManager.getStatus(
-      taskId ? TaskId(taskId) : undefined
-    );
+    const result = await this.taskManager.getStatus(taskId ? TaskId(taskId) : undefined);
 
     return match(result, {
       ok: (data) => {
@@ -680,9 +695,7 @@ export class MCPAdapter {
                   prompt: task.prompt.substring(0, 100) + '...',
                   startTime: task.startedAt,
                   endTime: task.completedAt,
-                  duration: task.completedAt && task.startedAt
-                    ? task.completedAt - task.startedAt
-                    : undefined,
+                  duration: task.completedAt && task.startedAt ? task.completedAt - task.startedAt : undefined,
                   exitCode: task.exitCode,
                   workingDirectory: task.workingDirectory,
                 }),
@@ -874,16 +887,22 @@ export class MCPAdapter {
 
     return match(result, {
       ok: (newTask) => ({
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: `Task ${taskId} resumed successfully`,
-            newTaskId: newTask.id,
-            retryCount: newTask.retryCount || 1,
-            parentTaskId: newTask.parentTaskId,
-          }, null, 2),
-        }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                success: true,
+                message: `Task ${taskId} resumed successfully`,
+                newTaskId: newTask.id,
+                retryCount: newTask.retryCount || 1,
+                parentTaskId: newTask.parentTaskId,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
       }),
       err: (error) => ({
         content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
@@ -929,17 +948,23 @@ export class MCPAdapter {
 
     return match(result, {
       ok: (schedule) => ({
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            scheduleId: schedule.id,
-            scheduleType: schedule.scheduleType,
-            nextRunAt: schedule.nextRunAt ? new Date(schedule.nextRunAt).toISOString() : null,
-            timezone: schedule.timezone,
-            status: schedule.status,
-          }, null, 2),
-        }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                success: true,
+                scheduleId: schedule.id,
+                scheduleType: schedule.scheduleType,
+                nextRunAt: schedule.nextRunAt ? new Date(schedule.nextRunAt).toISOString() : null,
+                timezone: schedule.timezone,
+                status: schedule.status,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
       }),
       err: (error) => ({
         content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
@@ -963,15 +988,11 @@ export class MCPAdapter {
 
     const { status, limit, offset } = parseResult.data;
 
-    const result = await this.scheduleService.listSchedules(
-      status as ScheduleStatus | undefined,
-      limit,
-      offset
-    );
+    const result = await this.scheduleService.listSchedules(status as ScheduleStatus | undefined, limit, offset);
 
     return match(result, {
       ok: (schedules) => {
-        const simplifiedSchedules = schedules.map(s => ({
+        const simplifiedSchedules = schedules.map((s) => ({
           id: s.id,
           status: s.status,
           scheduleType: s.scheduleType,
@@ -982,14 +1003,20 @@ export class MCPAdapter {
         }));
 
         return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              success: true,
-              schedules: simplifiedSchedules,
-              count: simplifiedSchedules.length,
-            }, null, 2),
-          }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: true,
+                  schedules: simplifiedSchedules,
+                  count: simplifiedSchedules.length,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
         };
       },
       err: (error) => ({
@@ -1014,11 +1041,7 @@ export class MCPAdapter {
 
     const { scheduleId, includeHistory, historyLimit } = parseResult.data;
 
-    const result = await this.scheduleService.getSchedule(
-      ScheduleId(scheduleId),
-      includeHistory,
-      historyLimit
-    );
+    const result = await this.scheduleService.getSchedule(ScheduleId(scheduleId), includeHistory, historyLimit);
 
     return match(result, {
       ok: ({ schedule, history }) => {
@@ -1040,7 +1063,9 @@ export class MCPAdapter {
             createdAt: new Date(schedule.createdAt).toISOString(),
             updatedAt: new Date(schedule.updatedAt).toISOString(),
             taskTemplate: {
-              prompt: schedule.taskTemplate.prompt.substring(0, 100) + (schedule.taskTemplate.prompt.length > 100 ? '...' : ''),
+              prompt:
+                schedule.taskTemplate.prompt.substring(0, 100) +
+                (schedule.taskTemplate.prompt.length > 100 ? '...' : ''),
               priority: schedule.taskTemplate.priority,
               workingDirectory: schedule.taskTemplate.workingDirectory,
             },
@@ -1048,7 +1073,7 @@ export class MCPAdapter {
         };
 
         if (history) {
-          response.history = history.map(h => ({
+          response.history = history.map((h) => ({
             scheduledFor: new Date(h.scheduledFor).toISOString(),
             executedAt: h.executedAt ? new Date(h.executedAt).toISOString() : null,
             status: h.status,
@@ -1058,10 +1083,12 @@ export class MCPAdapter {
         }
 
         return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify(response, null, 2),
-          }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(response, null, 2),
+            },
+          ],
         };
       },
       err: (error) => ({
@@ -1090,14 +1117,20 @@ export class MCPAdapter {
 
     return match(result, {
       ok: () => ({
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: `Schedule ${scheduleId} cancelled`,
-            reason,
-          }, null, 2),
-        }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                success: true,
+                message: `Schedule ${scheduleId} cancelled`,
+                reason,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
       }),
       err: (error) => ({
         content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
@@ -1125,13 +1158,19 @@ export class MCPAdapter {
 
     return match(result, {
       ok: () => ({
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: `Schedule ${scheduleId} paused`,
-          }, null, 2),
-        }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                success: true,
+                message: `Schedule ${scheduleId} paused`,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
       }),
       err: (error) => ({
         content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],
@@ -1159,13 +1198,19 @@ export class MCPAdapter {
 
     return match(result, {
       ok: () => ({
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: `Schedule ${scheduleId} resumed`,
-          }, null, 2),
-        }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                success: true,
+                message: `Schedule ${scheduleId} resumed`,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
       }),
       err: (error) => ({
         content: [{ type: 'text', text: JSON.stringify({ success: false, error: error.message }, null, 2) }],

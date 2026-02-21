@@ -115,13 +115,13 @@ describe('Database Failure Scenarios', () => {
 
       // Try concurrent writes from both connections
       const results = await Promise.allSettled([
-        ...tasks.slice(0, 5).map(t => repo1.save(t)),
-        ...tasks.slice(5).map(t => repo2.save(t))
+        ...tasks.slice(0, 5).map((t) => repo1.save(t)),
+        ...tasks.slice(5).map((t) => repo2.save(t)),
       ]);
 
       // Some operations might fail due to locks
-      const failures = results.filter(r => r.status === 'rejected');
-      const successes = results.filter(r => r.status === 'fulfilled');
+      const failures = results.filter((r) => r.status === 'rejected');
+      const successes = results.filter((r) => r.status === 'fulfilled');
 
       // At least some should succeed
       expect(successes.length).toBeGreaterThan(0);
@@ -167,7 +167,7 @@ describe('Database Failure Scenarios', () => {
           'test prompt',
           'queued',
           'INVALID_PRIORITY', // CHECK constraint prevents this
-          Date.now()
+          Date.now(),
         );
       }).toThrow(/CHECK constraint failed/);
 
@@ -181,7 +181,7 @@ describe('Database Failure Scenarios', () => {
           'test prompt',
           'INVALID_STATUS', // CHECK constraint prevents this
           'P1',
-          Date.now()
+          Date.now(),
         );
       }).toThrow(/CHECK constraint failed/);
     });
@@ -225,7 +225,7 @@ describe('Database Failure Scenarios', () => {
 
       // FIX: Don't use buildMany with callback, create tasks individually
       const hugeTasks = Array.from({ length: 100 }, () =>
-        taskFactory.withPrompt('x'.repeat(TEST_COUNTS.STRESS_TEST * 10)).build()
+        taskFactory.withPrompt('x'.repeat(TEST_COUNTS.STRESS_TEST * 10)).build(),
       );
 
       const results: boolean[] = [];
@@ -240,7 +240,7 @@ describe('Database Failure Scenarios', () => {
       }
 
       // Should save some but potentially fail on later ones
-      expect(results.filter(r => r).length).toBeGreaterThan(0);
+      expect(results.filter((r) => r).length).toBeGreaterThan(0);
     });
   });
 
@@ -307,13 +307,13 @@ describe('Database Failure Scenarios', () => {
 
         // More writes
         repository.save(taskFactory.build()),
-        repository.delete(tasks[9].id)
+        repository.delete(tasks[9].id),
       ];
 
       const results = await Promise.allSettled(operations);
 
       // All operations should complete (either success or handled error)
-      expect(results.every(r => r.status === 'fulfilled')).toBe(true);
+      expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
 
       // Verify data consistency
       const finalTasks = await repository.findAllUnbounded();
@@ -330,9 +330,7 @@ describe('Database Failure Scenarios', () => {
       repository = new SQLiteTaskRepository(database);
 
       // Try SQL injection in task prompt (ID is auto-generated, can't inject via ID)
-      const maliciousTask = taskFactory
-        .withPrompt("'; DELETE FROM tasks WHERE '1'='1")
-        .build();
+      const maliciousTask = taskFactory.withPrompt("'; DELETE FROM tasks WHERE '1'='1").build();
 
       // Should safely save without executing injection
       const saveResult = await repository.save(maliciousTask);

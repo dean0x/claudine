@@ -14,7 +14,7 @@ import {
   type DelegateRequest,
   type TaskUpdate,
   type SystemResources,
-  type TaskOutput
+  type TaskOutput,
 } from '../../../src/core/domain';
 import { BUFFER_SIZES, TIMEOUTS } from '../../constants';
 import { TaskFactory } from '../../fixtures/factories';
@@ -37,7 +37,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
   describe('createTask', () => {
     it('should create task with minimum requirements', () => {
       const request: DelegateRequest = {
-        prompt: 'echo hello world'
+        prompt: 'echo hello world',
       };
 
       const task = createTask(request);
@@ -73,7 +73,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
         workingDirectory: '/workspace',
         useWorktree: false,
         timeout: 60000,
-        maxOutputBuffer: BUFFER_SIZES.SMALL
+        maxOutputBuffer: BUFFER_SIZES.SMALL,
       };
 
       const task = createTask(request);
@@ -102,7 +102,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
         prompt: 'test',
         useWorktree: true,
         mergeStrategy: 'auto',
-        branchName: 'feature/test'
+        branchName: 'feature/test',
       });
 
       expect(withWorktree.useWorktree).toBe(true);
@@ -112,7 +112,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
       const withoutWorktree = createTask({
         prompt: 'test',
         useWorktree: false,
-        mergeStrategy: 'pr' // Should be ignored
+        mergeStrategy: 'pr', // Should be ignored
       });
 
       expect(withoutWorktree.useWorktree).toBe(false);
@@ -120,17 +120,15 @@ describe('Domain Models - REAL Behavior Tests', () => {
     });
 
     it('should generate unique task IDs', () => {
-      const tasks = Array.from({ length: 100 }, () =>
-        new TaskFactory().withPrompt('test').build()
-      );
+      const tasks = Array.from({ length: 100 }, () => new TaskFactory().withPrompt('test').build());
 
-      const ids = new Set(tasks.map(t => t.id));
+      const ids = new Set(tasks.map((t) => t.id));
       expect(ids.size).toBe(100); // All unique
       expect(Array.isArray(tasks)).toBe(true);
       expect(tasks.length).toBe(100);
 
       // All IDs should match the expected pattern
-      tasks.forEach(task => {
+      tasks.forEach((task) => {
         expect(task.id).toMatch(/^task-[a-f0-9-]+$/);
         expect(typeof task.id).toBe('string');
         expect(task.id.startsWith('task-')).toBe(true);
@@ -156,7 +154,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
         status: TaskStatus.COMPLETED,
         exitCode: 0,
         duration: TIMEOUTS.LONG,
-        completedAt: Date.now()
+        completedAt: Date.now(),
       });
 
       expect(updated.status).toBe(TaskStatus.COMPLETED);
@@ -170,9 +168,10 @@ describe('Domain Models - REAL Behavior Tests', () => {
       // createTask calls Date.now() once, updateTask calls it once
       const originalTime = 1000;
       const updatedTime = 2000;
-      const dateSpy = vi.spyOn(Date, 'now')
-        .mockReturnValueOnce(originalTime)  // createTask (for createdAt and updatedAt)
-        .mockReturnValueOnce(updatedTime);  // updateTask (for updatedAt)
+      const dateSpy = vi
+        .spyOn(Date, 'now')
+        .mockReturnValueOnce(originalTime) // createTask (for createdAt and updatedAt)
+        .mockReturnValueOnce(updatedTime); // updateTask (for updatedAt)
 
       const task = createTask({ prompt: 'test' });
       const originalStatus = task.status;
@@ -197,7 +196,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
       const updated = updateTask(task, {
         status: TaskStatus.RUNNING,
         workerId,
-        startedAt: Date.now()
+        startedAt: Date.now(),
       });
 
       expect(updated.workerId).toBe(workerId);
@@ -211,7 +210,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
       const updated = updateTask(task, {
         status: TaskStatus.FAILED,
         error,
-        exitCode: 1
+        exitCode: 1,
       });
 
       expect(updated.error).toEqual(error);
@@ -225,14 +224,16 @@ describe('Domain Models - REAL Behavior Tests', () => {
       expect(isTerminalState(TaskStatus.FAILED)).toBe(true);
       expect(isTerminalState(TaskStatus.CANCELLED)).toBe(true);
       // Verify these are the only terminal states
-      expect([TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED].every(s => isTerminalState(s))).toBe(true);
+      expect([TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED].every((s) => isTerminalState(s))).toBe(
+        true,
+      );
     });
 
     it('should identify non-terminal states', () => {
       expect(isTerminalState(TaskStatus.QUEUED)).toBe(false);
       expect(isTerminalState(TaskStatus.RUNNING)).toBe(false);
       // Verify these states allow progression
-      expect([TaskStatus.QUEUED, TaskStatus.RUNNING].every(s => !isTerminalState(s))).toBe(true);
+      expect([TaskStatus.QUEUED, TaskStatus.RUNNING].every((s) => !isTerminalState(s))).toBe(true);
     });
   });
 
@@ -292,7 +293,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
         createTask({ prompt: 'p0', priority: Priority.P0 }),
         createTask({ prompt: 'p1', priority: Priority.P1 }),
         createTask({ prompt: 'p2-2', priority: Priority.P2 }),
-        createTask({ prompt: 'p0-2', priority: Priority.P0 })
+        createTask({ prompt: 'p0-2', priority: Priority.P0 }),
       ];
 
       tasks.sort((a, b) => comparePriority(a.priority, b.priority));
@@ -338,7 +339,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
         pid: 12345,
         startedAt: Date.now(),
         cpuUsage: 25.5,
-        memoryUsage: BUFFER_SIZES.SMALL
+        memoryUsage: BUFFER_SIZES.SMALL,
       };
 
       expect(worker.id).toBe('worker-123');
@@ -352,7 +353,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
         availableMemory: 8000000000,
         totalMemory: 16000000000,
         loadAverage: [1.5, 1.2, 1.0],
-        workerCount: 3
+        workerCount: 3,
       };
 
       expect(resources.cpuUsage).toBe(45.5);
@@ -364,7 +365,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
         taskId: TaskId('task-123'),
         stdout: ['Line 1', 'Line 2'],
         stderr: ['Error 1'],
-        totalSize: 1024
+        totalSize: 1024,
       };
 
       expect(output.taskId).toBe('task-123');
@@ -378,7 +379,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
       // Create
       let task = createTask({
         prompt: 'npm test',
-        priority: Priority.P1
+        priority: Priority.P1,
       });
       expect(task.status).toBe(TaskStatus.QUEUED);
       expect(canCancel(task)).toBe(true);
@@ -387,7 +388,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
       task = updateTask(task, {
         status: TaskStatus.RUNNING,
         workerId: WorkerId('worker-1'),
-        startedAt: Date.now()
+        startedAt: Date.now(),
       });
       expect(task.status).toBe(TaskStatus.RUNNING);
       expect(task.workerId).toBe('worker-1');
@@ -399,7 +400,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
         status: TaskStatus.COMPLETED,
         exitCode: 0,
         completedAt,
-        duration: completedAt - (task.startedAt || 0)
+        duration: completedAt - (task.startedAt || 0),
       });
       expect(task.status).toBe(TaskStatus.COMPLETED);
       expect(isTerminalState(task.status)).toBe(true);
@@ -412,13 +413,11 @@ describe('Domain Models - REAL Behavior Tests', () => {
         createTask({ prompt: 'critical', priority: Priority.P0 }),
         createTask({ prompt: 'normal', priority: Priority.P2 }),
         createTask({ prompt: 'high', priority: Priority.P1 }),
-        createTask({ prompt: 'another critical', priority: Priority.P0 })
+        createTask({ prompt: 'another critical', priority: Priority.P0 }),
       ];
 
       // Sort by priority
-      const sorted = [...tasks].sort((a, b) =>
-        comparePriority(a.priority, b.priority)
-      );
+      const sorted = [...tasks].sort((a, b) => comparePriority(a.priority, b.priority));
 
       // P0 tasks should be first
       expect(sorted[0].prompt).toBe('critical');
@@ -437,7 +436,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
       task = updateTask(task, {
         status: TaskStatus.RUNNING,
         workerId: WorkerId('worker-1'),
-        startedAt: Date.now()
+        startedAt: Date.now(),
       });
 
       // Task fails
@@ -446,9 +445,9 @@ describe('Domain Models - REAL Behavior Tests', () => {
         exitCode: 1,
         error: {
           message: 'Command not found',
-          code: 'ENOENT'
+          code: 'ENOENT',
         },
-        completedAt: Date.now()
+        completedAt: Date.now(),
       });
 
       expect(task.status).toBe(TaskStatus.FAILED);
@@ -465,7 +464,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
       task = updateTask(task, {
         status: TaskStatus.RUNNING,
         workerId: WorkerId('worker-1'),
-        startedAt: Date.now()
+        startedAt: Date.now(),
       });
 
       // Check can cancel
@@ -474,7 +473,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
       // Cancel task
       task = updateTask(task, {
         status: TaskStatus.CANCELLED,
-        completedAt: Date.now()
+        completedAt: Date.now(),
       });
 
       expect(task.status).toBe(TaskStatus.CANCELLED);
@@ -492,7 +491,7 @@ describe('Domain Models - REAL Behavior Tests', () => {
         autoCommit: true,
         pushToRemote: true,
         prTitle: 'Test PR',
-        prBody: 'This is a test'
+        prBody: 'This is a test',
       });
 
       expect(task.useWorktree).toBe(true);

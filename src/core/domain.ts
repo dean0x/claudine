@@ -32,11 +32,11 @@ export enum TaskStatus {
  * ARCHITECTURE: Tracks lifecycle of scheduled task triggers
  */
 export enum ScheduleStatus {
-  ACTIVE = 'active',       // Schedule is active and will trigger at next scheduled time
-  PAUSED = 'paused',       // Schedule is temporarily paused (can be resumed)
+  ACTIVE = 'active', // Schedule is active and will trigger at next scheduled time
+  PAUSED = 'paused', // Schedule is temporarily paused (can be resumed)
   COMPLETED = 'completed', // Schedule has completed (maxRuns reached or one-time schedule executed)
   CANCELLED = 'cancelled', // Schedule was manually cancelled
-  EXPIRED = 'expired',     // Schedule has passed its expiration time
+  EXPIRED = 'expired', // Schedule has passed its expiration time
 }
 
 /**
@@ -44,8 +44,8 @@ export enum ScheduleStatus {
  * ARCHITECTURE: Determines how next run time is calculated
  */
 export enum ScheduleType {
-  CRON = 'cron',           // Recurring schedule using cron expression (5-field standard)
-  ONE_TIME = 'one_time',   // Single execution at specified timestamp
+  CRON = 'cron', // Recurring schedule using cron expression (5-field standard)
+  ONE_TIME = 'one_time', // Single execution at specified timestamp
 }
 
 /**
@@ -54,9 +54,9 @@ export enum ScheduleType {
  * Common scenarios: server downtime, high load, maintenance windows
  */
 export enum MissedRunPolicy {
-  SKIP = 'skip',           // Skip missed runs, continue with next scheduled time (default)
-  CATCHUP = 'catchup',     // Execute missed runs immediately (one by one)
-  FAIL = 'fail',           // Mark schedule as failed if run is missed
+  SKIP = 'skip', // Skip missed runs, continue with next scheduled time (default)
+  CATCHUP = 'catchup', // Execute missed runs immediately (one by one)
+  FAIL = 'fail', // Mark schedule as failed if run is missed
 }
 
 export interface Task {
@@ -67,15 +67,15 @@ export interface Task {
   readonly workingDirectory?: string;
 
   // Worktree control (EXPERIMENTAL - opt-in only)
-  readonly useWorktree: boolean;       // default: false (enabled via --use-worktree or config)
+  readonly useWorktree: boolean; // default: false (enabled via --use-worktree or config)
   readonly worktreeCleanup?: 'auto' | 'keep' | 'delete'; // default: 'auto'
 
   // Merge strategy fields (only applies when useWorktree is true)
   readonly mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch'; // default: 'pr', undefined when no worktree
-  readonly branchName?: string;        // default: 'claudine/task-{id}'
-  readonly baseBranch?: string;        // default: current branch
-  readonly autoCommit: boolean;        // default: true
-  readonly pushToRemote: boolean;      // default: true for PR mode
+  readonly branchName?: string; // default: 'claudine/task-{id}'
+  readonly baseBranch?: string; // default: current branch
+  readonly autoCommit: boolean; // default: true
+  readonly pushToRemote: boolean; // default: true for PR mode
   readonly prTitle?: string;
   readonly prBody?: string;
 
@@ -91,17 +91,17 @@ export interface Task {
   //   This allows reconstructing the retry sequence
   // - retryCount: Increments with each retry (1, 2, 3...)
   //   This shows how many attempts have been made
-  readonly parentTaskId?: TaskId;      // Root task ID in retry chain (original task)
-  readonly retryCount?: number;        // Number in retry chain (1 = first retry, 2 = second, etc.)
-  readonly retryOf?: TaskId;          // Direct parent task ID (task this is a retry of)
+  readonly parentTaskId?: TaskId; // Root task ID in retry chain (original task)
+  readonly retryCount?: number; // Number in retry chain (1 = first retry, 2 = second, etc.)
+  readonly retryOf?: TaskId; // Direct parent task ID (task this is a retry of)
 
   // Dependency tracking (Phase 4: Task Dependencies)
   // DEPENDENCY DESIGN:
   // - These are cached/derived fields populated from DependencyRepository
   // - Actual dependency relationships stored in task_dependencies table
   // - DAG validation enforced at DependencyGraph layer
-  readonly dependsOn?: readonly TaskId[];      // Tasks this task depends on (blocking tasks)
-  readonly dependents?: readonly TaskId[];     // Tasks that depend on this task (blocked tasks)
+  readonly dependsOn?: readonly TaskId[]; // Tasks this task depends on (blocking tasks)
+  readonly dependents?: readonly TaskId[]; // Tasks that depend on this task (blocked tasks)
   readonly dependencyState?: 'blocked' | 'ready' | 'none'; // Computed dependency state
 
   // Session continuation (v0.5.0): Task ID to continue from
@@ -149,7 +149,7 @@ export interface DelegateRequest {
   readonly workingDirectory?: string;
 
   // Worktree control (EXPERIMENTAL - opt-in)
-  readonly useWorktree?: boolean;      // default: from config (false unless USE_WORKTREES_BY_DEFAULT=true)
+  readonly useWorktree?: boolean; // default: from config (false unless USE_WORKTREES_BY_DEFAULT=true)
   readonly worktreeCleanup?: 'auto' | 'keep' | 'delete'; // default: 'auto'
 
   // Merge strategy fields
@@ -216,7 +216,7 @@ export const createTask = (request: DelegateRequest): Task => {
     worktreeCleanup: request.worktreeCleanup !== undefined ? request.worktreeCleanup : 'auto',
 
     // Merge strategy configuration
-    mergeStrategy: request.useWorktree ? (request.mergeStrategy || 'pr') : undefined,
+    mergeStrategy: request.useWorktree ? request.mergeStrategy || 'pr' : undefined,
     branchName: request.branchName,
     baseBranch: request.baseBranch,
     autoCommit: request.autoCommit !== false, // Default to true
@@ -274,19 +274,19 @@ export const comparePriority = (a: Priority, b: Priority): number => {
  */
 export interface Schedule {
   readonly id: ScheduleId;
-  readonly taskTemplate: DelegateRequest;  // What to run when schedule triggers
+  readonly taskTemplate: DelegateRequest; // What to run when schedule triggers
   readonly scheduleType: ScheduleType;
-  readonly cronExpression?: string;        // For CRON type: standard 5-field expression (minute hour day month weekday)
-  readonly scheduledAt?: number;           // For ONE_TIME type: epoch milliseconds
-  readonly timezone: string;               // IANA timezone identifier (e.g., 'America/New_York'), default 'UTC'
+  readonly cronExpression?: string; // For CRON type: standard 5-field expression (minute hour day month weekday)
+  readonly scheduledAt?: number; // For ONE_TIME type: epoch milliseconds
+  readonly timezone: string; // IANA timezone identifier (e.g., 'America/New_York'), default 'UTC'
   readonly missedRunPolicy: MissedRunPolicy;
   readonly status: ScheduleStatus;
-  readonly maxRuns?: number;               // Optional limit for CRON schedules (undefined = unlimited)
-  readonly runCount: number;               // Number of times schedule has triggered
-  readonly lastRunAt?: number;             // Timestamp of last execution (epoch ms)
-  readonly nextRunAt?: number;             // Computed next execution time (epoch ms)
-  readonly expiresAt?: number;             // Optional expiration time (epoch ms)
-  readonly afterScheduleId?: ScheduleId;  // Chain: new tasks depend on this schedule's latest task
+  readonly maxRuns?: number; // Optional limit for CRON schedules (undefined = unlimited)
+  readonly runCount: number; // Number of times schedule has triggered
+  readonly lastRunAt?: number; // Timestamp of last execution (epoch ms)
+  readonly nextRunAt?: number; // Computed next execution time (epoch ms)
+  readonly expiresAt?: number; // Optional expiration time (epoch ms)
+  readonly afterScheduleId?: ScheduleId; // Chain: new tasks depend on this schedule's latest task
   readonly createdAt: number;
   readonly updatedAt: number;
 }
@@ -298,13 +298,13 @@ export interface Schedule {
 export interface ScheduleRequest {
   readonly taskTemplate: DelegateRequest;
   readonly scheduleType: ScheduleType;
-  readonly cronExpression?: string;        // Required for CRON type
-  readonly scheduledAt?: number;           // Required for ONE_TIME type
-  readonly timezone?: string;              // Default: 'UTC'
+  readonly cronExpression?: string; // Required for CRON type
+  readonly scheduledAt?: number; // Required for ONE_TIME type
+  readonly timezone?: string; // Default: 'UTC'
   readonly missedRunPolicy?: MissedRunPolicy; // Default: SKIP
-  readonly maxRuns?: number;               // Optional limit for CRON
-  readonly expiresAt?: number;             // Optional expiration
-  readonly afterScheduleId?: ScheduleId;   // Chain: block until after-schedule's latest task completes
+  readonly maxRuns?: number; // Optional limit for CRON
+  readonly expiresAt?: number; // Optional expiration
+  readonly afterScheduleId?: ScheduleId; // Chain: block until after-schedule's latest task completes
 }
 
 /**
@@ -380,13 +380,13 @@ export interface ScheduleCreateRequest {
   readonly prompt: string;
   readonly scheduleType: ScheduleType;
   readonly cronExpression?: string;
-  readonly scheduledAt?: string;        // ISO 8601 string (parsed by service)
-  readonly timezone?: string;           // IANA timezone, default 'UTC'
+  readonly scheduledAt?: string; // ISO 8601 string (parsed by service)
+  readonly timezone?: string; // IANA timezone, default 'UTC'
   readonly missedRunPolicy?: MissedRunPolicy;
   readonly priority?: Priority;
   readonly workingDirectory?: string;
   readonly maxRuns?: number;
-  readonly expiresAt?: string;          // ISO 8601 string (parsed by service)
+  readonly expiresAt?: string; // ISO 8601 string (parsed by service)
   readonly afterScheduleId?: ScheduleId; // Chain: block until after-schedule's latest task completes
 }
 
@@ -399,12 +399,12 @@ export interface TaskCheckpoint {
   readonly id: number;
   readonly taskId: TaskId;
   readonly checkpointType: 'completed' | 'failed' | 'cancelled';
-  readonly outputSummary?: string;      // Last N lines of stdout
-  readonly errorSummary?: string;       // Last N lines of stderr or error message
+  readonly outputSummary?: string; // Last N lines of stdout
+  readonly errorSummary?: string; // Last N lines of stderr or error message
   readonly gitBranch?: string;
   readonly gitCommitSha?: string;
   readonly gitDirtyFiles?: readonly string[];
-  readonly contextNote?: string;        // User-provided context on resume
+  readonly contextNote?: string; // User-provided context on resume
   readonly createdAt: number;
 }
 
@@ -414,5 +414,5 @@ export interface TaskCheckpoint {
  */
 export interface ResumeTaskRequest {
   readonly taskId: TaskId;
-  readonly additionalContext?: string;   // User-provided instructions for retry
+  readonly additionalContext?: string; // User-provided instructions for retry
 }

@@ -28,10 +28,12 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
 
   // Helper function to create a task in the database
   function createTask(taskId: TaskId): void {
-    sqliteDb.prepare(`
+    sqliteDb
+      .prepare(`
       INSERT INTO tasks (id, prompt, status, priority, created_at)
       VALUES (?, ?, 'queued', 'P2', ?)
-    `).run(taskId, `Prompt for ${taskId}`, Date.now());
+    `)
+      .run(taskId, `Prompt for ${taskId}`, Date.now());
   }
 
   describe('addDependency()', () => {
@@ -99,7 +101,7 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       if (!dependentsResult.ok) return;
 
       expect(dependentsResult.value).toHaveLength(2);
-      const dependentTaskIds = dependentsResult.value.map(d => d.taskId);
+      const dependentTaskIds = dependentsResult.value.map((d) => d.taskId);
       expect(dependentTaskIds).toContain(taskB);
       expect(dependentTaskIds).toContain(taskC);
     });
@@ -127,7 +129,7 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       if (!depsResult.ok) return;
 
       expect(depsResult.value).toHaveLength(2);
-      const depTaskIds = depsResult.value.map(d => d.dependsOnTaskId);
+      const depTaskIds = depsResult.value.map((d) => d.dependsOnTaskId);
       expect(depTaskIds).toContain(taskA);
       expect(depTaskIds).toContain(taskB);
     });
@@ -194,7 +196,7 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       expect(result.value[0].taskId).toBe(taskC);
       expect(result.value[1].taskId).toBe(taskC);
 
-      const depIds = result.value.map(d => d.dependsOnTaskId);
+      const depIds = result.value.map((d) => d.dependsOnTaskId);
       expect(depIds).toContain(taskA);
       expect(depIds).toContain(taskB);
 
@@ -431,7 +433,7 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       if (!result.ok) return;
 
       expect(result.value).toHaveLength(2);
-      const depTaskIds = result.value.map(d => d.dependsOnTaskId);
+      const depTaskIds = result.value.map((d) => d.dependsOnTaskId);
       expect(depTaskIds).toContain(taskA);
       expect(depTaskIds).toContain(taskB);
     });
@@ -450,7 +452,6 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
     it('should return dependencies in correct format', async () => {
       const taskB = 'task-b' as TaskId;
       const taskA = 'task-a' as TaskId;
-
 
       // Create tasks first (required for foreign key constraints)
       createTask('task-b' as TaskId);
@@ -493,7 +494,7 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       if (!result.ok) return;
 
       expect(result.value).toHaveLength(2);
-      const dependentTaskIds = result.value.map(d => d.taskId);
+      const dependentTaskIds = result.value.map((d) => d.taskId);
       expect(dependentTaskIds).toContain(taskB);
       expect(dependentTaskIds).toContain(taskC);
     });
@@ -514,7 +515,6 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
     it('should resolve dependency as completed', async () => {
       const taskB = 'task-b' as TaskId;
       const taskA = 'task-a' as TaskId;
-
 
       // Create tasks first (required for foreign key constraints)
       createTask('task-b' as TaskId);
@@ -538,7 +538,6 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       const taskB = 'task-b' as TaskId;
       const taskA = 'task-a' as TaskId;
 
-
       // Create tasks first (required for foreign key constraints)
       createTask('task-b' as TaskId);
       createTask('task-a' as TaskId);
@@ -558,7 +557,6 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
     it('should resolve dependency as cancelled', async () => {
       const taskB = 'task-b' as TaskId;
       const taskA = 'task-a' as TaskId;
-
 
       // Create tasks first (required for foreign key constraints)
       createTask('task-b' as TaskId);
@@ -592,7 +590,6 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
     it('should update resolvedAt timestamp', async () => {
       const taskB = 'task-b' as TaskId;
       const taskA = 'task-a' as TaskId;
-
 
       // Create tasks first (required for foreign key constraints)
       createTask('task-b' as TaskId);
@@ -846,7 +843,6 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       const taskB = 'task-b' as TaskId;
       const taskA = 'task-a' as TaskId;
 
-
       // Create tasks first (required for foreign key constraints)
       createTask('task-b' as TaskId);
       createTask('task-a' as TaskId);
@@ -865,7 +861,6 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       const taskC = 'task-c' as TaskId;
       const taskA = 'task-a' as TaskId;
       const taskB = 'task-b' as TaskId;
-
 
       // Create tasks first (required for foreign key constraints)
       createTask('task-c' as TaskId);
@@ -887,7 +882,6 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
     it('should return true when task has unresolved dependencies', async () => {
       const taskB = 'task-b' as TaskId;
       const taskA = 'task-a' as TaskId;
-
 
       // Create tasks first (required for foreign key constraints)
       createTask('task-b' as TaskId);
@@ -916,7 +910,6 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
     it('should return false when all dependencies resolved', async () => {
       const taskB = 'task-b' as TaskId;
       const taskA = 'task-a' as TaskId;
-
 
       // Create tasks first (required for foreign key constraints)
       createTask('task-b' as TaskId);
@@ -967,7 +960,6 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       const taskA = 'task-a' as TaskId;
       const taskB = 'task-b' as TaskId;
 
-
       // Create tasks first (required for foreign key constraints)
       createTask('task-c' as TaskId);
       createTask('task-a' as TaskId);
@@ -993,7 +985,6 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       const taskA = 'task-a' as TaskId;
       const taskB = 'task-b' as TaskId;
       const taskC = 'task-c' as TaskId;
-
 
       // Create tasks first (required for foreign key constraints)
       createTask('task-a' as TaskId);
@@ -1033,9 +1024,9 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       createTask('task-a' as TaskId);
       createTask('task-b' as TaskId);
       createTask('task-c' as TaskId);
-      await repo.addDependency(taskB, taskA);  // timestamp 1000
-      await repo.addDependency(taskC, taskA);  // timestamp 1001
-      await repo.addDependency(taskC, taskB);  // timestamp 1002
+      await repo.addDependency(taskB, taskA); // timestamp 1000
+      await repo.addDependency(taskC, taskA); // timestamp 1001
+      await repo.addDependency(taskC, taskB); // timestamp 1002
 
       dateSpy.mockRestore();
       const result = await repo.findAll();
@@ -1103,9 +1094,9 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       let mockTime = 1000;
       const dateSpy = vi.spyOn(Date, 'now').mockImplementation(() => mockTime++);
 
-      await repo.addDependency(taskB, taskA);  // timestamp 1000 (oldest)
-      await repo.addDependency(taskC, taskA);  // timestamp 1001
-      await repo.addDependency(taskC, taskB);  // timestamp 1002 (newest)
+      await repo.addDependency(taskB, taskA); // timestamp 1000 (oldest)
+      await repo.addDependency(taskC, taskA); // timestamp 1001
+      await repo.addDependency(taskC, taskB); // timestamp 1002 (newest)
 
       dateSpy.mockRestore();
 
@@ -1359,7 +1350,7 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
     });
 
     it('should handle rapid concurrent operations', async () => {
-      const tasks = ['a', 'b', 'c', 'd', 'e'].map(id => `task-${id}` as TaskId);
+      const tasks = ['a', 'b', 'c', 'd', 'e'].map((id) => `task-${id}` as TaskId);
 
       // Create all tasks first
       for (const task of tasks) {
@@ -1375,7 +1366,7 @@ describe('SQLiteDependencyRepository - Unit Tests', () => {
       const results = await Promise.all(promises);
 
       // All should succeed
-      expect(results.every(r => r.ok)).toBe(true);
+      expect(results.every((r) => r.ok)).toBe(true);
 
       // Verify all dependencies exist
       const allResult = await repo.findAllUnbounded();

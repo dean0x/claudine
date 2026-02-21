@@ -12,13 +12,7 @@ import { Database } from '../../../src/implementations/database';
 import { TestLogger } from '../../fixtures/test-doubles';
 import { createTestConfiguration } from '../../fixtures/factories';
 import { ScheduleExecutor } from '../../../src/services/schedule-executor';
-import {
-  createSchedule,
-  ScheduleType,
-  ScheduleStatus,
-  MissedRunPolicy,
-  ScheduleId,
-} from '../../../src/core/domain';
+import { createSchedule, ScheduleType, ScheduleStatus, MissedRunPolicy, ScheduleId } from '../../../src/core/domain';
 import type { Schedule } from '../../../src/core/domain';
 import { flushEventLoop } from '../../utils/event-helpers';
 
@@ -62,7 +56,7 @@ describe('ScheduleExecutor - Unit Tests', () => {
     overrides: Partial<Parameters<typeof createSchedule>[0]> & {
       nextRunAt?: number;
       status?: ScheduleStatus;
-    } = {}
+    } = {},
   ): Promise<Schedule> {
     const { nextRunAt, status, ...scheduleOverrides } = overrides;
     const schedule = createSchedule({
@@ -92,12 +86,10 @@ describe('ScheduleExecutor - Unit Tests', () => {
 
   describe('Factory create()', () => {
     it('should succeed and return executor', () => {
-      const result = ScheduleExecutor.create(
-        scheduleRepo,
-        eventBus,
-        logger,
-        { checkIntervalMs: 100, missedRunGracePeriodMs: 1000 }
-      );
+      const result = ScheduleExecutor.create(scheduleRepo, eventBus, logger, {
+        checkIntervalMs: 100,
+        missedRunGracePeriodMs: 1000,
+      });
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;

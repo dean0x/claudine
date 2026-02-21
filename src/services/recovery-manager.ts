@@ -13,7 +13,7 @@ export class RecoveryManager {
     private readonly repository: TaskRepository,
     private readonly queue: TaskQueue,
     private readonly eventBus: EventBus,
-    private readonly logger: Logger
+    private readonly logger: Logger,
   ) {}
 
   /**
@@ -33,7 +33,7 @@ export class RecoveryManager {
     // First, cleanup old completed tasks (older than 7 days)
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
     const cleanupResult = await this.repository.cleanupOldTasks(sevenDaysMs);
-    
+
     if (cleanupResult.ok && cleanupResult.value > 0) {
       this.logger.info('Cleaned up old completed tasks', { count: cleanupResult.value });
     }
@@ -41,12 +41,12 @@ export class RecoveryManager {
     // Get only QUEUED and RUNNING tasks (non-terminal states that need recovery)
     const queuedResult = await this.repository.findByStatus(TaskStatus.QUEUED);
     const runningResult = await this.repository.findByStatus(TaskStatus.RUNNING);
-    
+
     if (!queuedResult.ok) {
       this.logger.error('Failed to load queued tasks for recovery', queuedResult.error);
       return queuedResult;
     }
-    
+
     if (!runningResult.ok) {
       this.logger.error('Failed to load running tasks for recovery', runningResult.error);
       return runningResult;
@@ -64,20 +64,20 @@ export class RecoveryManager {
       }
 
       const enqueueResult = this.queue.enqueue(task);
-      
+
       if (enqueueResult.ok) {
         queuedCount++;
         this.logger.debug('Re-queued task', { taskId: task.id });
-        
+
         // CRITICAL: Emit TaskQueued event to trigger worker spawning
         const queuedEventResult = await this.eventBus.emit('TaskQueued', {
           taskId: task.id,
-          task: task
+          task: task,
         });
-        
+
         if (!queuedEventResult.ok) {
           this.logger.error('Failed to emit TaskQueued event for recovered task', queuedEventResult.error, {
-            taskId: task.id
+            taskId: task.id,
           });
         }
       } else {
@@ -160,13 +160,9 @@ export class RecoveryManager {
           });
 
           if (!queuedEventResult.ok) {
-            this.logger.error(
-              'Failed to emit TaskQueued event for recovered task',
-              queuedEventResult.error,
-              {
-                taskId: task.id,
-              }
-            );
+            this.logger.error('Failed to emit TaskQueued event for recovered task', queuedEventResult.error, {
+              taskId: task.id,
+            });
           }
         } else {
           this.logger.error('Failed to re-queue recent running task', enqueueResult.error, {
@@ -180,15 +176,15 @@ export class RecoveryManager {
       queuedTasks: queuedResult.value.length,
       runningTasks: runningResult.value.length,
       requeued: queuedCount,
-      markedFailed: failedCount
+      markedFailed: failedCount,
     });
 
     // Emit recovery completed event
     const recoveryCompleteResult = await this.eventBus.emit('RecoveryCompleted', {
       tasksRecovered: queuedCount,
-      tasksMarkedFailed: failedCount
+      tasksMarkedFailed: failedCount,
     });
-    
+
     if (!recoveryCompleteResult.ok) {
       this.logger.error('Failed to emit RecoveryCompleted event', recoveryCompleteResult.error);
     }

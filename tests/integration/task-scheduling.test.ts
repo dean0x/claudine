@@ -12,13 +12,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { bootstrap } from '../../src/bootstrap.js';
 import { Container } from '../../src/core/container.js';
 import { ScheduleService, ScheduleRepository } from '../../src/core/interfaces.js';
-import {
-  ScheduleType,
-  ScheduleStatus,
-  ScheduleId,
-  MissedRunPolicy,
-  Priority,
-} from '../../src/core/domain.js';
+import { ScheduleType, ScheduleStatus, ScheduleId, MissedRunPolicy, Priority } from '../../src/core/domain.js';
 import type { Schedule, TaskId } from '../../src/core/domain.js';
 import type { TaskDelegatedEvent, ScheduleExecutedEvent } from '../../src/core/events/events.js';
 import { EventBus } from '../../src/core/events/event-bus.js';
@@ -254,7 +248,7 @@ describe('Integration: Task Scheduling - End-to-End Flow', () => {
         {
           checkIntervalMs: 50,
           missedRunGracePeriodMs: 60_000, // Large grace period so this is not "missed"
-        }
+        },
       );
 
       expect(executorCreateResult.ok).toBe(true);
@@ -313,7 +307,7 @@ describe('Integration: Task Scheduling - End-to-End Flow', () => {
         scheduleRepo,
         eventBus,
         (loggerResult.value as import('../../src/core/interfaces.js').Logger).child({ module: 'TestExecutor' }),
-        { checkIntervalMs: 50, missedRunGracePeriodMs: 60_000 }
+        { checkIntervalMs: 50, missedRunGracePeriodMs: 60_000 },
       );
 
       expect(executorCreateResult.ok).toBe(true);
@@ -484,7 +478,7 @@ describe('Integration: Task Scheduling - End-to-End Flow', () => {
       expect(activeListResult.ok).toBe(true);
       if (!activeListResult.ok) return;
 
-      const activeIds = activeListResult.value.map(s => s.id);
+      const activeIds = activeListResult.value.map((s) => s.id);
       expect(activeIds).toContain(create1.value.id);
       expect(activeIds).not.toContain(create2.value.id);
 
@@ -493,7 +487,7 @@ describe('Integration: Task Scheduling - End-to-End Flow', () => {
       expect(pausedListResult.ok).toBe(true);
       if (!pausedListResult.ok) return;
 
-      const pausedIds = pausedListResult.value.map(s => s.id);
+      const pausedIds = pausedListResult.value.map((s) => s.id);
       expect(pausedIds).toContain(create2.value.id);
       expect(pausedIds).not.toContain(create1.value.id);
     });
@@ -526,7 +520,7 @@ describe('Integration: Task Scheduling - End-to-End Flow', () => {
         scheduleRepo,
         eventBus,
         (loggerResult.value as import('../../src/core/interfaces.js').Logger).child({ module: 'TestExecutor' }),
-        { checkIntervalMs: 50, missedRunGracePeriodMs: 60_000 }
+        { checkIntervalMs: 50, missedRunGracePeriodMs: 60_000 },
       );
 
       expect(executorCreateResult.ok).toBe(true);
@@ -585,7 +579,7 @@ describe('Integration: Task Scheduling - End-to-End Flow', () => {
         scheduleRepo,
         eventBus,
         (loggerResult.value as import('../../src/core/interfaces.js').Logger).child({ module: 'TestExecutor' }),
-        { checkIntervalMs: 50, missedRunGracePeriodMs: 60_000 }
+        { checkIntervalMs: 50, missedRunGracePeriodMs: 60_000 },
       );
 
       expect(executorCreateResult.ok).toBe(true);

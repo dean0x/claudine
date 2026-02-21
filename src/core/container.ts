@@ -31,12 +31,9 @@ export class Container {
    */
   registerSingleton<T>(name: string, factory: Factory<T>): Result<void> {
     if (this.services.has(name)) {
-      return err(new ClaudineError(
-        ErrorCode.CONFIGURATION_ERROR,
-        `Service ${name} already registered`
-      ));
+      return err(new ClaudineError(ErrorCode.CONFIGURATION_ERROR, `Service ${name} already registered`));
     }
-    
+
     this.services.set(name, { factory, singleton: true });
     return ok(undefined);
   }
@@ -46,12 +43,9 @@ export class Container {
    */
   registerTransient<T>(name: string, factory: Factory<T>): Result<void> {
     if (this.services.has(name)) {
-      return err(new ClaudineError(
-        ErrorCode.CONFIGURATION_ERROR,
-        `Service ${name} already registered`
-      ));
+      return err(new ClaudineError(ErrorCode.CONFIGURATION_ERROR, `Service ${name} already registered`));
     }
-    
+
     this.services.set(name, { factory, singleton: false });
     return ok(undefined);
   }
@@ -61,16 +55,13 @@ export class Container {
    */
   registerValue<T>(name: string, value: T): Result<void> {
     if (this.services.has(name)) {
-      return err(new ClaudineError(
-        ErrorCode.CONFIGURATION_ERROR,
-        `Service ${name} already registered`
-      ));
+      return err(new ClaudineError(ErrorCode.CONFIGURATION_ERROR, `Service ${name} already registered`));
     }
-    
-    this.services.set(name, { 
-      factory: () => value, 
-      singleton: true, 
-      instance: value 
+
+    this.services.set(name, {
+      factory: () => value,
+      singleton: true,
+      instance: value,
     });
     return ok(undefined);
   }
@@ -80,20 +71,14 @@ export class Container {
    */
   async resolve<T>(name: string): Promise<Result<T>> {
     const service = this.services.get(name);
-    
+
     if (!service) {
-      return err(new ClaudineError(
-        ErrorCode.CONFIGURATION_ERROR,
-        `Service ${name} not registered`
-      ));
+      return err(new ClaudineError(ErrorCode.CONFIGURATION_ERROR, `Service ${name} not registered`));
     }
 
     // Check for circular dependencies
     if (this.resolving.has(name)) {
-      return err(new ClaudineError(
-        ErrorCode.CONFIGURATION_ERROR,
-        `Circular dependency detected for ${name}`
-      ));
+      return err(new ClaudineError(ErrorCode.CONFIGURATION_ERROR, `Circular dependency detected for ${name}`));
     }
 
     try {
@@ -117,10 +102,7 @@ export class Container {
       return ok(instance);
     } catch (error) {
       this.resolving.delete(name);
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to resolve service ${name}: ${error}`
-      ));
+      return err(new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to resolve service ${name}: ${error}`));
     }
   }
 
@@ -129,12 +111,9 @@ export class Container {
    */
   get<T>(name: string): Result<T> {
     const service = this.services.get(name);
-    
+
     if (!service) {
-      return err(new ClaudineError(
-        ErrorCode.CONFIGURATION_ERROR,
-        `Service ${name} not registered`
-      ));
+      return err(new ClaudineError(ErrorCode.CONFIGURATION_ERROR, `Service ${name} not registered`));
     }
 
     // If singleton and already created, return it
@@ -146,22 +125,18 @@ export class Container {
     try {
       const instance = service.factory();
       if (instance instanceof Promise) {
-        return err(new ClaudineError(
-          ErrorCode.CONFIGURATION_ERROR,
-          `Service ${name} has async factory, use resolve() instead`
-        ));
+        return err(
+          new ClaudineError(ErrorCode.CONFIGURATION_ERROR, `Service ${name} has async factory, use resolve() instead`),
+        );
       }
-      
+
       if (service.singleton) {
         service.instance = instance;
       }
-      
+
       return ok(instance as T);
     } catch (error) {
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Failed to get service ${name}: ${error}`
-      ));
+      return err(new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to get service ${name}: ${error}`));
     }
   }
 
@@ -277,7 +252,7 @@ export class Container {
    */
   createChild(): Container {
     const child = new Container();
-    
+
     // Copy service definitions (not instances)
     for (const [name, service] of this.services) {
       child.services.set(name, {
@@ -286,7 +261,7 @@ export class Container {
         // Don't copy instances - child gets fresh ones
       });
     }
-    
+
     return child;
   }
 }

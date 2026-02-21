@@ -9,13 +9,7 @@ import { TestEventBus, TestLogger } from '../../fixtures/test-doubles';
 import { Database } from '../../../src/implementations/database';
 import { SQLiteScheduleRepository } from '../../../src/implementations/schedule-repository';
 import { ScheduleManagerService, toMissedRunPolicy } from '../../../src/services/schedule-manager';
-import {
-  ScheduleType,
-  ScheduleStatus,
-  MissedRunPolicy,
-  ScheduleId,
-  createSchedule,
-} from '../../../src/core/domain';
+import { ScheduleType, ScheduleStatus, MissedRunPolicy, ScheduleId, createSchedule } from '../../../src/core/domain';
 import type { ScheduleCreateRequest } from '../../../src/core/domain';
 
 describe('ScheduleManagerService - Unit Tests', () => {

@@ -3,9 +3,7 @@
  * Never throw errors - always return Results
  */
 
-export type Result<T, E = Error> = 
-  | { ok: true; value: T }
-  | { ok: false; error: E };
+export type Result<T, E = Error> = { ok: true; value: T } | { ok: false; error: E };
 
 export const ok = <T>(value: T): Result<T, never> => ({
   ok: true,
@@ -20,10 +18,7 @@ export const err = <E>(error: E): Result<never, E> => ({
 /**
  * Map over a successful result
  */
-export const map = <T, U, E>(
-  result: Result<T, E>,
-  fn: (value: T) => U
-): Result<U, E> => {
+export const map = <T, U, E>(result: Result<T, E>, fn: (value: T) => U): Result<U, E> => {
   if (result.ok) {
     return ok(fn(result.value));
   }
@@ -33,10 +28,7 @@ export const map = <T, U, E>(
 /**
  * FlatMap (bind) for chaining Results
  */
-export const flatMap = <T, U, E>(
-  result: Result<T, E>,
-  fn: (value: T) => Result<U, E>
-): Result<U, E> => {
+export const flatMap = <T, U, E>(result: Result<T, E>, fn: (value: T) => Result<U, E>): Result<U, E> => {
   if (result.ok) {
     return fn(result.value);
   }
@@ -46,10 +38,7 @@ export const flatMap = <T, U, E>(
 /**
  * Map over an error
  */
-export const mapError = <T, E, F>(
-  result: Result<T, E>,
-  fn: (error: E) => F
-): Result<T, F> => {
+export const mapError = <T, E, F>(result: Result<T, E>, fn: (error: E) => F): Result<T, F> => {
   if (!result.ok) {
     return err(fn(result.error));
   }
@@ -59,28 +48,23 @@ export const mapError = <T, E, F>(
 /**
  * Combine multiple Results
  */
-export const combine = <T, E>(
-  results: Result<T, E>[]
-): Result<T[], E> => {
+export const combine = <T, E>(results: Result<T, E>[]): Result<T[], E> => {
   const values: T[] = [];
-  
+
   for (const result of results) {
     if (!result.ok) {
       return result;
     }
     values.push(result.value);
   }
-  
+
   return ok(values);
 };
 
 /**
  * Try-catch wrapper that returns a Result
  */
-export const tryCatch = <T, E = Error>(
-  fn: () => T,
-  onError?: (error: unknown) => E
-): Result<T, E> => {
+export const tryCatch = <T, E = Error>(fn: () => T, onError?: (error: unknown) => E): Result<T, E> => {
   try {
     return ok(fn());
   } catch (error) {
@@ -94,7 +78,7 @@ export const tryCatch = <T, E = Error>(
  */
 export const tryCatchAsync = async <T, E = Error>(
   fn: () => Promise<T>,
-  onError?: (error: unknown) => E
+  onError?: (error: unknown) => E,
 ): Promise<Result<T, E>> => {
   try {
     const value = await fn();
@@ -123,7 +107,7 @@ export const match = <T, E, R>(
   handlers: {
     ok: (value: T) => R;
     err: (error: E) => R;
-  }
+  },
 ): R => {
   if (result.ok) {
     return handlers.ok(result.value);
@@ -134,10 +118,7 @@ export const match = <T, E, R>(
 /**
  * Get value or default
  */
-export const unwrapOr = <T, E>(
-  result: Result<T, E>,
-  defaultValue: T
-): T => {
+export const unwrapOr = <T, E>(result: Result<T, E>, defaultValue: T): T => {
   if (result.ok) {
     return result.value;
   }

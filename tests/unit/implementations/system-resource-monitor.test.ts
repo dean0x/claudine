@@ -16,12 +16,12 @@ vi.mock('os', () => ({
     totalmem: () => mockTotalmem(),
     freemem: () => mockFreemem(),
     loadavg: () => mockLoadavg(),
-    cpus: () => mockCpus()
+    cpus: () => mockCpus(),
   },
   totalmem: () => mockTotalmem(),
   freemem: () => mockFreemem(),
   loadavg: () => mockLoadavg(),
-  cpus: () => mockCpus()
+  cpus: () => mockCpus(),
 }));
 
 describe('SystemResourceMonitor', () => {
@@ -46,7 +46,7 @@ describe('SystemResourceMonitor', () => {
     const config = createTestConfiguration({
       cpuCoresReserved: 2,
       memoryReserve: MEMORY_1GB,
-      resourceMonitorIntervalMs: 100
+      resourceMonitorIntervalMs: 100,
     });
 
     monitor = new SystemResourceMonitor(config, eventBus, logger);
@@ -74,27 +74,28 @@ describe('SystemResourceMonitor', () => {
 
     // Data-driven CPU usage tests
     const cpuUsageCases = [
-      { load: [2.0, 1.5, 1.0], cpus: 8, expected: 25 },   // (2.0/8) * 100
+      { load: [2.0, 1.5, 1.0], cpus: 8, expected: 25 }, // (2.0/8) * 100
       { load: [16.0, 12.0, 8.0], cpus: 4, expected: 100 }, // Capped at 100
-      { load: [0.5, 0.3, 0.2], cpus: 4, expected: 12.5 },  // Low load
+      { load: [0.5, 0.3, 0.2], cpus: 4, expected: 12.5 }, // Low load
     ];
 
-    it.each(cpuUsageCases)(
-      'should calculate CPU usage correctly with load $load and $cpus CPUs',
-      async ({ load, cpus, expected }) => {
-        mockLoadavg = () => load;
-        mockCpus = () => new Array(cpus).fill({ times: { idle: 100, user: 100, nice: 0, sys: 50, irq: 0 } });
+    it.each(cpuUsageCases)('should calculate CPU usage correctly with load $load and $cpus CPUs', async ({
+      load,
+      cpus,
+      expected,
+    }) => {
+      mockLoadavg = () => load;
+      mockCpus = () => new Array(cpus).fill({ times: { idle: 100, user: 100, nice: 0, sys: 50, irq: 0 } });
 
-        const result = await monitor.getResources();
+      const result = await monitor.getResources();
 
-        if (result.ok) {
-          expect(result.value.cpuUsage).toBe(expected);
-        }
+      if (result.ok) {
+        expect(result.value.cpuUsage).toBe(expected);
       }
-    );
+    });
 
     it('should handle edge cases gracefully', async () => {
-      mockCpus = () => [];  // No CPUs
+      mockCpus = () => []; // No CPUs
 
       const result = await monitor.getResources();
 
@@ -114,7 +115,7 @@ describe('SystemResourceMonitor', () => {
         load: [1.0, 1.0, 1.0],
         cpus: 4,
         workerCount: 0,
-        expected: true
+        expected: true,
       },
       {
         name: 'low memory',
@@ -122,7 +123,7 @@ describe('SystemResourceMonitor', () => {
         load: [1.0, 1.0, 1.0],
         cpus: 4,
         workerCount: 0,
-        expected: false
+        expected: false,
       },
       {
         name: 'high CPU usage',
@@ -130,7 +131,7 @@ describe('SystemResourceMonitor', () => {
         load: [3.5, 3.0, 2.5], // 87.5% usage on 4 cores
         cpus: 4,
         workerCount: 0,
-        expected: false
+        expected: false,
       },
       {
         name: 'at CPU threshold',
@@ -138,25 +139,27 @@ describe('SystemResourceMonitor', () => {
         load: [3.2, 3.0, 2.8], // Exactly 80% on 4 cores
         cpus: 4,
         workerCount: 0,
-        expected: false
-      }
+        expected: false,
+      },
     ];
 
-    it.each(eligibilityCases)(
-      'should determine spawn eligibility correctly when $name',
-      async ({ memory, load, cpus, expected }) => {
-        mockFreemem = () => memory;
-        mockLoadavg = () => load;
-        mockCpus = () => new Array(cpus).fill({ times: { idle: 100, user: 100, nice: 0, sys: 50, irq: 0 } });
+    it.each(eligibilityCases)('should determine spawn eligibility correctly when $name', async ({
+      memory,
+      load,
+      cpus,
+      expected,
+    }) => {
+      mockFreemem = () => memory;
+      mockLoadavg = () => load;
+      mockCpus = () => new Array(cpus).fill({ times: { idle: 100, user: 100, nice: 0, sys: 50, irq: 0 } });
 
-        const result = await monitor.canSpawnWorker();
+      const result = await monitor.canSpawnWorker();
 
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          expect(result.value).toBe(expected);
-        }
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBe(expected);
       }
-    );
+    });
   });
 
   describe('Worker count management', () => {
@@ -223,7 +226,7 @@ describe('SystemResourceMonitor', () => {
       try {
         const limitedConfig = createTestConfiguration({
           cpuCoresReserved: 2,
-          memoryReserve: MEMORY_1GB
+          memoryReserve: MEMORY_1GB,
         });
         const limitedMonitor = new SystemResourceMonitor(limitedConfig, eventBus, logger);
 
@@ -298,7 +301,7 @@ describe('SystemResourceMonitor', () => {
         // Create monitor with limited max workers (2)
         const limitedConfig = createTestConfiguration({
           cpuCoresReserved: 2,
-          memoryReserve: MEMORY_1GB
+          memoryReserve: MEMORY_1GB,
         });
         const limitedMonitor = new SystemResourceMonitor(limitedConfig, eventBus, logger);
 

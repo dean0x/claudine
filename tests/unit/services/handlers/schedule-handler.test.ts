@@ -16,13 +16,7 @@ import { SQLiteScheduleRepository } from '../../../../src/implementations/schedu
 import { Database } from '../../../../src/implementations/database';
 import { TestLogger } from '../../../fixtures/test-doubles';
 import { createTestConfiguration } from '../../../fixtures/factories';
-import {
-  createSchedule,
-  ScheduleType,
-  ScheduleStatus,
-  MissedRunPolicy,
-  ScheduleId,
-} from '../../../../src/core/domain';
+import { createSchedule, ScheduleType, ScheduleStatus, MissedRunPolicy, ScheduleId } from '../../../../src/core/domain';
 import type { Schedule } from '../../../../src/core/domain';
 import { flushEventLoop } from '../../../utils/event-helpers';
 
@@ -43,12 +37,7 @@ describe('ScheduleHandler - Behavioral Tests', () => {
     scheduleRepo = new SQLiteScheduleRepository(database);
     taskRepo = new SQLiteTaskRepository(database);
 
-    const handlerResult = await ScheduleHandler.create(
-      scheduleRepo,
-      taskRepo,
-      eventBus,
-      logger
-    );
+    const handlerResult = await ScheduleHandler.create(scheduleRepo, taskRepo, eventBus, logger);
     if (!handlerResult.ok) {
       throw new Error(`Failed to create ScheduleHandler: ${handlerResult.error.message}`);
     }
@@ -85,12 +74,7 @@ describe('ScheduleHandler - Behavioral Tests', () => {
       const freshEventBus = new InMemoryEventBus(createTestConfiguration(), new TestLogger());
       const freshLogger = new TestLogger();
 
-      const result = await ScheduleHandler.create(
-        scheduleRepo,
-        taskRepo,
-        freshEventBus,
-        freshLogger
-      );
+      const result = await ScheduleHandler.create(scheduleRepo, taskRepo, freshEventBus, freshLogger);
 
       expect(result.ok).toBe(true);
       expect(freshLogger.hasLogContaining('ScheduleHandler initialized')).toBe(true);

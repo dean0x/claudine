@@ -43,13 +43,23 @@ class MockChildProcess extends EventEmitter {
     return true;
   }
 
-  ref(): void { /* no-op */ }
-  unref(): void { /* no-op */ }
-  disconnect(): void { /* no-op */ }
-  send(_message: unknown): boolean { return true; }
+  ref(): void {
+    /* no-op */
+  }
+  unref(): void {
+    /* no-op */
+  }
+  disconnect(): void {
+    /* no-op */
+  }
+  send(_message: unknown): boolean {
+    return true;
+  }
 
   // Type assertion for ChildProcess compatibility
-  [Symbol.dispose](): void { /* no-op */ }
+  [Symbol.dispose](): void {
+    /* no-op */
+  }
 }
 
 /**

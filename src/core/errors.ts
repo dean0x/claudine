@@ -1,7 +1,7 @@
 /**
  * Error types for Result pattern
  * Never throw these - always return them in Result.err()
- * 
+ *
  * @see /docs/SECURITY.md for security-related error handling
  */
 
@@ -19,7 +19,7 @@ export enum ErrorCode {
   TASK_CANNOT_CANCEL = 'TASK_CANNOT_CANCEL',
   /** Task exceeded its configured timeout */
   TASK_TIMEOUT = 'TASK_TIMEOUT',
-  
+
   // Resource errors
   /** System lacks resources (CPU/memory) to spawn new workers */
   INSUFFICIENT_RESOURCES = 'INSUFFICIENT_RESOURCES',
@@ -29,7 +29,7 @@ export enum ErrorCode {
   RESOURCE_LIMIT_EXCEEDED = 'RESOURCE_LIMIT_EXCEEDED',
   /** Resource exhausted (e.g., queue full, memory limit) - DoS protection */
   RESOURCE_EXHAUSTED = 'RESOURCE_EXHAUSTED',
-  
+
   // Process errors
   /** Failed to spawn child process */
   PROCESS_SPAWN_FAILED = 'PROCESS_SPAWN_FAILED',
@@ -37,7 +37,7 @@ export enum ErrorCode {
   PROCESS_KILL_FAILED = 'PROCESS_KILL_FAILED',
   /** Process with specified PID not found */
   PROCESS_NOT_FOUND = 'PROCESS_NOT_FOUND',
-  
+
   // Worker errors
   /** Worker with specified ID not found */
   WORKER_NOT_FOUND = 'WORKER_NOT_FOUND',
@@ -47,7 +47,7 @@ export enum ErrorCode {
   WORKER_KILL_FAILED = 'WORKER_KILL_FAILED',
   /** Task execution failed within worker */
   TASK_EXECUTION_FAILED = 'TASK_EXECUTION_FAILED',
-  
+
   // Validation errors (Security-critical)
   /** Input validation failed - may indicate injection attempt */
   INVALID_INPUT = 'INVALID_INPUT',
@@ -57,7 +57,7 @@ export enum ErrorCode {
   INVALID_PROMPT = 'INVALID_PROMPT',
   /** Directory path invalid or outside allowed boundaries */
   INVALID_DIRECTORY = 'INVALID_DIRECTORY',
-  
+
   // System errors
   /** Generic system error - check logs for details */
   SYSTEM_ERROR = 'SYSTEM_ERROR',
@@ -91,7 +91,7 @@ export enum ErrorCode {
 /**
  * Custom error class for Claudine
  * Includes error code and optional context for debugging
- * 
+ *
  * @example
  * return err(new ClaudineError(
  *   ErrorCode.INVALID_INPUT,
@@ -103,7 +103,7 @@ export class ClaudineError extends Error {
   constructor(
     public readonly code: ErrorCode,
     message: string,
-    public readonly context?: Record<string, unknown>
+    public readonly context?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'ClaudineError';
@@ -123,69 +123,38 @@ export class ClaudineError extends Error {
  * Error factory functions
  */
 export const taskNotFound = (taskId: string): ClaudineError =>
-  new ClaudineError(
-    ErrorCode.TASK_NOT_FOUND,
-    `Task ${taskId} not found`,
-    { taskId }
-  );
+  new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Task ${taskId} not found`, { taskId });
 
 export const taskAlreadyRunning = (taskId: string): ClaudineError =>
-  new ClaudineError(
-    ErrorCode.TASK_ALREADY_RUNNING,
-    `Task ${taskId} is already running`,
-    { taskId }
-  );
+  new ClaudineError(ErrorCode.TASK_ALREADY_RUNNING, `Task ${taskId} is already running`, { taskId });
 
 export const taskTimeout = (taskId: string, timeoutMs: number): ClaudineError =>
-  new ClaudineError(
-    ErrorCode.TASK_TIMEOUT,
-    `Task ${taskId} timed out after ${timeoutMs}ms`,
-    { taskId, timeoutMs }
-  );
+  new ClaudineError(ErrorCode.TASK_TIMEOUT, `Task ${taskId} timed out after ${timeoutMs}ms`, { taskId, timeoutMs });
 
-export const insufficientResources = (
-  cpuUsage: number,
-  availableMemory: number
-): ClaudineError =>
+export const insufficientResources = (cpuUsage: number, availableMemory: number): ClaudineError =>
   new ClaudineError(
     ErrorCode.INSUFFICIENT_RESOURCES,
     `Insufficient resources: CPU ${cpuUsage}%, Memory ${availableMemory} bytes`,
-    { cpuUsage, availableMemory }
+    { cpuUsage, availableMemory },
   );
 
 export const processSpawnFailed = (reason: string): ClaudineError =>
-  new ClaudineError(
-    ErrorCode.PROCESS_SPAWN_FAILED,
-    `Failed to spawn process: ${reason}`,
-    { reason }
-  );
+  new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, `Failed to spawn process: ${reason}`, { reason });
 
 export const invalidInput = (field: string, value: unknown): ClaudineError =>
-  new ClaudineError(
-    ErrorCode.INVALID_INPUT,
-    `Invalid input for field ${field}`,
-    { field, value }
-  );
+  new ClaudineError(ErrorCode.INVALID_INPUT, `Invalid input for field ${field}`, { field, value });
 
 export const invalidDirectory = (path: string): ClaudineError =>
-  new ClaudineError(
-    ErrorCode.INVALID_DIRECTORY,
-    `Invalid directory: ${path}`,
-    { path }
-  );
+  new ClaudineError(ErrorCode.INVALID_DIRECTORY, `Invalid directory: ${path}`, { path });
 
 export const systemError = (message: string, originalError?: Error): ClaudineError =>
-  new ClaudineError(
-    ErrorCode.SYSTEM_ERROR,
-    message,
-    { originalError: originalError?.message }
-  );
+  new ClaudineError(ErrorCode.SYSTEM_ERROR, message, { originalError: originalError?.message });
 
 export const resourceLimitExceeded = (resourceType: string, limit: number, current: number): ClaudineError =>
   new ClaudineError(
     ErrorCode.RESOURCE_LIMIT_EXCEEDED,
     `Resource limit exceeded for ${resourceType}: limit=${limit}, current=${current}`,
-    { resourceType, limit, current }
+    { resourceType, limit, current },
   );
 
 /**
@@ -238,15 +207,10 @@ export const toClaudineError = (error: unknown): ClaudineError => {
  */
 export const operationErrorHandler = (
   operation: string,
-  context?: Record<string, unknown>
+  context?: Record<string, unknown>,
 ): ((error: unknown) => ClaudineError) => {
   return (error: unknown): ClaudineError => {
     const message = error instanceof Error ? error.message : String(error);
-    return new ClaudineError(
-      ErrorCode.SYSTEM_ERROR,
-      `Failed to ${operation}: ${message}`,
-      context
-    );
+    return new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to ${operation}: ${message}`, context);
   };
 };
-

@@ -15,7 +15,7 @@ import { EventBus } from './event-bus.js';
 export abstract class BaseEventHandler {
   constructor(
     protected readonly logger: Logger,
-    protected readonly name: string
+    protected readonly name: string,
   ) {}
 
   /**
@@ -43,7 +43,7 @@ export abstract class BaseEventHandler {
     options?: {
       logOnError?: boolean;
       context?: Record<string, unknown>;
-    }
+    },
   ): Promise<Result<void>> {
     // ARCHITECTURE EXCEPTION: Using 'as any' for EventBus.emit type compatibility
     // TypeScript cannot infer the correct payload type from a string event type at this
@@ -55,7 +55,7 @@ export abstract class BaseEventHandler {
     if (!result.ok && (options?.logOnError ?? true)) {
       this.logger.error(`Failed to emit ${eventType} event`, result.error, {
         handlerName: this.name,
-        ...options?.context
+        ...options?.context,
       });
     }
 
@@ -68,11 +68,11 @@ export abstract class BaseEventHandler {
    */
   protected async handleEvent<T extends ClaudineEvent>(
     event: T,
-    handler: (event: T) => Promise<Result<void>>
+    handler: (event: T) => Promise<Result<void>>,
   ): Promise<Result<void>> {
     this.logger.debug(`${this.name} handling event`, {
       eventType: event.type,
-      eventId: event.eventId
+      eventId: event.eventId,
     });
 
     const result = await handler(event);
@@ -80,7 +80,7 @@ export abstract class BaseEventHandler {
     if (!result.ok) {
       this.logger.error(`${this.name} event handling failed`, result.error, {
         eventType: event.type,
-        eventId: event.eventId
+        eventId: event.eventId,
       });
 
       return result;
@@ -88,7 +88,7 @@ export abstract class BaseEventHandler {
 
     this.logger.debug(`${this.name} event handled successfully`, {
       eventType: event.type,
-      eventId: event.eventId
+      eventId: event.eventId,
     });
 
     return ok(undefined);
@@ -101,17 +101,20 @@ export abstract class BaseEventHandler {
 export class EventHandlerRegistry {
   private readonly handlers: BaseEventHandler[] = [];
 
-  constructor(private readonly eventBus: EventBus, private readonly logger: Logger) {}
+  constructor(
+    private readonly eventBus: EventBus,
+    private readonly logger: Logger,
+  ) {}
 
   /**
    * Register an event handler
    */
   register(handler: BaseEventHandler): Result<void> {
     this.handlers.push(handler);
-    
+
     this.logger.debug('Event handler registered', {
       handlerName: handler.constructor.name,
-      totalHandlers: this.handlers.length
+      totalHandlers: this.handlers.length,
     });
 
     return ok(undefined);
@@ -146,15 +149,12 @@ export class EventHandlerRegistry {
       }
 
       this.logger.info('Event handler registry initialized', {
-        handlerCount: this.handlers.length
+        handlerCount: this.handlers.length,
       });
 
       return ok(undefined);
     } catch (error) {
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Event handler registry initialization failed: ${error}`
-      ));
+      return err(new ClaudineError(ErrorCode.SYSTEM_ERROR, `Event handler registry initialization failed: ${error}`));
     }
   }
 
@@ -172,10 +172,7 @@ export class EventHandlerRegistry {
       this.logger.info('Event handler registry shutdown complete');
       return ok(undefined);
     } catch (error) {
-      return err(new ClaudineError(
-        ErrorCode.SYSTEM_ERROR,
-        `Event handler registry shutdown failed: ${error}`
-      ));
+      return err(new ClaudineError(ErrorCode.SYSTEM_ERROR, `Event handler registry shutdown failed: ${error}`));
     }
   }
 }
@@ -188,7 +185,7 @@ export class RetryableEventHandler extends BaseEventHandler {
     logger: Logger,
     name: string,
     private readonly maxRetries: number = 3,
-    private readonly retryDelayMs: number = 1000
+    private readonly retryDelayMs: number = 1000,
   ) {
     super(logger, name);
   }
@@ -199,7 +196,7 @@ export class RetryableEventHandler extends BaseEventHandler {
    */
   protected async executeWithRetry<T extends ClaudineEvent>(
     event: T,
-    handler: (event: T) => Promise<Result<void>>
+    handler: (event: T) => Promise<Result<void>>,
   ): Promise<Result<void>> {
     let lastError: ClaudineError | undefined;
 
@@ -211,35 +208,35 @@ export class RetryableEventHandler extends BaseEventHandler {
           if (attempt > 1) {
             this.logger.info(`${this.name} succeeded on retry`, {
               eventId: event.eventId,
-              attempt
+              attempt,
             });
           }
           return ok(undefined);
         }
 
-        lastError = result.error instanceof ClaudineError ? result.error : new ClaudineError(ErrorCode.SYSTEM_ERROR, result.error.message || String(result.error));
+        lastError =
+          result.error instanceof ClaudineError
+            ? result.error
+            : new ClaudineError(ErrorCode.SYSTEM_ERROR, result.error.message || String(result.error));
 
         this.logger.warn(`${this.name} failed, attempt ${attempt}/${this.maxRetries}`, {
           eventId: event.eventId,
-          error: lastError.message
+          error: lastError.message,
         });
 
         // Wait before retrying (except on last attempt)
         if (attempt < this.maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, this.retryDelayMs));
+          await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs));
         }
       } catch (error) {
-        lastError = error instanceof ClaudineError
-          ? error
-          : new ClaudineError(ErrorCode.SYSTEM_ERROR, `${error}`);
+        lastError = error instanceof ClaudineError ? error : new ClaudineError(ErrorCode.SYSTEM_ERROR, `${error}`);
       }
     }
 
     // All retries failed - return error instead of throwing
-    return err(lastError || new ClaudineError(
-      ErrorCode.SYSTEM_ERROR,
-      `${this.name} failed after ${this.maxRetries} attempts`
-    ));
+    return err(
+      lastError || new ClaudineError(ErrorCode.SYSTEM_ERROR, `${this.name} failed after ${this.maxRetries} attempts`),
+    );
   }
 }
 
@@ -250,12 +247,12 @@ export class RetryableEventHandler extends BaseEventHandler {
 export function createEventHandler<T extends ClaudineEvent>(
   handler: (event: T) => Promise<Result<void>>,
   logger: Logger,
-  name: string
+  name: string,
 ): EventHandler<T> {
   return async (event: T) => {
     logger.debug(`Event handler ${name} processing`, {
       eventType: event.type,
-      eventId: event.eventId
+      eventId: event.eventId,
     });
 
     const result = await handler(event);
@@ -263,7 +260,7 @@ export function createEventHandler<T extends ClaudineEvent>(
     if (!result.ok) {
       logger.error(`Event handler ${name} failed`, result.error, {
         eventType: event.type,
-        eventId: event.eventId
+        eventId: event.eventId,
       });
       // Note: EventBus will handle error aggregation and propagation
     }

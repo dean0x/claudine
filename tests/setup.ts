@@ -32,7 +32,7 @@ const activeResources: TestResources = {
   databases: new Set<Database>(),
   processSpawners: new Set<ClaudeProcessSpawner>(),
   intervals: new Set<NodeJS.Timeout>(),
-  timeouts: new Set<NodeJS.Timeout>()
+  timeouts: new Set<NodeJS.Timeout>(),
 };
 
 // Extend global type definition
@@ -52,14 +52,14 @@ const originalSetTimeout = global.setTimeout;
 
 if (shouldWrapTimers) {
   global.setTimeout = ((callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) => {
-  const timeoutId = originalSetTimeout(callback, ms, ...args);
-  activeResources.timeouts.add(timeoutId);
+    const timeoutId = originalSetTimeout(callback, ms, ...args);
+    activeResources.timeouts.add(timeoutId);
 
-  // Wrap callback to remove from tracking when executed
-  const wrappedCallback = () => {
-    activeResources.timeouts.delete(timeoutId);
-    callback(...args);
-  };
+    // Wrap callback to remove from tracking when executed
+    const wrappedCallback = () => {
+      activeResources.timeouts.delete(timeoutId);
+      callback(...args);
+    };
 
     return originalSetTimeout(wrappedCallback, ms);
   }) as typeof setTimeout;
@@ -73,7 +73,7 @@ const originalSetInterval = global.setInterval;
 
 if (shouldWrapTimers) {
   global.setInterval = ((callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) => {
-  const intervalId = originalSetInterval(callback, ms, ...args);
+    const intervalId = originalSetInterval(callback, ms, ...args);
     activeResources.intervals.add(intervalId);
     return intervalId;
   }) as typeof setInterval;
@@ -196,7 +196,10 @@ afterAll(() => {
 });
 
 // Export helper to register resources for cleanup
-export function registerForCleanup(resource: InMemoryEventBus | Database | ClaudeProcessSpawner, type: 'eventBus' | 'database' | 'spawner'): void {
+export function registerForCleanup(
+  resource: InMemoryEventBus | Database | ClaudeProcessSpawner,
+  type: 'eventBus' | 'database' | 'spawner',
+): void {
   switch (type) {
     case 'eventBus':
       activeResources.eventBuses.add(resource as InMemoryEventBus);

@@ -33,7 +33,7 @@ export class MockProcessSpawner implements ProcessSpawner {
 
     return ok({
       process: mockProcess as any,
-      pid: mockProcess.pid
+      pid: mockProcess.pid,
     });
   }
 
@@ -168,13 +168,16 @@ class MockChildProcess extends EventEmitter {
       // Simulate long-running command
       this.stdout.emit('data', Buffer.from('Starting long task\n'));
 
-      this.timeout = setTimeout(() => {
-        if (!this.killed) {
-          this.stdout.emit('data', Buffer.from('Task completed\n'));
-          this.exitCode = 0;
-          this.emit('exit', 0, null);
-        }
-      }, Math.min(sleepDuration, 5000)); // Cap at 5 seconds for tests
+      this.timeout = setTimeout(
+        () => {
+          if (!this.killed) {
+            this.stdout.emit('data', Buffer.from('Task completed\n'));
+            this.exitCode = 0;
+            this.emit('exit', 0, null);
+          }
+        },
+        Math.min(sleepDuration, 5000),
+      ); // Cap at 5 seconds for tests
     } else if (this.prompt.includes('echo')) {
       // Extract echo content
       const match = this.prompt.match(/echo ["']?(.+?)["']?(?:\s|$)/);
@@ -250,5 +253,7 @@ class MockChildProcess extends EventEmitter {
   ref(): void {}
   unref(): void {}
   disconnect(): void {}
-  send(): boolean { return false; }
+  send(): boolean {
+    return false;
+  }
 }

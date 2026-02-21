@@ -43,7 +43,7 @@ describe('Database - REAL Database Operations (In-Memory)', () => {
     it('should create tasks table with all columns', () => {
       const sqliteDb = db.getDatabase();
       const columns = sqliteDb.prepare(`PRAGMA table_info(tasks)`).all() as Array<{ name: string }>;
-      const columnNames = columns.map(col => col.name);
+      const columnNames = columns.map((col) => col.name);
 
       // Verify all required columns exist
       expect(columnNames).toContain('id');
@@ -75,8 +75,13 @@ describe('Database - REAL Database Operations (In-Memory)', () => {
 
     it('should create task_output table with all columns', () => {
       const sqliteDb = db.getDatabase();
-      const columns = sqliteDb.prepare(`PRAGMA table_info(task_output)`).all() as Array<{ name: string; type: string; notnull: number; pk: number }>;
-      const columnNames = columns.map(col => col.name);
+      const columns = sqliteDb.prepare(`PRAGMA table_info(task_output)`).all() as Array<{
+        name: string;
+        type: string;
+        notnull: number;
+        pk: number;
+      }>;
+      const columnNames = columns.map((col) => col.name);
 
       expect(columnNames).toContain('task_id');
       expect(columnNames).toContain('stdout');
@@ -86,7 +91,7 @@ describe('Database - REAL Database Operations (In-Memory)', () => {
       expect(columnNames.length).toBe(5);
 
       // Verify column types
-      const taskIdCol = columns.find(c => c.name === 'task_id');
+      const taskIdCol = columns.find((c) => c.name === 'task_id');
       expect(taskIdCol).toBeDefined();
       expect(taskIdCol?.type).toBe('TEXT');
       expect(taskIdCol?.pk).toBe(1);
@@ -96,11 +101,13 @@ describe('Database - REAL Database Operations (In-Memory)', () => {
 
     it('should create indexes for performance', () => {
       const sqliteDb = db.getDatabase();
-      const indexes = sqliteDb.prepare(`
+      const indexes = sqliteDb
+        .prepare(`
         SELECT name FROM sqlite_master
         WHERE type='index' AND name LIKE 'idx_%'
-      `).all() as Array<{ name: string }>;
-      const indexNames = indexes.map(idx => idx.name);
+      `)
+        .all() as Array<{ name: string }>;
+      const indexNames = indexes.map((idx) => idx.name);
 
       expect(indexNames).toContain('idx_tasks_status');
       expect(indexNames).toContain('idx_tasks_priority');
@@ -109,9 +116,11 @@ describe('Database - REAL Database Operations (In-Memory)', () => {
       expect(Array.isArray(indexNames)).toBe(true);
 
       // Verify indexes exist in sqlite_master
-      const masterCount = sqliteDb.prepare(`
+      const masterCount = sqliteDb
+        .prepare(`
         SELECT COUNT(*) as count FROM sqlite_master WHERE type='index'
-      `).get() as { count: number };
+      `)
+        .get() as { count: number };
       expect(masterCount.count).toBeGreaterThanOrEqual(3);
     });
 
@@ -137,14 +146,16 @@ describe('Database - REAL Database Operations (In-Memory)', () => {
       expect(result.changes).toBe(1);
 
       // Query it back
-      const task = sqliteDb.prepare('SELECT * FROM tasks WHERE id = ?').get('test-id') as {
-        id: string;
-        prompt: string;
-        status: string;
-        priority: string;
-        created_at: number;
-        updated_at: number;
-      } | undefined;
+      const task = sqliteDb.prepare('SELECT * FROM tasks WHERE id = ?').get('test-id') as
+        | {
+            id: string;
+            prompt: string;
+            status: string;
+            priority: string;
+            created_at: number;
+            updated_at: number;
+          }
+        | undefined;
 
       expect(task?.prompt).toBe('test prompt');
       expect(task?.id).toBe('test-id');
@@ -156,7 +167,7 @@ describe('Database - REAL Database Operations (In-Memory)', () => {
     it('should handle transactions', () => {
       const sqliteDb = db.getDatabase();
 
-      const insertMany = sqliteDb.transaction((tasks: Array<{id: string, prompt: string}>) => {
+      const insertMany = sqliteDb.transaction((tasks: Array<{ id: string; prompt: string }>) => {
         const stmt = sqliteDb.prepare(`
           INSERT INTO tasks (id, prompt, status, priority, created_at)
           VALUES (?, ?, 'queued', 'P2', ?)
@@ -172,7 +183,7 @@ describe('Database - REAL Database Operations (In-Memory)', () => {
       insertMany([
         { id: 'task-1', prompt: 'prompt 1' },
         { id: 'task-2', prompt: 'prompt 2' },
-        { id: 'task-3', prompt: 'prompt 3' }
+        { id: 'task-3', prompt: 'prompt 3' },
       ]);
 
       const count = sqliteDb.prepare('SELECT COUNT(*) as count FROM tasks').get() as { count: number };
@@ -186,16 +197,20 @@ describe('Database - REAL Database Operations (In-Memory)', () => {
       sqliteDb.pragma('foreign_keys = ON');
 
       // Insert a task
-      sqliteDb.prepare(`
+      sqliteDb
+        .prepare(`
         INSERT INTO tasks (id, prompt, status, priority, created_at)
         VALUES ('parent-task', 'test', 'queued', 'P1', ?)
-      `).run(Date.now());
+      `)
+        .run(Date.now());
 
       // Insert output for the task
-      sqliteDb.prepare(`
+      sqliteDb
+        .prepare(`
         INSERT INTO task_output (task_id, stdout, stderr, total_size)
         VALUES ('parent-task', 'output', 'errors', 100)
-      `).run();
+      `)
+        .run();
 
       // Verify cascade delete
       sqliteDb.prepare('DELETE FROM tasks WHERE id = ?').run('parent-task');
@@ -216,16 +231,20 @@ describe('Database - REAL Database Operations (In-Memory)', () => {
       const sqliteDb = db.getDatabase();
 
       // Try to insert duplicate primary key
-      sqliteDb.prepare(`
+      sqliteDb
+        .prepare(`
         INSERT INTO tasks (id, prompt, status, priority, created_at)
         VALUES ('dup-id', 'test', 'queued', 'P1', ?)
-      `).run(Date.now());
+      `)
+        .run(Date.now());
 
       expect(() => {
-        sqliteDb.prepare(`
+        sqliteDb
+          .prepare(`
           INSERT INTO tasks (id, prompt, status, priority, created_at)
           VALUES ('dup-id', 'test2', 'queued', 'P1', ?)
-        `).run(Date.now());
+        `)
+          .run(Date.now());
       }).toThrow();
     });
 

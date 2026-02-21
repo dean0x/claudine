@@ -201,8 +201,8 @@ describe('ConsoleLogger - Behavioral Tests', () => {
         data: Array.from({ length: 100 }, (_, i) => ({
           id: i,
           value: `value-${i}`,
-          nested: { deep: { data: i } }
-        }))
+          nested: { deep: { data: i } },
+        })),
       };
 
       expect(() => logger.info('Large context', largeContext)).not.toThrow();
@@ -215,13 +215,13 @@ describe('ConsoleLogger - Behavioral Tests', () => {
         'Message with \n newline',
         'Message with \t tab',
         'Message with "quotes"',
-        'Message with \'apostrophes\'',
+        "Message with 'apostrophes'",
         'Message with unicode 🎉',
         'Message with <html> tags </html>',
-        'Message with ${template} literals'
+        'Message with ${template} literals',
       ];
 
-      specialMessages.forEach(msg => {
+      specialMessages.forEach((msg) => {
         expect(() => logger.info(msg)).not.toThrow();
       });
     });
@@ -229,9 +229,7 @@ describe('ConsoleLogger - Behavioral Tests', () => {
     it('should handle concurrent child logger creation', () => {
       const logger = new ConsoleLogger('[Root]', false);
 
-      const children = Array.from({ length: 10 }, (_, i) =>
-        logger.child({ module: `child-${i}` })
-      );
+      const children = Array.from({ length: 10 }, (_, i) => logger.child({ module: `child-${i}` }));
 
       children.forEach((child, i) => {
         expect(child).toBeDefined();

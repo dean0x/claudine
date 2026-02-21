@@ -50,11 +50,9 @@ export class DependencyGraph {
    */
   private validateTaskId(taskId: TaskId, paramName: string): Result<void> {
     if (!taskId || (taskId as string).trim() === '') {
-      return err(new ClaudineError(
-        ErrorCode.INVALID_OPERATION,
-        `Invalid ${paramName}: must be non-empty string`,
-        { taskId }
-      ));
+      return err(
+        new ClaudineError(ErrorCode.INVALID_OPERATION, `Invalid ${paramName}: must be non-empty string`, { taskId }),
+      );
     }
     return ok(undefined);
   }
@@ -97,10 +95,7 @@ export class DependencyGraph {
    * Collect transitive nodes using DFS (helper for cache invalidation)
    * Does NOT use cache to avoid infinite recursion during invalidation
    */
-  private collectTransitiveNodes(
-    startNode: string,
-    adjacencyList: Map<string, Set<string>>
-  ): Set<string> {
+  private collectTransitiveNodes(startNode: string, adjacencyList: Map<string, Set<string>>): Set<string> {
     const result = new Set<string>();
     const visited = new Set<string>();
 
@@ -349,9 +344,7 @@ export class DependencyGraph {
     // SECURITY FIX (Issue #28): Deep copy required to prevent graph corruption
     // Shallow copy (new Map(this.graph)) only copies Map structure - Set values are REFERENCES
     // When we modify temp graph's Sets, we would mutate the original graph's Sets
-    const tempGraph = new Map(
-      Array.from(this.graph.entries()).map(([k, v]) => [k, new Set(v)])
-    );
+    const tempGraph = new Map(Array.from(this.graph.entries()).map(([k, v]) => [k, new Set(v)]));
 
     // Add proposed edge to temp graph
     if (!tempGraph.has(taskIdStr)) {
@@ -369,13 +362,7 @@ export class DependencyGraph {
     const visited = new Set<string>();
     const recursionStack = new Set<string>();
 
-    const hasCycle = this.detectCycleDFS(
-      dependsOnStr,
-      tempGraph,
-      visited,
-      recursionStack,
-      taskIdStr
-    );
+    const hasCycle = this.detectCycleDFS(dependsOnStr, tempGraph, visited, recursionStack, taskIdStr);
 
     return ok(hasCycle);
   }
@@ -395,7 +382,7 @@ export class DependencyGraph {
     graph: Map<string, Set<string>>,
     visited: Set<string>,
     recursionStack: Set<string>,
-    target?: string
+    target?: string,
   ): boolean {
     // If we've reached the target node, cycle exists
     if (target && node === target) {
@@ -548,10 +535,9 @@ export class DependencyGraph {
     }
 
     if (cycleCheck.value) {
-      return err(new ClaudineError(
-        ErrorCode.INVALID_OPERATION,
-        'Cannot perform topological sort: graph contains cycles'
-      ));
+      return err(
+        new ClaudineError(ErrorCode.INVALID_OPERATION, 'Cannot perform topological sort: graph contains cycles'),
+      );
     }
 
     // Kahn's algorithm for topological sort

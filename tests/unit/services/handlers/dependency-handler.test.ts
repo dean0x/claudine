@@ -35,12 +35,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
     taskRepo = new SQLiteTaskRepository(database);
 
     // Create handler using factory pattern
-    const handlerResult = await DependencyHandler.create(
-      dependencyRepo,
-      taskRepo,
-      logger,
-      eventBus
-    );
+    const handlerResult = await DependencyHandler.create(dependencyRepo, taskRepo, logger, eventBus);
     if (!handlerResult.ok) {
       throw new Error(`Failed to create DependencyHandler: ${handlerResult.error.message}`);
     }
@@ -60,12 +55,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
       const freshLogger = new TestLogger();
 
       // Act - Create handler using factory pattern
-      const result = await DependencyHandler.create(
-        dependencyRepo,
-        taskRepo,
-        freshLogger,
-        freshEventBus
-      );
+      const result = await DependencyHandler.create(dependencyRepo, taskRepo, freshLogger, freshEventBus);
 
       // Assert
       expect(result.ok).toBe(true);
@@ -85,7 +75,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
       // Create child task with dependency
       const childTask = createTask({
         prompt: 'child task',
-        dependsOn: [parentTask.id]
+        dependsOn: [parentTask.id],
       });
       await taskRepo.save(childTask);
 
@@ -155,17 +145,20 @@ describe('DependencyHandler - Behavioral Tests', () => {
       // Verify an error was logged about cycle detection
       const errorLogs = logger.getLogsByLevel('error');
       expect(errorLogs.length).toBeGreaterThan(0);
-      expect(errorLogs.some(log =>
-        log.message.includes('would create cycle') ||
-        (log.context?.error?.message && log.context.error.message.includes('would create cycle'))
-      )).toBe(true);
+      expect(
+        errorLogs.some(
+          (log) =>
+            log.message.includes('would create cycle') ||
+            (log.context?.error?.message && log.context.error.message.includes('would create cycle')),
+        ),
+      ).toBe(true);
 
       // The cyclic dependency (A -> B) should NOT have been added
       const depsA = await dependencyRepo.getDependencies(taskA.id);
       expect(depsA.ok).toBe(true);
       if (depsA.ok) {
         // Verify the cyclic dependency was not created
-        const hasCyclicDependency = depsA.value.some(d => d.dependsOnTaskId === taskB.id);
+        const hasCyclicDependency = depsA.value.some((d) => d.dependsOnTaskId === taskB.id);
         expect(hasCyclicDependency).toBe(false);
       }
     });
@@ -206,17 +199,20 @@ describe('DependencyHandler - Behavioral Tests', () => {
       // Verify an error was logged about cycle detection
       const errorLogs = logger.getLogsByLevel('error');
       expect(errorLogs.length).toBeGreaterThan(0);
-      expect(errorLogs.some(log =>
-        log.message.includes('would create cycle') ||
-        (log.context?.error?.message && log.context.error.message.includes('would create cycle'))
-      )).toBe(true);
+      expect(
+        errorLogs.some(
+          (log) =>
+            log.message.includes('would create cycle') ||
+            (log.context?.error?.message && log.context.error.message.includes('would create cycle')),
+        ),
+      ).toBe(true);
 
       // The cyclic dependency (A -> C) should NOT have been added
       const depsA = await dependencyRepo.getDependencies(taskA.id);
       expect(depsA.ok).toBe(true);
       if (depsA.ok) {
         // Verify the cyclic dependency was not created
-        const hasCyclicDependency = depsA.value.some(d => d.dependsOnTaskId === taskC.id);
+        const hasCyclicDependency = depsA.value.some((d) => d.dependsOnTaskId === taskC.id);
         expect(hasCyclicDependency).toBe(false);
       }
     });
@@ -233,7 +229,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
       // Create child with multiple dependencies
       const child = createTask({
         prompt: 'child task',
-        dependsOn: [parent1.id, parent2.id, parent3.id]
+        dependsOn: [parent1.id, parent2.id, parent3.id],
       });
       await taskRepo.save(child);
 
@@ -245,7 +241,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
       expect(dependencies.ok).toBe(true);
       if (dependencies.ok) {
         expect(dependencies.value).toHaveLength(3);
-        const depTaskIds = dependencies.value.map(d => d.dependsOnTaskId);
+        const depTaskIds = dependencies.value.map((d) => d.dependsOnTaskId);
         expect(depTaskIds).toContain(parent1.id);
         expect(depTaskIds).toContain(parent2.id);
         expect(depTaskIds).toContain(parent3.id);
@@ -515,7 +511,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
       // Arrange - Create multiple parent-child pairs
       const pairs = Array.from({ length: 10 }, (_, i) => ({
         parent: createTask({ prompt: `parent ${i}` }),
-        child: createTask({ prompt: `child ${i}` })
+        child: createTask({ prompt: `child ${i}` }),
       }));
 
       // Save all tasks
@@ -529,7 +525,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
         pairs.map(({ parent, child }) => {
           const childWithDep = { ...child, dependsOn: [parent.id] };
           return eventBus.emit('TaskDelegated', { task: childWithDep });
-        })
+        }),
       );
 
       // Assert - All dependencies should be created
@@ -687,7 +683,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
       // Should have exactly 2 dependencies: A -> B and B -> C
       expect(allDeps.value).toHaveLength(2);
 
-      const depPairs = allDeps.value.map(d => `${d.taskId}->${d.dependsOnTaskId}`);
+      const depPairs = allDeps.value.map((d) => `${d.taskId}->${d.dependsOnTaskId}`);
       expect(depPairs).toContain(`${taskB.id}->${taskA.id}`);
       expect(depPairs).toContain(`${taskC.id}->${taskB.id}`);
     });
@@ -719,8 +715,8 @@ describe('DependencyHandler - Behavioral Tests', () => {
 
         // Should NOT emit any dependency events
         const events = (eventBus as any).emittedEvents || [];
-        const depEvents = events.filter((e: any) =>
-          e.type === 'TaskDependencyAdded' || e.type === 'TaskDependencyFailed'
+        const depEvents = events.filter(
+          (e: any) => e.type === 'TaskDependencyAdded' || e.type === 'TaskDependencyFailed',
         );
         expect(depEvents).toHaveLength(0);
       });
@@ -737,7 +733,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
         // Create child with multiple dependencies
         const child = createTask({
           prompt: 'child',
-          dependsOn: [parent1.id, parent2.id, parent3.id]
+          dependsOn: [parent1.id, parent2.id, parent3.id],
         });
         await taskRepo.save(child);
 
@@ -810,7 +806,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
 
         const child = createTask({
           prompt: 'child',
-          dependsOn: [parent1.id, parent2.id]
+          dependsOn: [parent1.id, parent2.id],
         });
         await taskRepo.save(child);
 
@@ -838,7 +834,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
         const nonExistentId = TaskId('non-existent-task');
         const child = createTask({
           prompt: 'child',
-          dependsOn: [validParent.id, nonExistentId]
+          dependsOn: [validParent.id, nonExistentId],
         });
         await taskRepo.save(child);
 
@@ -857,7 +853,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
         const nonExistentId = TaskId('non-existent-task');
         const child = createTask({
           prompt: 'child',
-          dependsOn: [nonExistentId]
+          dependsOn: [nonExistentId],
         });
         await taskRepo.save(child);
 
@@ -946,7 +942,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
         enrichTaskRepo,
         enrichmentLogger,
         enrichmentEventBus,
-        { checkpointLookup: checkpointRepo }
+        { checkpointLookup: checkpointRepo },
       );
       if (!handlerResult.ok) {
         throw new Error(`Failed to create DependencyHandler: ${handlerResult.error.message}`);
@@ -1181,9 +1177,9 @@ describe('DependencyHandler - Behavioral Tests', () => {
 
       // Verify warning was logged
       const warnLogs = enrichmentLogger.getLogsByLevel('warn');
-      expect(warnLogs.some(log =>
-        log.message.includes('Checkpoint not available for continueFrom enrichment')
-      )).toBe(true);
+      expect(warnLogs.some((log) => log.message.includes('Checkpoint not available for continueFrom enrichment'))).toBe(
+        true,
+      );
     }, 15000); // Extended timeout: handler awaits 5s checkpoint timeout internally
   });
 });

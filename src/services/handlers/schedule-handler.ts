@@ -9,12 +9,7 @@ import { ScheduleRepository, TaskRepository, Logger } from '../../core/interface
 import { Result, ok, err } from '../../core/result.js';
 import { BaseEventHandler } from '../../core/events/handlers.js';
 import { EventBus } from '../../core/events/event-bus.js';
-import {
-  ScheduleStatus,
-  ScheduleType,
-  createTask,
-  updateSchedule,
-} from '../../core/domain.js';
+import { ScheduleStatus, ScheduleType, createTask, updateSchedule } from '../../core/domain.js';
 import type { Schedule } from '../../core/domain.js';
 import {
   ScheduleCreatedEvent,
@@ -48,7 +43,7 @@ export class ScheduleHandler extends BaseEventHandler {
     private readonly taskRepo: TaskRepository,
     private readonly eventBus: EventBus,
     logger: Logger,
-    options?: ScheduleHandlerOptions
+    options?: ScheduleHandlerOptions,
   ) {
     super(logger, 'ScheduleHandler');
     this.defaultTimezone = options?.defaultTimezone ?? 'UTC';
@@ -70,18 +65,12 @@ export class ScheduleHandler extends BaseEventHandler {
     taskRepo: TaskRepository,
     eventBus: EventBus,
     logger: Logger,
-    options?: ScheduleHandlerOptions
+    options?: ScheduleHandlerOptions,
   ): Promise<Result<ScheduleHandler, ClaudineError>> {
     const handlerLogger = logger.child ? logger.child({ module: 'ScheduleHandler' }) : logger;
 
     // Create handler
-    const handler = new ScheduleHandler(
-      scheduleRepo,
-      taskRepo,
-      eventBus,
-      handlerLogger,
-      options
-    );
+    const handler = new ScheduleHandler(scheduleRepo, taskRepo, eventBus, handlerLogger, options);
 
     // Subscribe to events
     const subscribeResult = handler.subscribeToEvents();
@@ -90,7 +79,7 @@ export class ScheduleHandler extends BaseEventHandler {
     }
 
     handlerLogger.info('ScheduleHandler initialized', {
-      defaultTimezone: handler.defaultTimezone
+      defaultTimezone: handler.defaultTimezone,
     });
 
     return ok(handler);
@@ -116,11 +105,11 @@ export class ScheduleHandler extends BaseEventHandler {
     // Check if any subscription failed
     for (const result of subscriptions) {
       if (!result.ok) {
-        return err(new ClaudineError(
-          ErrorCode.SYSTEM_ERROR,
-          `Failed to subscribe to events: ${result.error.message}`,
-          { error: result.error }
-        ));
+        return err(
+          new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to subscribe to events: ${result.error.message}`, {
+            error: result.error,
+          }),
+        );
       }
     }
 
@@ -141,20 +130,21 @@ export class ScheduleHandler extends BaseEventHandler {
       this.logger.info('Processing new schedule', {
         scheduleId: schedule.id,
         type: schedule.scheduleType,
-        timezone: schedule.timezone
+        timezone: schedule.timezone,
       });
 
       // Validate timezone
       if (!isValidTimezone(schedule.timezone)) {
         this.logger.error('Invalid timezone for schedule', undefined, {
           scheduleId: schedule.id,
-          timezone: schedule.timezone
+          timezone: schedule.timezone,
         });
-        return err(new ClaudineError(
-          ErrorCode.INVALID_INPUT,
-          `Invalid timezone: ${schedule.timezone}`,
-          { scheduleId: schedule.id, timezone: schedule.timezone }
-        ));
+        return err(
+          new ClaudineError(ErrorCode.INVALID_INPUT, `Invalid timezone: ${schedule.timezone}`, {
+            scheduleId: schedule.id,
+            timezone: schedule.timezone,
+          }),
+        );
       }
 
       // Validate and calculate nextRunAt based on schedule type
@@ -163,27 +153,24 @@ export class ScheduleHandler extends BaseEventHandler {
       if (schedule.scheduleType === ScheduleType.CRON) {
         // Validate cron expression
         if (!schedule.cronExpression) {
-          return err(new ClaudineError(
-            ErrorCode.INVALID_INPUT,
-            'CRON schedule requires cronExpression',
-            { scheduleId: schedule.id }
-          ));
+          return err(
+            new ClaudineError(ErrorCode.INVALID_INPUT, 'CRON schedule requires cronExpression', {
+              scheduleId: schedule.id,
+            }),
+          );
         }
 
         const cronValidation = validateCronExpression(schedule.cronExpression);
         if (!cronValidation.ok) {
           this.logger.error('Invalid cron expression', cronValidation.error, {
             scheduleId: schedule.id,
-            cronExpression: schedule.cronExpression
+            cronExpression: schedule.cronExpression,
           });
           return cronValidation;
         }
 
         // Calculate first run time
-        const nextResult = getNextRunTime(
-          schedule.cronExpression,
-          schedule.timezone
-        );
+        const nextResult = getNextRunTime(schedule.cronExpression, schedule.timezone);
         if (!nextResult.ok) {
           return nextResult;
         }
@@ -191,20 +178,20 @@ export class ScheduleHandler extends BaseEventHandler {
       } else if (schedule.scheduleType === ScheduleType.ONE_TIME) {
         // ONE_TIME uses scheduledAt directly
         if (!schedule.scheduledAt) {
-          return err(new ClaudineError(
-            ErrorCode.INVALID_INPUT,
-            'ONE_TIME schedule requires scheduledAt timestamp',
-            { scheduleId: schedule.id }
-          ));
+          return err(
+            new ClaudineError(ErrorCode.INVALID_INPUT, 'ONE_TIME schedule requires scheduledAt timestamp', {
+              scheduleId: schedule.id,
+            }),
+          );
         }
         nextRunAt = schedule.scheduledAt;
       } else {
         const _exhaustive: never = schedule.scheduleType;
-        return err(new ClaudineError(
-          ErrorCode.INVALID_INPUT,
-          `Unknown schedule type: ${schedule.scheduleType}`,
-          { scheduleId: schedule.id }
-        ));
+        return err(
+          new ClaudineError(ErrorCode.INVALID_INPUT, `Unknown schedule type: ${schedule.scheduleType}`, {
+            scheduleId: schedule.id,
+          }),
+        );
       }
 
       // Update schedule with calculated nextRunAt and save
@@ -212,7 +199,7 @@ export class ScheduleHandler extends BaseEventHandler {
       const saveResult = await this.scheduleRepo.save(updatedSchedule);
       if (!saveResult.ok) {
         this.logger.error('Failed to save schedule', saveResult.error, {
-          scheduleId: schedule.id
+          scheduleId: schedule.id,
         });
         return saveResult;
       }
@@ -220,7 +207,7 @@ export class ScheduleHandler extends BaseEventHandler {
       this.logger.info('Schedule created and persisted', {
         scheduleId: schedule.id,
         nextRunAt,
-        nextRunAtDate: nextRunAt ? new Date(nextRunAt).toISOString() : 'none'
+        nextRunAtDate: nextRunAt ? new Date(nextRunAt).toISOString() : 'none',
       });
 
       return ok(undefined);
@@ -237,7 +224,7 @@ export class ScheduleHandler extends BaseEventHandler {
       this.logger.info('Processing schedule trigger', {
         scheduleId,
         triggeredAt,
-        triggeredAtDate: new Date(triggeredAt).toISOString()
+        triggeredAtDate: new Date(triggeredAt).toISOString(),
       });
 
       // Fetch schedule
@@ -248,18 +235,14 @@ export class ScheduleHandler extends BaseEventHandler {
 
       const schedule = scheduleResult.value;
       if (!schedule) {
-        return err(new ClaudineError(
-          ErrorCode.TASK_NOT_FOUND,
-          `Schedule ${scheduleId} not found`,
-          { scheduleId }
-        ));
+        return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`, { scheduleId }));
       }
 
       // Check if schedule is still active
       if (schedule.status !== ScheduleStatus.ACTIVE) {
         this.logger.warn('Schedule is not active, skipping trigger', {
           scheduleId,
-          status: schedule.status
+          status: schedule.status,
         });
         return ok(undefined);
       }
@@ -305,10 +288,7 @@ export class ScheduleHandler extends BaseEventHandler {
 
       // Calculate next run time for CRON schedules
       if (schedule.scheduleType === ScheduleType.CRON && schedule.cronExpression) {
-        const nextResult = getNextRunTime(
-          schedule.cronExpression,
-          schedule.timezone
-        );
+        const nextResult = getNextRunTime(schedule.cronExpression, schedule.timezone);
         if (nextResult.ok) {
           newNextRunAt = nextResult.value;
         } else {
@@ -332,7 +312,7 @@ export class ScheduleHandler extends BaseEventHandler {
         this.logger.info('Schedule reached maxRuns, marking completed', {
           scheduleId,
           runCount: newRunCount,
-          maxRuns: schedule.maxRuns
+          maxRuns: schedule.maxRuns,
         });
       }
 
@@ -358,7 +338,7 @@ export class ScheduleHandler extends BaseEventHandler {
       const updateResult = await this.scheduleRepo.update(scheduleId, updates);
       if (!updateResult.ok) {
         this.logger.error('Failed to update schedule after trigger', updateResult.error, {
-          scheduleId
+          scheduleId,
         });
         return updateResult;
       }
@@ -378,7 +358,7 @@ export class ScheduleHandler extends BaseEventHandler {
         taskId: task.id,
         runCount: newRunCount,
         nextRunAt: updates.nextRunAt,
-        newStatus: updates.status ?? schedule.status
+        newStatus: updates.status ?? schedule.status,
       });
 
       return ok(undefined);
@@ -449,20 +429,13 @@ export class ScheduleHandler extends BaseEventHandler {
 
       const schedule = scheduleResult.value;
       if (!schedule) {
-        return err(new ClaudineError(
-          ErrorCode.TASK_NOT_FOUND,
-          `Schedule ${scheduleId} not found`,
-          { scheduleId }
-        ));
+        return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`, { scheduleId }));
       }
 
       // Recalculate nextRunAt for CRON schedules
       let nextRunAt = schedule.nextRunAt;
       if (schedule.scheduleType === ScheduleType.CRON && schedule.cronExpression) {
-        const nextResult = getNextRunTime(
-          schedule.cronExpression,
-          schedule.timezone
-        );
+        const nextResult = getNextRunTime(schedule.cronExpression, schedule.timezone);
         if (nextResult.ok) {
           nextRunAt = nextResult.value;
         }
@@ -481,7 +454,7 @@ export class ScheduleHandler extends BaseEventHandler {
       this.logger.info('Schedule resumed', {
         scheduleId,
         nextRunAt,
-        nextRunAtDate: nextRunAt ? new Date(nextRunAt).toISOString() : 'none'
+        nextRunAtDate: nextRunAt ? new Date(nextRunAt).toISOString() : 'none',
       });
       return ok(undefined);
     });
@@ -549,10 +522,7 @@ export class ScheduleHandler extends BaseEventHandler {
 
       // Respond to request-reply if correlation ID present
       if (correlationId) {
-        (this.eventBus as { respond?: <T>(id: string, value: T) => void }).respond?.(
-          correlationId,
-          schedules
-        );
+        (this.eventBus as { respond?: <T>(id: string, value: T) => void }).respond?.(correlationId, schedules);
       }
 
       // Also emit response event for pub/sub consumers
@@ -567,11 +537,7 @@ export class ScheduleHandler extends BaseEventHandler {
    */
   private respondWithError(correlationId: string | undefined, error: Error): void {
     if (correlationId) {
-      (this.eventBus as { respondError?: (id: string, err: Error) => void }).respondError?.(
-        correlationId,
-        error
-      );
+      (this.eventBus as { respondError?: (id: string, err: Error) => void }).respondError?.(correlationId, error);
     }
   }
-
 }

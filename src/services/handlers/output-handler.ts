@@ -7,15 +7,12 @@ import { OutputCapture, Logger } from '../../core/interfaces.js';
 import { Result, ok } from '../../core/result.js';
 import { BaseEventHandler } from '../../core/events/handlers.js';
 import { EventBus } from '../../core/events/event-bus.js';
-import { 
-  LogsRequestedEvent,
-  OutputCapturedEvent
-} from '../../core/events/events.js';
+import { LogsRequestedEvent, OutputCapturedEvent } from '../../core/events/events.js';
 
 export class OutputHandler extends BaseEventHandler {
   constructor(
     private readonly outputCapture: OutputCapture,
-    logger: Logger
+    logger: Logger,
   ) {
     super(logger, 'OutputHandler');
   }
@@ -26,7 +23,7 @@ export class OutputHandler extends BaseEventHandler {
   async setup(eventBus: EventBus): Promise<Result<void>> {
     const subscriptions = [
       eventBus.subscribe('LogsRequested', this.handleLogsRequested.bind(this)),
-      eventBus.subscribe('OutputCaptured', this.handleOutputCaptured.bind(this))
+      eventBus.subscribe('OutputCaptured', this.handleOutputCaptured.bind(this)),
     ];
 
     // Check if any subscription failed
@@ -46,10 +43,10 @@ export class OutputHandler extends BaseEventHandler {
   private async handleLogsRequested(event: LogsRequestedEvent): Promise<void> {
     await this.handleEvent(event, async (event) => {
       const result = this.outputCapture.getOutput(event.taskId, event.tail);
-      
+
       if (!result.ok) {
         this.logger.error('Failed to get task output', result.error, {
-          taskId: event.taskId
+          taskId: event.taskId,
         });
         return result;
       }
@@ -59,7 +56,7 @@ export class OutputHandler extends BaseEventHandler {
         stdoutLines: result.value.stdout.length,
         stderrLines: result.value.stderr.length,
         totalSize: result.value.totalSize,
-        tail: event.tail
+        tail: event.tail,
       });
 
       return ok(undefined);
@@ -74,7 +71,7 @@ export class OutputHandler extends BaseEventHandler {
       this.logger.debug('Output captured', {
         taskId: event.taskId,
         outputType: event.outputType,
-        dataSize: Buffer.byteLength(event.data, 'utf8')
+        dataSize: Buffer.byteLength(event.data, 'utf8'),
       });
 
       return ok(undefined);

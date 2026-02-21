@@ -26,11 +26,12 @@ export function validateCronExpression(expression: string): Result<void, Claudin
     parseExpression(expression);
     return ok(undefined);
   } catch (error) {
-    return err(new ClaudineError(
-      ErrorCode.INVALID_INPUT,
-      `Invalid cron expression: ${expression}`,
-      { expression, parseError: String(error) }
-    ));
+    return err(
+      new ClaudineError(ErrorCode.INVALID_INPUT, `Invalid cron expression: ${expression}`, {
+        expression,
+        parseError: String(error),
+      }),
+    );
   }
 }
 
@@ -46,11 +47,7 @@ export function validateCronExpression(expression: string): Result<void, Claudin
  * getNextRunTime('0 9 * * *', 'UTC'); // Next 9am UTC
  * getNextRunTime('0,15,30,45 * * * *', 'America/New_York', new Date('2025-01-01')); // Every 15 minutes
  */
-export function getNextRunTime(
-  expression: string,
-  timezone: string,
-  afterTime?: Date
-): Result<number, ClaudineError> {
+export function getNextRunTime(expression: string, timezone: string, afterTime?: Date): Result<number, ClaudineError> {
   try {
     const interval = parseExpression(expression, {
       currentDate: afterTime ?? new Date(),
@@ -58,11 +55,13 @@ export function getNextRunTime(
     });
     return ok(interval.next().getTime());
   } catch (error) {
-    return err(new ClaudineError(
-      ErrorCode.INVALID_INPUT,
-      `Failed to calculate next run time`,
-      { expression, timezone, error: String(error) }
-    ));
+    return err(
+      new ClaudineError(ErrorCode.INVALID_INPUT, `Failed to calculate next run time`, {
+        expression,
+        timezone,
+        error: String(error),
+      }),
+    );
   }
 }
 
@@ -80,7 +79,7 @@ export function getNextRunTimes(
   expression: string,
   timezone: string,
   count: number = 5,
-  afterTime?: Date
+  afterTime?: Date,
 ): Result<readonly number[], ClaudineError> {
   try {
     const interval = parseExpression(expression, {
@@ -95,11 +94,14 @@ export function getNextRunTimes(
 
     return ok(times);
   } catch (error) {
-    return err(new ClaudineError(
-      ErrorCode.INVALID_INPUT,
-      `Failed to calculate next run times`,
-      { expression, timezone, count, error: String(error) }
-    ));
+    return err(
+      new ClaudineError(ErrorCode.INVALID_INPUT, `Failed to calculate next run times`, {
+        expression,
+        timezone,
+        count,
+        error: String(error),
+      }),
+    );
   }
 }
 
@@ -135,11 +137,7 @@ export function validateTimezone(timezone: string): Result<void, ClaudineError> 
   if (isValidTimezone(timezone)) {
     return ok(undefined);
   }
-  return err(new ClaudineError(
-    ErrorCode.INVALID_INPUT,
-    `Invalid timezone: ${timezone}`,
-    { timezone }
-  ));
+  return err(new ClaudineError(ErrorCode.INVALID_INPUT, `Invalid timezone: ${timezone}`, { timezone }));
 }
 
 /**
@@ -154,7 +152,7 @@ export function validateTimezone(timezone: string): Result<void, ClaudineError> 
 export function parseCronExpression(
   expression: string,
   timezone: string,
-  currentDate?: Date
+  currentDate?: Date,
 ): Result<CronExpression, ClaudineError> {
   try {
     const interval = parseExpression(expression, {
@@ -163,10 +161,12 @@ export function parseCronExpression(
     });
     return ok(interval);
   } catch (error) {
-    return err(new ClaudineError(
-      ErrorCode.INVALID_INPUT,
-      `Failed to parse cron expression`,
-      { expression, timezone, error: String(error) }
-    ));
+    return err(
+      new ClaudineError(ErrorCode.INVALID_INPUT, `Failed to parse cron expression`, {
+        expression,
+        timezone,
+        error: String(error),
+      }),
+    );
   }
 }
