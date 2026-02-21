@@ -7,22 +7,22 @@
  */
 
 import { randomUUID } from 'crypto';
+import type { Configuration } from '../../src/core/configuration';
 import type {
-  Task,
-  Worker,
-  TaskId,
-  WorkerId,
   DelegateRequest,
-  TaskStatus,
   Priority,
   SystemResources,
+  Task,
+  TaskId,
+  TaskStatus,
+  Worker,
+  WorkerId,
 } from '../../src/core/domain';
 import {
-  createTask as domainCreateTask,
   TaskId as createTaskId,
   WorkerId as createWorkerId,
+  createTask as domainCreateTask,
 } from '../../src/core/domain';
-import type { Configuration } from '../../src/core/configuration';
 
 /**
  * TaskFactory - Builder pattern for creating test tasks
@@ -136,19 +136,13 @@ export class TaskFactory {
   build(): Task {
     const task = domainCreateTask(this.request);
 
-    // Apply custom ID if specified
-    if (this.id) {
-      (task as any).id = createTaskId(this.id);
-    }
-
-    // Apply custom createdAt if specified
-    if (this.createdAt) {
-      task.createdAt = this.createdAt;
-      task.updatedAt = this.createdAt;
-    }
-
-    // Apply overrides
-    return { ...task, ...this.overrides };
+    // Spread frozen task to create mutable copy, then apply overrides
+    return {
+      ...task,
+      ...(this.id ? { id: createTaskId(this.id) } : {}),
+      ...(this.createdAt ? { createdAt: this.createdAt, updatedAt: this.createdAt } : {}),
+      ...this.overrides,
+    };
   }
 
   buildMany(count: number, modifier?: (factory: TaskFactory, index: number) => void): Task[] {
