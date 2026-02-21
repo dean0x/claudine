@@ -13,6 +13,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MCPAdapter } from '../../../src/adapters/mcp-adapter';
+import type { DelegateRequest, Task } from '../../../src/core/domain';
 import { DelegateError, ErrorCode, taskNotFound } from '../../../src/core/errors';
 import type { EventBus } from '../../../src/core/events/event-bus';
 import type { Logger, ScheduleRepository, TaskManager } from '../../../src/core/interfaces';
@@ -27,17 +28,17 @@ const VALID_TASK_ID = 'task-abc123';
  * Mock TaskManager for MCP adapter testing
  */
 class MockTaskManager implements TaskManager {
-  delegateCalls: any[] = [];
-  statusCalls: any[] = [];
-  logsCalls: any[] = [];
-  cancelCalls: any[] = [];
-  retryCalls: any[] = [];
+  delegateCalls: DelegateRequest[] = [];
+  statusCalls: (string | undefined)[] = [];
+  logsCalls: Array<{ taskId: string; tail?: number }> = [];
+  cancelCalls: Array<{ taskId: string; reason?: string }> = [];
+  retryCalls: string[] = [];
 
-  private taskStorage = new Map<string, any>();
+  private taskStorage = new Map<string, Task>();
   private shouldFailDelegate = false;
   private shouldFailStatus = false;
 
-  async delegate(request: any) {
+  async delegate(request: DelegateRequest) {
     this.delegateCalls.push(request);
 
     if (this.shouldFailDelegate) {
@@ -125,26 +126,33 @@ class MockTaskManager implements TaskManager {
 /**
  * Mock Logger for testing
  */
-class MockLogger implements Logger {
-  logs: any[] = [];
+interface LogEntry {
+  level: string;
+  message: string;
+  error?: Error;
+  context?: Record<string, unknown>;
+}
 
-  info(message: string, context?: any) {
+class MockLogger implements Logger {
+  logs: LogEntry[] = [];
+
+  info(message: string, context?: Record<string, unknown>) {
     this.logs.push({ level: 'info', message, context });
   }
 
-  error(message: string, error?: Error, context?: any) {
+  error(message: string, error?: Error, context?: Record<string, unknown>) {
     this.logs.push({ level: 'error', message, error, context });
   }
 
-  warn(message: string, context?: any) {
+  warn(message: string, context?: Record<string, unknown>) {
     this.logs.push({ level: 'warn', message, context });
   }
 
-  debug(message: string, context?: any) {
+  debug(message: string, context?: Record<string, unknown>) {
     this.logs.push({ level: 'debug', message, context });
   }
 
-  child(context: any): Logger {
+  child(_context: Record<string, unknown>): Logger {
     return this;
   }
 
@@ -571,7 +579,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
     });
 
     it('should require taskId parameter', async () => {
-      const result = await simulateTaskLogs(adapter, mockTaskManager, {} as any);
+      const result = await simulateTaskLogs(adapter, mockTaskManager, {} as { taskId: string });
 
       expect(result.isError).toBe(true);
     });
@@ -625,7 +633,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
     });
 
     it('should require taskId parameter', async () => {
-      const result = await simulateCancelTask(adapter, mockTaskManager, {} as any);
+      const result = await simulateCancelTask(adapter, mockTaskManager, {} as { taskId: string });
 
       expect(result.isError).toBe(true);
     });
@@ -671,7 +679,7 @@ describe('MCPAdapter - Protocol Compliance', () => {
     });
 
     it('should require taskId parameter', async () => {
-      const result = await simulateRetryTask(adapter, mockTaskManager, {} as any);
+      const result = await simulateRetryTask(adapter, mockTaskManager, {} as { taskId: string });
 
       expect(result.isError).toBe(true);
     });
@@ -682,7 +690,20 @@ describe('MCPAdapter - Protocol Compliance', () => {
 // Helper Functions - Simulate MCP tool calls
 // ============================================================================
 
-async function simulateDelegateTask(adapter: MCPAdapter, taskManager: MockTaskManager, args: any): Promise<any> {
+interface MCPToolResponse {
+  isError: boolean;
+  content: Array<{ type: string; text: string }>;
+}
+
+function errorToMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function simulateDelegateTask(
+  _adapter: MCPAdapter,
+  taskManager: MockTaskManager,
+  args: DelegateRequest,
+): Promise<MCPToolResponse> {
   // Simulate MCP tool call by directly calling the handler
   // In real MCP, this would go through the protocol layer
   try {
@@ -714,20 +735,24 @@ async function simulateDelegateTask(adapter: MCPAdapter, taskManager: MockTaskMa
         },
       ],
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       isError: true,
       content: [
         {
           type: 'text',
-          text: JSON.stringify({ error: error.message }),
+          text: JSON.stringify({ error: errorToMessage(error) }),
         },
       ],
     };
   }
 }
 
-async function simulateTaskStatus(adapter: MCPAdapter, taskManager: MockTaskManager, args: any): Promise<any> {
+async function simulateTaskStatus(
+  _adapter: MCPAdapter,
+  taskManager: MockTaskManager,
+  args: { taskId?: string },
+): Promise<MCPToolResponse> {
   try {
     const result = await taskManager.getStatus(args.taskId);
 
@@ -752,20 +777,24 @@ async function simulateTaskStatus(adapter: MCPAdapter, taskManager: MockTaskMana
         },
       ],
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       isError: true,
       content: [
         {
           type: 'text',
-          text: JSON.stringify({ error: error.message }),
+          text: JSON.stringify({ error: errorToMessage(error) }),
         },
       ],
     };
   }
 }
 
-async function simulateTaskLogs(adapter: MCPAdapter, taskManager: MockTaskManager, args: any): Promise<any> {
+async function simulateTaskLogs(
+  _adapter: MCPAdapter,
+  taskManager: MockTaskManager,
+  args: { taskId: string; tail?: number },
+): Promise<MCPToolResponse> {
   try {
     if (!args.taskId) {
       throw new Error('taskId is required');
@@ -794,20 +823,24 @@ async function simulateTaskLogs(adapter: MCPAdapter, taskManager: MockTaskManage
         },
       ],
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       isError: true,
       content: [
         {
           type: 'text',
-          text: JSON.stringify({ error: error.message }),
+          text: JSON.stringify({ error: errorToMessage(error) }),
         },
       ],
     };
   }
 }
 
-async function simulateCancelTask(adapter: MCPAdapter, taskManager: MockTaskManager, args: any): Promise<any> {
+async function simulateCancelTask(
+  _adapter: MCPAdapter,
+  taskManager: MockTaskManager,
+  args: { taskId: string; reason?: string },
+): Promise<MCPToolResponse> {
   try {
     if (!args.taskId) {
       throw new Error('taskId is required');
@@ -839,20 +872,24 @@ async function simulateCancelTask(adapter: MCPAdapter, taskManager: MockTaskMana
         },
       ],
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       isError: true,
       content: [
         {
           type: 'text',
-          text: JSON.stringify({ error: error.message }),
+          text: JSON.stringify({ error: errorToMessage(error) }),
         },
       ],
     };
   }
 }
 
-async function simulateRetryTask(adapter: MCPAdapter, taskManager: MockTaskManager, args: any): Promise<any> {
+async function simulateRetryTask(
+  _adapter: MCPAdapter,
+  taskManager: MockTaskManager,
+  args: { taskId: string },
+): Promise<MCPToolResponse> {
   try {
     if (!args.taskId) {
       throw new Error('taskId is required');
@@ -885,13 +922,13 @@ async function simulateRetryTask(adapter: MCPAdapter, taskManager: MockTaskManag
         },
       ],
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       isError: true,
       content: [
         {
           type: 'text',
-          text: JSON.stringify({ error: error.message }),
+          text: JSON.stringify({ error: errorToMessage(error) }),
         },
       ],
     };

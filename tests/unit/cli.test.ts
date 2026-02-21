@@ -10,7 +10,14 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Container } from '../../src/core/container';
-import type { ResumeTaskRequest, Schedule, ScheduleExecution } from '../../src/core/domain';
+import type {
+  DelegateRequest,
+  ResumeTaskRequest,
+  Schedule,
+  ScheduleCreateRequest,
+  ScheduleExecution,
+  Task,
+} from '../../src/core/domain';
 import {
   createSchedule,
   MissedRunPolicy,
@@ -35,15 +42,15 @@ const VALID_WORKING_DIR = '/workspace/test';
  * Simulates TaskManager behavior without full bootstrap overhead
  */
 class MockTaskManager implements TaskManager {
-  delegateCalls: any[] = [];
-  statusCalls: any[] = [];
-  logsCalls: any[] = [];
-  cancelCalls: any[] = [];
-  retryCalls: any[] = [];
+  delegateCalls: DelegateRequest[] = [];
+  statusCalls: (string | undefined)[] = [];
+  logsCalls: Array<{ taskId: string; tail?: number }> = [];
+  cancelCalls: Array<{ taskId: string; reason?: string }> = [];
+  retryCalls: string[] = [];
 
-  private taskStorage = new Map<string, any>();
+  private taskStorage = new Map<string, Task>();
 
-  async delegate(request: any) {
+  async delegate(request: DelegateRequest) {
     this.delegateCalls.push(request);
     const task = new TaskFactory()
       .withPrompt(request.prompt)
@@ -97,7 +104,7 @@ class MockTaskManager implements TaskManager {
     return ok(newTask);
   }
 
-  resumeCalls: any[] = [];
+  resumeCalls: ResumeTaskRequest[] = [];
 
   async resume(request: ResumeTaskRequest) {
     this.resumeCalls.push(request);
@@ -114,7 +121,9 @@ class MockTaskManager implements TaskManager {
       );
     }
     const newTask = new TaskFactory().withPrompt(`PREVIOUS TASK CONTEXT:\n${oldTask.prompt}`).build();
+    // biome-ignore lint/suspicious/noExplicitAny: test mock needs to set readonly fields for resume metadata verification
     (newTask as any).retryCount = 1;
+    // biome-ignore lint/suspicious/noExplicitAny: test mock needs to set readonly fields for resume metadata verification
     (newTask as any).parentTaskId = request.taskId;
     this.taskStorage.set(newTask.id, newTask);
     return ok(newTask);
@@ -146,16 +155,16 @@ class MockTaskManager implements TaskManager {
  * Mock ScheduleService for CLI schedule command testing
  */
 class MockScheduleService implements ScheduleService {
-  createCalls: any[] = [];
-  listCalls: any[] = [];
-  getCalls: any[] = [];
-  cancelCalls: any[] = [];
-  pauseCalls: any[] = [];
-  resumeCalls: any[] = [];
+  createCalls: ScheduleCreateRequest[] = [];
+  listCalls: Array<{ status?: ScheduleStatus; limit?: number; offset?: number }> = [];
+  getCalls: Array<{ scheduleId: string; includeHistory?: boolean; historyLimit?: number }> = [];
+  cancelCalls: Array<{ scheduleId: string; reason?: string }> = [];
+  pauseCalls: Array<{ scheduleId: string }> = [];
+  resumeCalls: Array<{ scheduleId: string }> = [];
 
   private scheduleStorage = new Map<string, Schedule>();
 
-  async createSchedule(request: any) {
+  async createSchedule(request: ScheduleCreateRequest) {
     this.createCalls.push(request);
     const schedule = createSchedule({
       taskTemplate: {
@@ -191,7 +200,7 @@ class MockScheduleService implements ScheduleService {
     if (!schedule) {
       return err(new DelegateError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`));
     }
-    const history: ScheduleExecution[] = includeHistory ? [] : (undefined as any);
+    const history: ScheduleExecution[] | undefined = includeHistory ? [] : undefined;
     return ok({ schedule, history });
   }
 
@@ -237,13 +246,13 @@ class MockScheduleService implements ScheduleService {
  * Mock Container for dependency injection in tests
  */
 class MockContainer implements Container {
-  private services = new Map<string, any>();
+  private services = new Map<string, unknown>();
 
-  registerValue(key: string, value: any) {
+  registerValue(key: string, value: unknown) {
     this.services.set(key, value);
   }
 
-  registerSingleton(key: string, factory: any) {
+  registerSingleton(key: string, factory: () => unknown) {
     // Store factory, resolve lazily
     this.services.set(key, { factory, instance: null });
   }
@@ -255,14 +264,15 @@ class MockContainer implements Container {
     }
 
     // Handle singleton factories
-    if (value.factory) {
-      if (!value.instance) {
-        value.instance = value.factory();
+    const record = value as { factory?: () => unknown; instance?: unknown };
+    if (record.factory) {
+      if (!record.instance) {
+        record.instance = record.factory();
       }
-      return ok(value.instance);
+      return ok(record.instance as T);
     }
 
-    return ok(value);
+    return ok(value as T);
   }
 
   async resolve<T>(key: string) {
@@ -370,7 +380,7 @@ describe('CLI - Command Parsing and Validation', () => {
 
     it('should reject invalid priority values', () => {
       const result = validateDelegateInput(VALID_PROMPT, {
-        priority: 'P5' as any,
+        priority: 'P5' as DelegateOptions['priority'],
       });
 
       expect(result.ok).toBe(false);
@@ -1309,7 +1319,21 @@ For local development, use /path/to/delegate/dist/index.js
 `;
 }
 
-function validateDelegateInput(prompt: string, options: any) {
+interface DelegateOptions {
+  priority?: string;
+  workingDirectory?: string;
+  timeout?: number;
+  maxOutputBuffer?: number;
+  useWorktree?: boolean;
+  worktreeCleanup?: string;
+  mergeStrategy?: string;
+  branchName?: string;
+  baseBranch?: string;
+  dependsOn?: string[];
+  continueFrom?: string;
+}
+
+function validateDelegateInput(prompt: string, options: DelegateOptions) {
   if (!prompt || prompt.trim().length === 0) {
     return err(new DelegateError(ErrorCode.INVALID_INPUT, 'Prompt is required', { field: 'prompt' }));
   }
@@ -1359,7 +1383,7 @@ function validateDelegateInput(prompt: string, options: any) {
   return ok(undefined);
 }
 
-async function simulateDelegateCommand(taskManager: MockTaskManager, prompt: string, options?: any) {
+async function simulateDelegateCommand(taskManager: MockTaskManager, prompt: string, options?: DelegateOptions) {
   const validation = validateDelegateInput(prompt, options || {});
   if (!validation.ok) {
     return validation;
@@ -1403,7 +1427,7 @@ async function simulateRetryCommand(taskManager: MockTaskManager, taskId: string
 // Schedule, Pipeline, Resume Helpers
 // ============================================================================
 
-function validateScheduleCreateInput(prompt: string, options: any) {
+function validateScheduleCreateInput(prompt: string, options: { type?: string }) {
   if (!prompt || prompt.trim().length === 0) {
     return err(
       new DelegateError(ErrorCode.INVALID_INPUT, 'Prompt is required for schedule creation', { field: 'prompt' }),

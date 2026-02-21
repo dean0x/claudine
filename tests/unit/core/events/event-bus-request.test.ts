@@ -30,7 +30,7 @@ describe('EventBus Request-Response Pattern', () => {
   describe('Basic Request-Response', () => {
     it('should successfully complete request-response cycle', async () => {
       // Set up handler that responds
-      eventBus.subscribe('TestQuery', async (event: any) => {
+      eventBus.subscribe('TestQuery', async (event: Record<string, unknown>) => {
         if (event.__correlationId) {
           eventBus.respond(event.__correlationId, { result: 'success' });
         }
@@ -46,7 +46,7 @@ describe('EventBus Request-Response Pattern', () => {
 
     it('should handle error responses', async () => {
       // Set up handler that responds with error
-      eventBus.subscribe('TestQuery', async (event: any) => {
+      eventBus.subscribe('TestQuery', async (event: Record<string, unknown>) => {
         if (event.__correlationId) {
           eventBus.respondError(event.__correlationId, new DelegateError(ErrorCode.SYSTEM_ERROR, 'Test error'));
         }
@@ -95,7 +95,7 @@ describe('EventBus Request-Response Pattern', () => {
     it('should generate unique correlation IDs for each request', async () => {
       const correlationIds = new Set<string>();
 
-      eventBus.subscribe('TestQuery', async (event: any) => {
+      eventBus.subscribe('TestQuery', async (event: Record<string, unknown>) => {
         correlationIds.add(event.__correlationId);
         eventBus.respond(event.__correlationId, 'ok');
       });
@@ -112,25 +112,25 @@ describe('EventBus Request-Response Pattern', () => {
     });
 
     it('should clean up pending requests after response', async () => {
-      eventBus.subscribe('TestQuery', async (event: any) => {
+      eventBus.subscribe('TestQuery', async (event: Record<string, unknown>) => {
         eventBus.respond(event.__correlationId, 'done');
       });
 
       await eventBus.request('TestQuery', {});
 
       // Check internal state is cleaned up
-      expect((eventBus as { pendingRequests: Map<any, any> }).pendingRequests.size).toBe(0);
+      expect((eventBus as { pendingRequests: Map<string, unknown> }).pendingRequests.size).toBe(0);
     });
 
     it('should clean up pending requests after error', async () => {
-      eventBus.subscribe('TestQuery', async (event: any) => {
+      eventBus.subscribe('TestQuery', async (event: Record<string, unknown>) => {
         eventBus.respondError(event.__correlationId, new Error('failed'));
       });
 
       await eventBus.request('TestQuery', {});
 
       // Check internal state is cleaned up
-      expect((eventBus as { pendingRequests: Map<any, any> }).pendingRequests.size).toBe(0);
+      expect((eventBus as { pendingRequests: Map<string, unknown> }).pendingRequests.size).toBe(0);
     });
 
     it('should clean up pending requests after timeout', async () => {
@@ -142,7 +142,7 @@ describe('EventBus Request-Response Pattern', () => {
       await eventBus.request('TestQuery', {}, TIMEOUTS.SHORT);
 
       // Check internal state is cleaned up
-      expect((eventBus as { pendingRequests: Map<any, any> }).pendingRequests.size).toBe(0);
+      expect((eventBus as { pendingRequests: Map<string, unknown> }).pendingRequests.size).toBe(0);
     });
 
     it('should ignore responses for unknown correlation IDs', () => {
@@ -157,7 +157,7 @@ describe('EventBus Request-Response Pattern', () => {
   describe('Concurrent Requests', () => {
     it('should handle multiple concurrent requests correctly', async () => {
       // FIXED: Use real timers with immediate responses for reliability
-      eventBus.subscribe('TestQuery', async (event: any) => {
+      eventBus.subscribe('TestQuery', async (event: Record<string, unknown>) => {
         const value = event.value;
         // Immediate response without setTimeout complexity
         eventBus.respond(event.__correlationId, value * 2);
@@ -180,7 +180,7 @@ describe('EventBus Request-Response Pattern', () => {
     });
 
     it('should handle mixed success and failure responses', async () => {
-      eventBus.subscribe('TestQuery', async (event: any) => {
+      eventBus.subscribe('TestQuery', async (event: Record<string, unknown>) => {
         const value = event.value;
         if (value % 2 === 0) {
           eventBus.respond(event.__correlationId, `success-${value}`);
@@ -217,7 +217,7 @@ describe('EventBus Request-Response Pattern', () => {
         // FIXED: Use real timeouts with SHORT durations
         let handlerCallCount = 0;
 
-        eventBus.subscribe('TestQuery', async (event: any) => {
+        eventBus.subscribe('TestQuery', async (event: Record<string, unknown>) => {
           handlerCallCount++;
           const delay = event.delay;
           await new Promise((resolve) => setTimeout(resolve, delay));
@@ -247,12 +247,12 @@ describe('EventBus Request-Response Pattern', () => {
       let handler1Called = false;
       let handler2Called = false;
 
-      eventBus.subscribe('TestQuery', async (event: any) => {
+      eventBus.subscribe('TestQuery', async (event: Record<string, unknown>) => {
         handler1Called = true;
         eventBus.respond(event.__correlationId, 'handler1');
       });
 
-      eventBus.subscribe('TestQuery', async (event: any) => {
+      eventBus.subscribe('TestQuery', async (event: Record<string, unknown>) => {
         handler2Called = true;
         eventBus.respond(event.__correlationId, 'handler2');
       });
@@ -315,7 +315,7 @@ describe('EventBus Request-Response Pattern', () => {
       'should respect custom timeout values',
       async () => {
         // FIXED: Use real timeouts with SHORT duration for reliability
-        eventBus.subscribe('TestQuery', async (event: any) => {
+        eventBus.subscribe('TestQuery', async (event: Record<string, unknown>) => {
           // Delay longer than short timeout but less than long timeout
           await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.SHORT + 50));
           eventBus.respond(event.__correlationId, 'done');
@@ -356,7 +356,7 @@ describe('EventBus Request-Response Pattern', () => {
 
   describe('Memory Management', () => {
     it('should not leak memory with many requests', async () => {
-      eventBus.subscribe('TestQuery', async (event: any) => {
+      eventBus.subscribe('TestQuery', async (event: Record<string, unknown>) => {
         eventBus.respond(event.__correlationId, 'ok');
       });
 
@@ -366,13 +366,13 @@ describe('EventBus Request-Response Pattern', () => {
       }
 
       // All should be cleaned up
-      expect((eventBus as { pendingRequests: Map<any, any> }).pendingRequests.size).toBe(0);
+      expect((eventBus as { pendingRequests: Map<string, unknown> }).pendingRequests.size).toBe(0);
     });
 
     it('should handle rapid fire requests', async () => {
       let responseCount = 0;
 
-      eventBus.subscribe('TestQuery', async (event: any) => {
+      eventBus.subscribe('TestQuery', async (event: Record<string, unknown>) => {
         responseCount++;
         // Immediate response
         eventBus.respond(event.__correlationId, responseCount);

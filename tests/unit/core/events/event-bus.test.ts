@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
 import type { DelegateEvent } from '../../../../src/core/events/events';
 import type { Logger } from '../../../../src/core/interfaces';
@@ -24,7 +24,7 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
 
   describe('Event subscription and emission', () => {
     it('should deliver events to subscribers', async () => {
-      let receivedEvent: any = null;
+      let receivedEvent: unknown = null;
 
       // Subscribe to event
       const result = eventBus.subscribe('TestEvent', async (event) => {
@@ -41,11 +41,11 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
 
       // Subscriber should receive event
       expect(receivedEvent).not.toBeNull();
-      expect(receivedEvent.data).toBe('test data');
+      expect((receivedEvent as Record<string, unknown>).data).toBe('test data');
     });
 
     it('should deliver events to multiple subscribers', async () => {
-      const received: any[] = [];
+      const received: Array<{ subscriber: number; event: Record<string, unknown> }> = [];
 
       // Multiple subscribers
       eventBus.subscribe('TestEvent', async (event) => {
@@ -118,7 +118,7 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
 
   describe('Subscribe all functionality', () => {
     it('should receive all event types with subscribeAll', async () => {
-      const allEvents: any[] = [];
+      const allEvents: Array<Record<string, unknown>> = [];
 
       const subResult = eventBus.subscribeAll(async (event) => {
         allEvents.push(event);
@@ -145,8 +145,8 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
     it('should deliver to both specific and all subscribers', async () => {
       let specificReceived = false;
       let allReceived = false;
-      let specificData: any = null;
-      let allData: any = null;
+      let specificData: unknown = null;
+      let allData: unknown = null;
 
       const specificSub = eventBus.subscribe('SpecificEvent', async (event) => {
         specificReceived = true;
@@ -414,14 +414,14 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
 
   describe('Event data integrity', () => {
     it('should not allow handlers to modify event data for other handlers', async () => {
-      const receivedData: any[] = [];
+      const receivedData: Array<Record<string, unknown>> = [];
 
-      eventBus.subscribe('TestEvent', async (event: any) => {
+      eventBus.subscribe('TestEvent', async (event: Record<string, unknown>) => {
         event.modified = true; // Try to modify
         receivedData.push({ ...event });
       });
 
-      eventBus.subscribe('TestEvent', async (event: any) => {
+      eventBus.subscribe('TestEvent', async (event: Record<string, unknown>) => {
         receivedData.push({ ...event });
       });
 
@@ -437,10 +437,10 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
     });
 
     it('should handle complex event data', async () => {
-      let received: any = null;
+      let received: Record<string, unknown> | null = null;
 
       eventBus.subscribe('ComplexEvent', async (event) => {
-        received = event;
+        received = event as Record<string, unknown>;
       });
 
       const complexData = {
@@ -460,31 +460,33 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
       await eventBus.emit('ComplexEvent', complexData);
 
       // Event includes base properties, check payload properties
-      expect(received.nested).toEqual(complexData.nested);
-      expect(received.date).toEqual(complexData.date);
-      expect(received.symbol).toEqual(complexData.symbol);
-      expect(received.undefined).toEqual(complexData.undefined);
-      expect(received.null).toEqual(complexData.null);
-      expect(received.nested.deep.value).toBe(42);
-      expect(received.date).toBeInstanceOf(Date);
-      expect(received.symbol).toBe(complexData.symbol);
+      expect(received).not.toBeNull();
+      const r = received as Record<string, unknown>;
+      expect(r.nested).toEqual(complexData.nested);
+      expect(r.date).toEqual(complexData.date);
+      expect(r.symbol).toEqual(complexData.symbol);
+      expect(r.undefined).toEqual(complexData.undefined);
+      expect(r.null).toEqual(complexData.null);
+      expect((r.nested as { deep: { value: number } }).deep.value).toBe(42);
+      expect(r.date).toBeInstanceOf(Date);
+      expect(r.symbol).toBe(complexData.symbol);
     });
   });
 
   describe('Real-world patterns', () => {
     it('should support request-response pattern', async () => {
       // Simulate request-response via events
-      eventBus.subscribe('Request', async (event: any) => {
+      eventBus.subscribe('Request', async (event: Record<string, unknown>) => {
         // Process request and emit response
         await eventBus.emit('Response', {
           requestId: event.id,
-          result: event.value * 2,
+          result: (event.value as number) * 2,
         });
       });
 
-      let response: any = null;
+      let response: Record<string, unknown> | null = null;
       eventBus.subscribe('Response', async (event) => {
-        response = event;
+        response = event as Record<string, unknown>;
       });
 
       await eventBus.emit('Request', { id: '123', value: 21 });
@@ -517,10 +519,10 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
     });
 
     it('should support filtering pattern', async () => {
-      const received: any[] = [];
+      const received: Array<Record<string, unknown>> = [];
 
       // Subscriber with filtering logic
-      eventBus.subscribe('DataEvent', async (event: any) => {
+      eventBus.subscribe('DataEvent', async (event: Record<string, unknown>) => {
         if (event.priority === 'high') {
           received.push(event);
         }
@@ -537,22 +539,22 @@ describe('InMemoryEventBus - REAL Pub/Sub Behavior', () => {
     });
 
     it('should support event aggregation', async () => {
-      const events: any[] = [];
-      let aggregateResult: any = null;
+      const events: Array<Record<string, unknown>> = [];
+      let aggregateResult: Record<string, unknown> | null = null;
 
       // Collector
       eventBus.subscribe('DataPoint', async (event) => {
-        events.push(event);
+        events.push(event as Record<string, unknown>);
 
         // Aggregate after 3 events
         if (events.length === 3) {
-          const sum = events.reduce((acc, e: any) => acc + e.value, 0);
+          const sum = events.reduce((acc, e) => acc + (e.value as number), 0);
           await eventBus.emit('AggregateResult', { sum });
         }
       });
 
       eventBus.subscribe('AggregateResult', async (event) => {
-        aggregateResult = event;
+        aggregateResult = event as Record<string, unknown>;
       });
 
       // Emit data points

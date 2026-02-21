@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Configuration } from '../../../../src/core/configuration';
+import type { Task, Worker } from '../../../../src/core/domain';
 import { DelegateError, ErrorCode, taskNotFound } from '../../../../src/core/errors';
 import type { ResourceMonitor, WorkerPool } from '../../../../src/core/interfaces';
 import { err, ok } from '../../../../src/core/result';
@@ -21,13 +22,13 @@ import { TestEventBus, TestLogger } from '../../../fixtures/test-doubles';
  * Mock WorkerPool for testing
  */
 class MockWorkerPool implements WorkerPool {
-  spawnCalls: any[] = [];
-  killCalls: any[] = [];
+  spawnCalls: Task[] = [];
+  killCalls: string[] = [];
   killAllCalls: number = 0;
   workerCount = 0;
-  workers = new Map<string, any>();
+  workers = new Map<string, Worker>();
 
-  async spawn(task: any) {
+  async spawn(task: Task) {
     this.spawnCalls.push(task);
     const worker = new WorkerFactory().withTaskId(task.id).build();
     this.workers.set(worker.id, worker);
@@ -743,7 +744,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         resourceMonitor.setCanSpawn(true);
         eventBus.setRequestResponse('NextTaskQuery', ok(null)); // Empty queue
 
-        await eventBus.emit('TaskQueued', { taskId: 'test' as any, task: {} as any });
+        await eventBus.emit('TaskQueued', { taskId: 'test', task: {} as unknown as Task });
         await eventBus.flushHandlers();
 
         // Should not emit any task lifecycle events

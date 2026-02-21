@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTask, type Task } from '../../../../src/core/domain';
+import { createTask, type Task, type TaskOutput } from '../../../../src/core/domain';
 import { taskNotFound } from '../../../../src/core/errors';
 import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
 import { err, ok } from '../../../../src/core/result';
@@ -187,7 +187,7 @@ describe('QueryHandler - Behavioral Tests', () => {
       outputCapture.capture(task.id, 'stderr', 'Error occurred\n');
 
       // Act - Query output using correct event name
-      const result = await eventBus.request<{ taskId: string }, any>(
+      const result = await eventBus.request<{ taskId: string }, TaskOutput>(
         'TaskLogsQuery', // FIX: Use TaskLogsQuery not TaskOutputQuery
         { taskId: task.id },
       );
@@ -206,7 +206,7 @@ describe('QueryHandler - Behavioral Tests', () => {
       await repository.save(task);
 
       // Act - FIX: Use TaskLogsQuery not TaskOutputQuery
-      const result = await eventBus.request<{ taskId: string }, any>('TaskLogsQuery', { taskId: task.id });
+      const result = await eventBus.request<{ taskId: string }, TaskOutput>('TaskLogsQuery', { taskId: task.id });
 
       // Assert
       expect(result.ok).toBe(true);
@@ -229,7 +229,7 @@ describe('QueryHandler - Behavioral Tests', () => {
       }
 
       // Act - FIX: Use TaskLogsQuery not TaskOutputQuery
-      const result = await eventBus.request<{ taskId: string }, any>('TaskLogsQuery', { taskId: task.id });
+      const result = await eventBus.request<{ taskId: string }, TaskOutput>('TaskLogsQuery', { taskId: task.id });
 
       // Assert
       expect(result.ok).toBe(true);
@@ -330,7 +330,7 @@ describe('QueryHandler - Behavioral Tests', () => {
       database.close();
 
       // First query should fail (database closed)
-      const failResult = await eventBus.request<{ taskId: string }, any>('TaskStatusQuery', { taskId: task.id });
+      const failResult = await eventBus.request<{ taskId: string }, Task | null>('TaskStatusQuery', { taskId: task.id });
       expect(failResult.ok).toBe(false);
 
       // FIX: Recovery means reopening same database and querying again
@@ -350,7 +350,7 @@ describe('QueryHandler - Behavioral Tests', () => {
       }
 
       // Second query should succeed (database recovered)
-      const successResult = await eventBus.request<{ taskId: string }, any>('TaskStatusQuery', { taskId: task.id });
+      const successResult = await eventBus.request<{ taskId: string }, Task | null>('TaskStatusQuery', { taskId: task.id });
 
       expect(successResult.ok).toBe(true);
       if (successResult.ok) {
