@@ -431,32 +431,106 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
   });
 
   describe('Environment variable handling', () => {
-    it('should strip CLAUDECODE from worker environment', () => {
-      // Set up environment with CLAUDECODE (simulates running in Claude Code session)
-      const originalEnv = process.env.CLAUDECODE;
-      process.env.CLAUDECODE = 'true';
+    it('should strip all Claude Code nesting indicators from worker environment', () => {
+      // Capture originals for restoration
+      const saved: Record<string, string | undefined> = {};
+      const varsToSet: Record<string, string> = {
+        CLAUDECODE: 'true',
+        CLAUDE_CODE_ENTRYPOINT: 'cli',
+        CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+      };
+
+      for (const key of Object.keys(varsToSet)) {
+        saved[key] = process.env[key];
+        process.env[key] = varsToSet[key];
+      }
 
       try {
         const result = spawner.spawn('test task', '/tmp', 'task-123');
 
         expect(result.ok).toBe(true);
         if (result.ok) {
-          // Verify spawn was called with cleaned environment (no CLAUDECODE)
           const spawnCall = spawnSpy.mock.calls[0];
-          // The third argument to spawn() is the options object
-          const options = spawnCall[2] as Record<string, string>;
-          expect(options.env).toBeDefined();
-          expect((options.env as Record<string, string>).CLAUDECODE).toBeUndefined();
-          // But DELEGATE_WORKER should be present
-          expect((options.env as Record<string, string>).DELEGATE_WORKER).toBe('true');
-          expect((options.env as Record<string, string>).DELEGATE_TASK_ID).toBe('task-123');
+          const env = (spawnCall[2] as { env: Record<string, string> }).env;
+
+          // All nesting indicators must be stripped
+          expect(env.CLAUDECODE).toBeUndefined();
+          expect(env.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
+          expect(env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS).toBeUndefined();
+
+          // Delegate vars must be present
+          expect(env.DELEGATE_WORKER).toBe('true');
+          expect(env.DELEGATE_TASK_ID).toBe('task-123');
         }
       } finally {
-        // Restore original environment
-        if (originalEnv !== undefined) {
-          process.env.CLAUDECODE = originalEnv;
+        for (const [key, original] of Object.entries(saved)) {
+          if (original !== undefined) {
+            process.env[key] = original;
+          } else {
+            delete process.env[key];
+          }
+        }
+      }
+    });
+
+    it('should strip all CLAUDE_CODE_* prefixed env vars', () => {
+      const saved = process.env.CLAUDE_CODE_FUTURE_FLAG;
+      process.env.CLAUDE_CODE_FUTURE_FLAG = 'enabled';
+
+      try {
+        const result = spawner.spawn('test task', '/tmp');
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const spawnCall = spawnSpy.mock.calls[0];
+          const env = (spawnCall[2] as { env: Record<string, string> }).env;
+
+          expect(env.CLAUDE_CODE_FUTURE_FLAG).toBeUndefined();
+        }
+      } finally {
+        if (saved !== undefined) {
+          process.env.CLAUDE_CODE_FUTURE_FLAG = saved;
         } else {
-          delete process.env.CLAUDECODE;
+          delete process.env.CLAUDE_CODE_FUTURE_FLAG;
+        }
+      }
+    });
+
+    it('should preserve non-Claude-Code env vars', () => {
+      const saved: Record<string, string | undefined> = {};
+      const safeVars: Record<string, string> = {
+        CLAUDE_API_KEY: 'sk-test-key',
+        ANTHROPIC_API_KEY: 'sk-ant-key',
+        PATH: '/usr/bin:/bin',
+        HOME: '/home/test',
+      };
+
+      for (const key of Object.keys(safeVars)) {
+        saved[key] = process.env[key];
+        process.env[key] = safeVars[key];
+      }
+
+      try {
+        const result = spawner.spawn('test task', '/tmp');
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const spawnCall = spawnSpy.mock.calls[0];
+          const env = (spawnCall[2] as { env: Record<string, string> }).env;
+
+          // These must NOT be stripped
+          expect(env.CLAUDE_API_KEY).toBe('sk-test-key');
+          expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-key');
+          expect(env.PATH).toBe('/usr/bin:/bin');
+          expect(env.HOME).toBe('/home/test');
+        }
+      } finally {
+        for (const [key, original] of Object.entries(saved)) {
+          if (original !== undefined) {
+            process.env[key] = original;
+          } else {
+            delete process.env[key];
+          }
         }
       }
     });
