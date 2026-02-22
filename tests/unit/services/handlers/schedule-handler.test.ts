@@ -10,7 +10,14 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Schedule } from '../../../../src/core/domain';
-import { createSchedule, MissedRunPolicy, ScheduleId, ScheduleStatus, ScheduleType } from '../../../../src/core/domain';
+import {
+  createSchedule,
+  MissedRunPolicy,
+  ScheduleId,
+  ScheduleStatus,
+  ScheduleType,
+  TaskStatus,
+} from '../../../../src/core/domain';
 import { InMemoryEventBus } from '../../../../src/core/events/event-bus';
 import { Database } from '../../../../src/implementations/database';
 import { SQLiteScheduleRepository } from '../../../../src/implementations/schedule-repository';
@@ -420,6 +427,158 @@ describe('ScheduleHandler - Behavioral Tests', () => {
       if (!findResult.ok) return;
 
       expect(findResult.value!.maxRuns).toBe(10);
+    });
+  });
+
+  describe('afterScheduleId chaining', () => {
+    it('should inject dependency when target task is non-terminal', async () => {
+      // Schedule A triggers and creates a task that stays QUEUED (non-terminal)
+      const scheduleA = createTestSchedule();
+      await saveSchedule(scheduleA);
+      await scheduleRepo.update(scheduleA.id, { nextRunAt: Date.now() - 60000 });
+
+      await eventBus.emit('ScheduleTriggered', {
+        scheduleId: scheduleA.id,
+        triggeredAt: Date.now(),
+      });
+      await flushEventLoop();
+
+      // Get task A's ID
+      const allTasks = await taskRepo.findAll();
+      expect(allTasks.ok).toBe(true);
+      if (!allTasks.ok) return;
+      expect(allTasks.value).toHaveLength(1);
+      const taskA = allTasks.value[0];
+      expect(taskA.status).toBe(TaskStatus.QUEUED);
+
+      // Capture TaskDelegated events to inspect task.dependsOn
+      // (dependsOn is not persisted by task repo — it flows via events to DependencyHandler)
+      const delegatedTasks: { task: { dependsOn?: readonly string[] } }[] = [];
+      eventBus.subscribe('TaskDelegated', (event) => {
+        delegatedTasks.push(event);
+      });
+
+      // Schedule B chains after Schedule A
+      const scheduleB = createTestSchedule({
+        afterScheduleId: scheduleA.id,
+      });
+      await saveSchedule(scheduleB);
+      await scheduleRepo.update(scheduleB.id, { nextRunAt: Date.now() - 60000 });
+
+      await eventBus.emit('ScheduleTriggered', {
+        scheduleId: scheduleB.id,
+        triggeredAt: Date.now(),
+      });
+      await flushEventLoop();
+
+      // The TaskDelegated event for task B should carry dependsOn containing task A's ID
+      expect(delegatedTasks).toHaveLength(1);
+      expect(delegatedTasks[0].task.dependsOn).toContain(taskA.id);
+    });
+
+    it('should skip dependency when target task already completed', async () => {
+      // Schedule A triggers and creates a task
+      const scheduleA = createTestSchedule();
+      await saveSchedule(scheduleA);
+      await scheduleRepo.update(scheduleA.id, { nextRunAt: Date.now() - 60000 });
+
+      await eventBus.emit('ScheduleTriggered', {
+        scheduleId: scheduleA.id,
+        triggeredAt: Date.now(),
+      });
+      await flushEventLoop();
+
+      // Mark task A as completed
+      const allTasks = await taskRepo.findAll();
+      expect(allTasks.ok).toBe(true);
+      if (!allTasks.ok) return;
+      const taskA = allTasks.value[0];
+      await taskRepo.update(taskA.id, { status: TaskStatus.COMPLETED });
+
+      // Capture TaskDelegated events
+      const delegatedTasks: { task: { dependsOn?: readonly string[] } }[] = [];
+      eventBus.subscribe('TaskDelegated', (event) => {
+        delegatedTasks.push(event);
+      });
+
+      // Schedule B chains after Schedule A
+      const scheduleB = createTestSchedule({
+        afterScheduleId: scheduleA.id,
+      });
+      await saveSchedule(scheduleB);
+      await scheduleRepo.update(scheduleB.id, { nextRunAt: Date.now() - 60000 });
+
+      await eventBus.emit('ScheduleTriggered', {
+        scheduleId: scheduleB.id,
+        triggeredAt: Date.now(),
+      });
+      await flushEventLoop();
+
+      // Task B should have no injected dependency (target already completed)
+      expect(delegatedTasks).toHaveLength(1);
+      expect(delegatedTasks[0].task.dependsOn ?? []).not.toContain(taskA.id);
+    });
+
+    it('should skip dependency when no prior execution exists', async () => {
+      // Schedule A exists but has never been triggered (no execution history)
+      const scheduleA = createTestSchedule();
+      await saveSchedule(scheduleA);
+
+      // Schedule B chains after Schedule A
+      const scheduleB = createTestSchedule({
+        afterScheduleId: scheduleA.id,
+      });
+      await saveSchedule(scheduleB);
+      await scheduleRepo.update(scheduleB.id, { nextRunAt: Date.now() - 60000 });
+
+      await eventBus.emit('ScheduleTriggered', {
+        scheduleId: scheduleB.id,
+        triggeredAt: Date.now(),
+      });
+      await flushEventLoop();
+
+      // Task B should run with no dependsOn
+      const allTasks = await taskRepo.findAll();
+      expect(allTasks.ok).toBe(true);
+      if (!allTasks.ok) return;
+      expect(allTasks.value).toHaveLength(1);
+      expect(allTasks.value[0].dependsOn ?? []).toHaveLength(0);
+    });
+
+    it('should skip dependency when execution has no taskId', async () => {
+      // Schedule A has a failed execution record with no taskId
+      const scheduleA = createTestSchedule();
+      await saveSchedule(scheduleA);
+
+      // Record a failed execution without a taskId
+      await scheduleRepo.recordExecution({
+        scheduleId: scheduleA.id,
+        scheduledFor: Date.now() - 120000,
+        executedAt: Date.now() - 120000,
+        status: 'failed',
+        errorMessage: 'Failed to create task',
+        createdAt: Date.now() - 120000,
+      });
+
+      // Schedule B chains after Schedule A
+      const scheduleB = createTestSchedule({
+        afterScheduleId: scheduleA.id,
+      });
+      await saveSchedule(scheduleB);
+      await scheduleRepo.update(scheduleB.id, { nextRunAt: Date.now() - 60000 });
+
+      await eventBus.emit('ScheduleTriggered', {
+        scheduleId: scheduleB.id,
+        triggeredAt: Date.now(),
+      });
+      await flushEventLoop();
+
+      // Task B should run with no dependsOn
+      const allTasks = await taskRepo.findAll();
+      expect(allTasks.ok).toBe(true);
+      if (!allTasks.ok) return;
+      expect(allTasks.value).toHaveLength(1);
+      expect(allTasks.value[0].dependsOn ?? []).toHaveLength(0);
     });
   });
 });

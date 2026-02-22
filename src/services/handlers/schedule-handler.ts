@@ -6,7 +6,7 @@
  */
 
 import type { Schedule } from '../../core/domain.js';
-import { createTask, ScheduleStatus, ScheduleType, updateSchedule } from '../../core/domain.js';
+import { createTask, isTerminalState, ScheduleStatus, ScheduleType, updateSchedule } from '../../core/domain.js';
 import { DelegateError, ErrorCode } from '../../core/errors.js';
 import { EventBus } from '../../core/events/event-bus.js';
 import {
@@ -247,8 +247,44 @@ export class ScheduleHandler extends BaseEventHandler {
         return ok(undefined);
       }
 
+      // afterScheduleId enforcement: inject dependency on chained schedule's latest task
+      let taskTemplate = schedule.taskTemplate;
+
+      if (schedule.afterScheduleId) {
+        const historyResult = await this.scheduleRepo.getExecutionHistory(schedule.afterScheduleId, 1);
+
+        if (historyResult.ok && historyResult.value.length > 0) {
+          const latestExecution = historyResult.value[0];
+
+          if (latestExecution.taskId) {
+            const depTaskResult = await this.taskRepo.findById(latestExecution.taskId);
+
+            if (depTaskResult.ok && depTaskResult.value && !isTerminalState(depTaskResult.value.status)) {
+              taskTemplate = {
+                ...schedule.taskTemplate,
+                dependsOn: [...(schedule.taskTemplate.dependsOn ?? []), latestExecution.taskId],
+              };
+              this.logger.info('Injected afterSchedule dependency', {
+                scheduleId,
+                afterScheduleId: schedule.afterScheduleId,
+                dependsOnTaskId: latestExecution.taskId,
+              });
+            } else {
+              this.logger.info('afterSchedule dependency already resolved, skipping', {
+                scheduleId,
+                afterScheduleId: schedule.afterScheduleId,
+                taskId: latestExecution.taskId,
+                taskStatus: depTaskResult.ok ? (depTaskResult.value?.status ?? 'not-found') : 'lookup-failed',
+              });
+            }
+          }
+          // No taskId on execution (failed before creating task) → skip
+        }
+        // No execution history → nothing to chain after
+      }
+
       // Create task from template
-      const task = createTask(schedule.taskTemplate);
+      const task = createTask(taskTemplate);
       const taskSaveResult = await this.taskRepo.save(task);
       if (!taskSaveResult.ok) {
         // Record failed execution (audit trail - log on failure but don't block)
