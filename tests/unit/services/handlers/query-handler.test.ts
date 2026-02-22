@@ -330,7 +330,9 @@ describe('QueryHandler - Behavioral Tests', () => {
       database.close();
 
       // First query should fail (database closed)
-      const failResult = await eventBus.request<{ taskId: string }, Task | null>('TaskStatusQuery', { taskId: task.id });
+      const failResult = await eventBus.request<{ taskId: string }, Task | null>('TaskStatusQuery', {
+        taskId: task.id,
+      });
       expect(failResult.ok).toBe(false);
 
       // FIX: Recovery means reopening same database and querying again
@@ -350,7 +352,9 @@ describe('QueryHandler - Behavioral Tests', () => {
       }
 
       // Second query should succeed (database recovered)
-      const successResult = await eventBus.request<{ taskId: string }, Task | null>('TaskStatusQuery', { taskId: task.id });
+      const successResult = await eventBus.request<{ taskId: string }, Task | null>('TaskStatusQuery', {
+        taskId: task.id,
+      });
 
       expect(successResult.ok).toBe(true);
       if (successResult.ok) {

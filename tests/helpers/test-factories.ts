@@ -167,7 +167,15 @@ export const MockFactory = {
       canSpawnWorker: vi.fn().mockResolvedValue(ok(canSpawn)),
       incrementWorkerCount: vi.fn(),
       decrementWorkerCount: vi.fn(),
-      getResources: vi.fn().mockResolvedValue(ok({ cpuUsage: 50, availableMemory: 2000000000, totalMemory: 8000000000, loadAverage: [1.0, 1.0, 1.0], workerCount: 0 })),
+      getResources: vi.fn().mockResolvedValue(
+        ok({
+          cpuUsage: 50,
+          availableMemory: 2000000000,
+          totalMemory: 8000000000,
+          loadAverage: [1.0, 1.0, 1.0],
+          workerCount: 0,
+        }),
+      ),
       getThresholds: vi.fn().mockReturnValue({ maxCpuPercent: 80, minMemoryBytes: 1000000000 }),
       recordSpawn: vi.fn(),
     } as ResourceMonitor;

@@ -7,8 +7,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DelegateError, ErrorCode } from '../../../src/core/errors';
 import { TaskId, WorkerId } from '../../../src/core/domain';
+import { DelegateError, ErrorCode } from '../../../src/core/errors';
 import type { EventBus } from '../../../src/core/events/event-bus';
 import type { SystemResourcesUpdatedEvent, WorkerKilledEvent } from '../../../src/core/events/events';
 import type { Logger, ResourceMonitor, TaskQueue, WorkerPool } from '../../../src/core/interfaces';

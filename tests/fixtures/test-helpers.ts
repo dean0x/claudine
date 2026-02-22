@@ -304,7 +304,9 @@ export class MockFunction<T = unknown> {
 /**
  * Creates a simple mock function that tracks calls
  */
-export function createMockFunction<T = unknown>(implementation?: (...args: unknown[]) => T | Promise<T>): (...args: unknown[]) => Promise<T> {
+export function createMockFunction<T = unknown>(
+  implementation?: (...args: unknown[]) => T | Promise<T>,
+): (...args: unknown[]) => Promise<T> {
   const mock = new MockFunction(implementation);
   return mock.fn;
 }

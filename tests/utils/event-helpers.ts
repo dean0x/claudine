@@ -57,7 +57,12 @@ export async function waitForEvents(
 /**
  * Collect events over a period of time
  */
-export function collectEvents(eventBus: EventBus, eventType: string, count: number, timeout = 5000): Promise<unknown[]> {
+export function collectEvents(
+  eventBus: EventBus,
+  eventType: string,
+  count: number,
+  timeout = 5000,
+): Promise<unknown[]> {
   return new Promise((resolve, reject) => {
     const events: unknown[] = [];
     const timer = setTimeout(() => {

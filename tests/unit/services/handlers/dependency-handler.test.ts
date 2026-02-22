@@ -714,11 +714,8 @@ describe('DependencyHandler - Behavioral Tests', () => {
         expect(addSpy).not.toHaveBeenCalled();
 
         // Should NOT emit any dependency events
-        const events =
-          (eventBus as unknown as { emittedEvents?: Array<{ type: string }> }).emittedEvents || [];
-        const depEvents = events.filter(
-          (e) => e.type === 'TaskDependencyAdded' || e.type === 'TaskDependencyFailed',
-        );
+        const events = (eventBus as unknown as { emittedEvents?: Array<{ type: string }> }).emittedEvents || [];
+        const depEvents = events.filter((e) => e.type === 'TaskDependencyAdded' || e.type === 'TaskDependencyFailed');
         expect(depEvents).toHaveLength(0);
       });
 

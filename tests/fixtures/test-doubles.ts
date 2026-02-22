@@ -87,7 +87,10 @@ export class TestEventBus implements EventBus {
 
     const subscriptionId = `sub-${this.subscriptionCount}`;
     // Track subscription for proper unsubscribe
-    this.subscriptionToHandler.set(subscriptionId, { eventType, handler: handler as (event: unknown) => Promise<void> });
+    this.subscriptionToHandler.set(subscriptionId, {
+      eventType,
+      handler: handler as (event: unknown) => Promise<void>,
+    });
     return ok(subscriptionId);
   }
 
@@ -607,7 +610,10 @@ export class TestWorktreeManager {
     return ok(undefined);
   }
 
-  async completeTask(taskId: string, result: unknown): Promise<Result<{ taskId: string; completed: boolean; result: unknown }, Error>> {
+  async completeTask(
+    taskId: string,
+    result: unknown,
+  ): Promise<Result<{ taskId: string; completed: boolean; result: unknown }, Error>> {
     if (this.shouldFail) {
       return err(new Error('Task completion failed'));
     }

@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { TaskId, type Task } from '../../../src/core/domain.js';
+import { type Task, TaskId } from '../../../src/core/domain.js';
 import { Database } from '../../../src/implementations/database.js';
 import { SQLiteTaskRepository } from '../../../src/implementations/task-repository.js';
 import { createTestTask } from '../../fixtures/test-data.js';
