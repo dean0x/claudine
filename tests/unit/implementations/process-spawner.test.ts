@@ -429,4 +429,36 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
       vi.useRealTimers();
     });
   });
+
+  describe('Environment variable handling', () => {
+    it('should strip CLAUDECODE from worker environment', () => {
+      // Set up environment with CLAUDECODE (simulates running in Claude Code session)
+      const originalEnv = process.env.CLAUDECODE;
+      process.env.CLAUDECODE = 'true';
+
+      try {
+        const result = spawner.spawn('test task', '/tmp', 'task-123');
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          // Verify spawn was called with cleaned environment (no CLAUDECODE)
+          const spawnCall = spawnSpy.mock.calls[0];
+          // The third argument to spawn() is the options object
+          const options = spawnCall[2] as Record<string, string>;
+          expect(options.env).toBeDefined();
+          expect((options.env as Record<string, string>).CLAUDECODE).toBeUndefined();
+          // But DELEGATE_WORKER should be present
+          expect((options.env as Record<string, string>).DELEGATE_WORKER).toBe('true');
+          expect((options.env as Record<string, string>).DELEGATE_TASK_ID).toBe('task-123');
+        }
+      } finally {
+        // Restore original environment
+        if (originalEnv !== undefined) {
+          process.env.CLAUDECODE = originalEnv;
+        } else {
+          delete process.env.CLAUDECODE;
+        }
+      }
+    });
+  });
 });
