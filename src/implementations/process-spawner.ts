@@ -48,8 +48,11 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
       // console.error(`[ProcessSpawner] Environment keys: ${Object.keys(process.env).length}`);
 
       // Add Delegate-specific environment variables for identification
+      // CRITICAL: Strip CLAUDECODE to prevent nested session rejection
+      // Workers are independent Claude Code instances, not nested sessions
+      const { CLAUDECODE, ...cleanEnv } = process.env;
       const env = {
-        ...process.env,
+        ...cleanEnv,
         DELEGATE_WORKER: 'true',
         ...(taskId && { DELEGATE_TASK_ID: taskId }),
       };
