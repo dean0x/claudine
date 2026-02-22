@@ -8,8 +8,7 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE",
-    "config/mcp-servers.example.json"
+    "LICENSE"
   ],
   "directories": {
     "doc": "docs"

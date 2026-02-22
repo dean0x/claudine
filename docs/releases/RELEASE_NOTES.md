@@ -1,8 +1,10 @@
-# 🚀 Delegate v0.2.0 - Latest Release
+# 🚀 Delegate v0.4.0 - Latest Release
 
-See [RELEASE_NOTES_v0.2.0.md](./RELEASE_NOTES_v0.2.0.md) for the latest release notes.
+See [RELEASE_NOTES_v0.4.0.md](./RELEASE_NOTES_v0.4.0.md) for the latest release notes.
 
 ## Previous Releases
+- [v0.3.0](./RELEASE_NOTES_v0.3.0.md) - Task Dependencies & DAG Support
+- [v0.2.0](./RELEASE_NOTES_v0.2.0.md) - Concurrent Execution & Auto-scaling
 - [v0.1.0](./RELEASE_NOTES_v0.1.0.md) - Initial Release
 
 ---

@@ -46,7 +46,7 @@ export class EventSpy {
     existing.push(handler);
     this.handlers.set(eventType, existing);
 
-    eventBus.subscribe(eventType as ClaudineEvent['type'], handler);
+    eventBus.subscribe(eventType as DelegateEvent['type'], handler);
   }
 
   /**
