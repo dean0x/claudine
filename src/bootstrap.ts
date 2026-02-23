@@ -37,6 +37,8 @@ export interface BootstrapOptions {
   resourceMonitor?: ResourceMonitor;
   /** Skip starting resource monitoring (useful for tests to prevent CPU/memory overhead) */
   skipResourceMonitoring?: boolean;
+  /** Skip starting ScheduleExecutor (for short-lived CLI commands that exit before workers finish) */
+  skipScheduleExecutor?: boolean;
 }
 
 // Adapter
@@ -448,17 +450,22 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
 
   // Initialize schedule executor after recovery completes
   // ARCHITECTURE: Starts the 60-second tick loop for checking due schedules
-  const executorResult = container.get<ScheduleExecutor>('scheduleExecutor');
-  if (executorResult.ok) {
-    const executor = executorResult.value;
-    const startResult = executor.start();
-    if (!startResult.ok) {
-      logger.error('Failed to start ScheduleExecutor', startResult.error);
+  // Skip for short-lived CLI commands — only the MCP server daemon needs the executor
+  if (!options?.skipScheduleExecutor) {
+    const executorResult = container.get<ScheduleExecutor>('scheduleExecutor');
+    if (executorResult.ok) {
+      const executor = executorResult.value;
+      const startResult = executor.start();
+      if (!startResult.ok) {
+        logger.error('Failed to start ScheduleExecutor', startResult.error);
+      } else {
+        logger.info('ScheduleExecutor started');
+      }
     } else {
-      logger.info('ScheduleExecutor started');
+      logger.error('Failed to get ScheduleExecutor', executorResult.error);
     }
   } else {
-    logger.error('Failed to get ScheduleExecutor', executorResult.error);
+    logger.info('Skipping ScheduleExecutor (skipScheduleExecutor=true)');
   }
 
   logger.info('Bootstrap complete');

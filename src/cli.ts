@@ -29,7 +29,7 @@ async function withServices(): Promise<{
   scheduleService: ScheduleService;
 }> {
   console.log('🚀 Bootstrapping Delegate...');
-  const containerResult = await bootstrap();
+  const containerResult = await bootstrap({ skipScheduleExecutor: true });
   if (!containerResult.ok) {
     console.error('❌ Bootstrap failed:', containerResult.error.message);
     process.exit(1);
@@ -217,7 +217,7 @@ async function delegateTask(
 ) {
   try {
     console.log('🚀 Bootstrapping Delegate...');
-    const containerResult = await bootstrap();
+    const containerResult = await bootstrap({ skipScheduleExecutor: true });
     if (!containerResult.ok) {
       console.error('❌ Bootstrap failed:', containerResult.error.message);
       process.exit(1);
@@ -280,7 +280,7 @@ async function delegateTask(
 async function getTaskStatus(taskId?: string, showDependencies?: boolean) {
   try {
     console.log('🚀 Bootstrapping Delegate...');
-    const containerResult = await bootstrap();
+    const containerResult = await bootstrap({ skipScheduleExecutor: true });
     if (!containerResult.ok) {
       console.error('❌ Bootstrap failed:', containerResult.error.message);
       process.exit(1);
@@ -359,7 +359,7 @@ async function getTaskStatus(taskId?: string, showDependencies?: boolean) {
 async function getTaskLogs(taskId: string, tail?: number) {
   try {
     console.log('🚀 Bootstrapping Delegate...');
-    const containerResult = await bootstrap();
+    const containerResult = await bootstrap({ skipScheduleExecutor: true });
     if (!containerResult.ok) {
       console.error('❌ Bootstrap failed:', containerResult.error.message);
       process.exit(1);
@@ -413,7 +413,7 @@ async function getTaskLogs(taskId: string, tail?: number) {
 async function cancelTask(taskId: string, reason?: string) {
   try {
     console.log('🚀 Bootstrapping Delegate...');
-    const containerResult = await bootstrap();
+    const containerResult = await bootstrap({ skipScheduleExecutor: true });
     if (!containerResult.ok) {
       console.error('❌ Bootstrap failed:', containerResult.error.message);
       process.exit(1);
@@ -449,7 +449,7 @@ async function cancelTask(taskId: string, reason?: string) {
 async function retryTask(taskId: string) {
   try {
     console.log('🚀 Bootstrapping Delegate...');
-    const containerResult = await bootstrap();
+    const containerResult = await bootstrap({ skipScheduleExecutor: true });
     if (!containerResult.ok) {
       console.error('❌ Bootstrap failed:', containerResult.error.message);
       process.exit(1);
