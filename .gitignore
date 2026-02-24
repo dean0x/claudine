@@ -52,6 +52,9 @@ temp/
 *.sqlite3
 
 
+# Launch marketing materials (keep local only)
+launch/
+
 # Internal documentation (keep local only)
 .docs/
 .claude/

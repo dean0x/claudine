@@ -648,6 +648,7 @@ async function scheduleCreate(service: ScheduleService, scheduleArgs: string[]) 
     if (result.value.afterScheduleId) {
       console.log('🔗 After schedule:', result.value.afterScheduleId);
     }
+    process.exit(0);
   } else {
     console.error('❌ Failed to create schedule:', result.error.message);
     process.exit(1);
