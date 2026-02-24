@@ -2,15 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConsoleLogger, LogLevel } from '../../../src/implementations/logger';
 
 describe('ConsoleLogger - Behavioral Tests', () => {
-  // NOTE: These tests focus on the behavioral interface of ConsoleLogger
-  // We test what it does (formats messages, creates children) not HOW it outputs
-  // This follows TEST_STANDARDS.md: Test WHAT, not HOW
-
   describe('Logger creation and configuration', () => {
     it('should create logger with prefix', () => {
       const logger = new ConsoleLogger('[Test]', false);
 
-      // Verify logger is created (it doesn't throw)
       expect(logger).toBeDefined();
       expect(logger.info).toBeDefined();
       expect(logger.error).toBeDefined();
@@ -111,7 +106,7 @@ describe('ConsoleLogger - Behavioral Tests', () => {
       logger.info('i');
       logger.warn('w');
       logger.error('e');
-      // debug, info, warn each produce 1 call; error produces 1 call (no Error object)
+
       expect(errorSpy).toHaveBeenCalledTimes(4);
     });
 
