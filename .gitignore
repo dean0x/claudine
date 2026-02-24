@@ -27,6 +27,7 @@ config/mcp-config-ready.json
 .worktrees/
 task-outputs/
 data/
+.delegate-patches/
 
 # Package files
 *.tgz
