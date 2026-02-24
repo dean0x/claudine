@@ -130,20 +130,14 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
   container.registerValue('config', config);
 
   // Register logger with resolved log level
-  const resolveLogLevel = (configLevel: string): LogLevel => {
-    switch (configLevel) {
-      case 'debug':
-        return LogLevel.DEBUG;
-      case 'warn':
-        return LogLevel.WARN;
-      case 'error':
-        return LogLevel.ERROR;
-      default:
-        return LogLevel.INFO;
-    }
+  const LOG_LEVEL_MAP: Record<Configuration['logLevel'], LogLevel> = {
+    debug: LogLevel.DEBUG,
+    info: LogLevel.INFO,
+    warn: LogLevel.WARN,
+    error: LogLevel.ERROR,
   };
 
-  const logLevel = resolveLogLevel(config.logLevel);
+  const logLevel = LOG_LEVEL_MAP[config.logLevel];
 
   container.registerSingleton('logger', () => {
     if (process.env.NODE_ENV === 'production') {
