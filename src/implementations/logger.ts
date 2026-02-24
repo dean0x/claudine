@@ -96,12 +96,18 @@ export class StructuredLogger implements Logger {
  * Console logger for development
  */
 export class ConsoleLogger implements Logger {
+  private readonly level: LogLevel;
+
   constructor(
     private readonly prefix = '[Delegate]',
     private readonly useColors = true,
-  ) {}
+    level: LogLevel = LogLevel.INFO,
+  ) {
+    this.level = level;
+  }
 
   debug(message: string, context?: Record<string, unknown>): void {
+    if (this.level > LogLevel.DEBUG) return;
     const color = this.useColors ? '\x1b[36m' : ''; // Cyan
     const reset = this.useColors ? '\x1b[0m' : '';
     // Use stderr for all logs to avoid interfering with MCP communication on stdout
@@ -109,6 +115,7 @@ export class ConsoleLogger implements Logger {
   }
 
   info(message: string, context?: Record<string, unknown>): void {
+    if (this.level > LogLevel.INFO) return;
     const color = this.useColors ? '\x1b[32m' : ''; // Green
     const reset = this.useColors ? '\x1b[0m' : '';
     // Use stderr for all logs to avoid interfering with MCP communication on stdout
@@ -116,6 +123,7 @@ export class ConsoleLogger implements Logger {
   }
 
   warn(message: string, context?: Record<string, unknown>): void {
+    if (this.level > LogLevel.WARN) return;
     const color = this.useColors ? '\x1b[33m' : ''; // Yellow
     const reset = this.useColors ? '\x1b[0m' : '';
     // Use stderr for all logs to avoid interfering with MCP communication on stdout
@@ -123,6 +131,7 @@ export class ConsoleLogger implements Logger {
   }
 
   error(message: string, error?: Error, context?: Record<string, unknown>): void {
+    if (this.level > LogLevel.ERROR) return;
     const color = this.useColors ? '\x1b[31m' : ''; // Red
     const reset = this.useColors ? '\x1b[0m' : '';
     console.error(`${color}${this.prefix} ERROR:${reset} ${message}`, context || '');
@@ -133,7 +142,7 @@ export class ConsoleLogger implements Logger {
 
   child(context: Record<string, unknown>): Logger {
     const childPrefix = context.module ? `${this.prefix}[${context.module}]` : this.prefix;
-    return new ConsoleLogger(childPrefix, this.useColors);
+    return new ConsoleLogger(childPrefix, this.useColors, this.level);
   }
 }
 

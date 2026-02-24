@@ -1,6 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { ConsoleLogger } from '../../../src/implementations/logger';
-import { TIMEOUTS } from '../../constants';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ConsoleLogger, LogLevel } from '../../../src/implementations/logger';
 
 describe('ConsoleLogger - Behavioral Tests', () => {
   // NOTE: These tests focus on the behavioral interface of ConsoleLogger
@@ -36,7 +35,6 @@ describe('ConsoleLogger - Behavioral Tests', () => {
       const logger = new ConsoleLogger('[Test]', false);
 
       // Test that all methods can be called without error
-      expect(() => logger.debug('Debug message')).not.toThrow();
       expect(() => logger.info('Info message')).not.toThrow();
       expect(() => logger.warn('Warning message')).not.toThrow();
       expect(() => logger.error('Error message')).not.toThrow();
@@ -55,6 +53,95 @@ describe('ConsoleLogger - Behavioral Tests', () => {
     });
   });
 
+  describe('Log level filtering', () => {
+    let errorSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      errorSpy.mockRestore();
+    });
+
+    it('should suppress debug messages at default INFO level', () => {
+      const logger = new ConsoleLogger('[Test]', false);
+
+      logger.debug('should be suppressed');
+      expect(errorSpy).not.toHaveBeenCalled();
+
+      logger.info('should appear');
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should show debug messages at DEBUG level', () => {
+      const logger = new ConsoleLogger('[Test]', false, LogLevel.DEBUG);
+
+      logger.debug('should appear');
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should suppress info and debug at WARN level', () => {
+      const logger = new ConsoleLogger('[Test]', false, LogLevel.WARN);
+
+      logger.debug('suppressed');
+      logger.info('suppressed');
+      expect(errorSpy).not.toHaveBeenCalled();
+
+      logger.warn('should appear');
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should only show errors at ERROR level', () => {
+      const logger = new ConsoleLogger('[Test]', false, LogLevel.ERROR);
+
+      logger.debug('suppressed');
+      logger.info('suppressed');
+      logger.warn('suppressed');
+      expect(errorSpy).not.toHaveBeenCalled();
+
+      logger.error('should appear');
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should show all messages at DEBUG level', () => {
+      const logger = new ConsoleLogger('[Test]', false, LogLevel.DEBUG);
+
+      logger.debug('d');
+      logger.info('i');
+      logger.warn('w');
+      logger.error('e');
+      // debug, info, warn each produce 1 call; error produces 1 call (no Error object)
+      expect(errorSpy).toHaveBeenCalledTimes(4);
+    });
+
+    it('should propagate level to child loggers', () => {
+      const parent = new ConsoleLogger('[Parent]', false, LogLevel.WARN);
+      const child = parent.child({ module: 'auth' });
+
+      child.debug('suppressed');
+      child.info('suppressed');
+      expect(errorSpy).not.toHaveBeenCalled();
+
+      child.warn('should appear');
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should propagate level through nested children', () => {
+      const root = new ConsoleLogger('[Root]', false, LogLevel.ERROR);
+      const child = root.child({ module: 'api' });
+      const grandchild = child.child({ module: 'auth' });
+
+      grandchild.debug('suppressed');
+      grandchild.info('suppressed');
+      grandchild.warn('suppressed');
+      expect(errorSpy).not.toHaveBeenCalled();
+
+      grandchild.error('should appear');
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('Context handling', () => {
     it('should accept context objects', () => {
       const logger = new ConsoleLogger('[Test]', false);
@@ -62,7 +149,6 @@ describe('ConsoleLogger - Behavioral Tests', () => {
       // These calls should not throw
       expect(() => logger.info('Message with context', { userId: '123' })).not.toThrow();
       expect(() => logger.warn('Warning with context', { code: 'W001' })).not.toThrow();
-      expect(() => logger.debug('Debug with context', { data: { nested: true } })).not.toThrow();
     });
 
     it('should handle messages without context', () => {
@@ -187,7 +273,6 @@ describe('ConsoleLogger - Behavioral Tests', () => {
       expect(() => {
         for (let i = 0; i < iterations; i++) {
           logger.info(`Message ${i}`);
-          logger.debug(`Debug ${i}`);
           logger.warn(`Warning ${i}`);
           logger.error(`Error ${i}`);
         }

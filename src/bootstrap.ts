@@ -143,7 +143,7 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
     if (process.env.NODE_ENV === 'production') {
       return new StructuredLogger({}, logLevel);
     } else {
-      return new ConsoleLogger('[Delegate]', true);
+      return new ConsoleLogger('[Delegate]', true, logLevel);
     }
   });
 
