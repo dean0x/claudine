@@ -22,7 +22,7 @@ preconditions:
 ### Step 1: Start Server
 **Action:** Start MCP server
 ```bash
-claudine mcp start &
+delegate mcp start &
 ```
 **Expected:** Server starts
 **Verify:** Process running
@@ -30,7 +30,7 @@ claudine mcp start &
 ### Step 2: Submit Failing Task
 **Action:** Submit task that will fail
 ```bash
-claudine delegate "exit 1"
+delegate delegate "exit 1"
 ```
 **Expected:** Task accepted
 **Verify:** Task ID returned
@@ -38,7 +38,7 @@ claudine delegate "exit 1"
 ### Step 3: Wait for Failure
 **Action:** Check task status
 ```bash
-sleep 5 && claudine status {TASK_ID}
+sleep 5 && delegate status {TASK_ID}
 ```
 **Expected:** Task fails
 **Verify:** Status is FAILED
@@ -46,7 +46,7 @@ sleep 5 && claudine status {TASK_ID}
 ### Step 4: Check Error Details
 **Action:** Get task logs
 ```bash
-claudine logs {TASK_ID}
+delegate logs {TASK_ID}
 ```
 **Expected:** Error information present
 **Verify:** 
@@ -56,7 +56,7 @@ claudine logs {TASK_ID}
 ### Step 5: Retry Failed Task
 **Action:** Retry the task
 ```bash
-claudine retry {TASK_ID}
+delegate retry {TASK_ID}
 ```
 **Expected:** New task created
 **Verify:** New task ID returned
@@ -64,7 +64,7 @@ claudine retry {TASK_ID}
 ### Step 6: Submit Task with Timeout
 **Action:** Submit long-running task with short timeout
 ```bash
-claudine delegate "sleep 60" --timeout 5000
+delegate delegate "sleep 60" --timeout 5000
 ```
 **Expected:** Task times out
 **Verify:** Status is FAILED with timeout error
@@ -72,7 +72,7 @@ claudine delegate "sleep 60" --timeout 5000
 ### Step 7: Test Network Failure Recovery
 **Action:** Submit task that simulates network issue
 ```bash
-claudine delegate "curl http://nonexistent.domain.local"
+delegate delegate "curl http://nonexistent.domain.local"
 ```
 **Expected:** Task fails gracefully
 **Verify:** 
@@ -82,7 +82,7 @@ claudine delegate "curl http://nonexistent.domain.local"
 ### Step 8: Verify Database Consistency
 **Action:** Check database state
 ```bash
-sqlite3 .claudine/claudine.db "SELECT status, COUNT(*) FROM tasks GROUP BY status"
+sqlite3 .delegate/delegate.db "SELECT status, COUNT(*) FROM tasks GROUP BY status"
 ```
 **Expected:** Correct task counts
 **Verify:** Failed tasks properly recorded
@@ -90,7 +90,7 @@ sqlite3 .claudine/claudine.db "SELECT status, COUNT(*) FROM tasks GROUP BY statu
 ### Step 9: Cleanup
 **Action:** Stop server
 ```bash
-killall claudine
+killall delegate
 ```
 **Expected:** Clean shutdown
 **Verify:** Processes terminated

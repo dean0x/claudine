@@ -7,7 +7,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TaskId } from '../../../src/core/domain';
-import { ClaudineError, ErrorCode } from '../../../src/core/errors';
+import { DelegateError, ErrorCode } from '../../../src/core/errors';
 import { err, ok } from '../../../src/core/result';
 import { TaskFactory } from '../../fixtures/factories';
 import { createMockLogger } from '../../fixtures/mocks';
@@ -111,7 +111,7 @@ describe('GitWorktreeManager', () => {
       if (result.ok) {
         expect(result.value.path).toContain('task-');
         expect(result.value.path).toContain(task.id);
-        expect(result.value.branch).toMatch(/^claudine\/task-/);
+        expect(result.value.branch).toMatch(/^delegate\/task-/);
         expect(result.value.baseBranch).toBe('main');
       }
 
@@ -178,7 +178,7 @@ describe('GitWorktreeManager', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(ClaudineError);
+        expect(result.error).toBeInstanceOf(DelegateError);
         expect(result.error.message).toContain('Failed to create worktree');
         expect(result.error.message).toContain('branch already exists');
       }
@@ -202,7 +202,7 @@ describe('GitWorktreeManager', () => {
   describe('completeTask', () => {
     const createWorktreeInfo = (overrides: Partial<{ path: string; branch: string; baseBranch: string }> = {}) => ({
       path: '/tmp/worktrees/task-test-1',
-      branch: 'claudine/task-test-1',
+      branch: 'delegate/task-test-1',
       baseBranch: 'main',
       ...overrides,
     });
@@ -219,7 +219,7 @@ describe('GitWorktreeManager', () => {
         expect(result.ok).toBe(true);
         if (result.ok) {
           expect(result.value.action).toBe('branch_pushed');
-          expect(result.value.branch).toBe('claudine/task-test-1');
+          expect(result.value.branch).toBe('delegate/task-test-1');
         }
       });
 
@@ -245,7 +245,7 @@ describe('GitWorktreeManager', () => {
 
       it('should return error when github integration PR creation fails', async () => {
         (mockGithubIntegration.createPR as ReturnType<typeof vi.fn>).mockResolvedValue(
-          err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'PR creation failed')),
+          err(new DelegateError(ErrorCode.SYSTEM_ERROR, 'PR creation failed')),
         );
         const task = new TaskFactory().withId('pr-task-3').withUseWorktree(true).build();
         const info = createWorktreeInfo();
@@ -267,11 +267,11 @@ describe('GitWorktreeManager', () => {
         expect(result.ok).toBe(true);
         if (result.ok) {
           expect(result.value.action).toBe('merged');
-          expect(result.value.branch).toBe('claudine/task-test-1');
+          expect(result.value.branch).toBe('delegate/task-test-1');
         }
 
         expect(mockGitInstance.checkout).toHaveBeenCalledWith('main');
-        expect(mockGitInstance.merge).toHaveBeenCalledWith(expect.arrayContaining(['claudine/task-test-1', '--no-ff']));
+        expect(mockGitInstance.merge).toHaveBeenCalledWith(expect.arrayContaining(['delegate/task-test-1', '--no-ff']));
       });
 
       it('should restore original branch on merge failure', async () => {
@@ -302,7 +302,7 @@ describe('GitWorktreeManager', () => {
         expect(result.ok).toBe(true);
         if (result.ok) {
           expect(result.value.action).toBe('branch_pushed');
-          expect(result.value.branch).toBe('claudine/task-test-1');
+          expect(result.value.branch).toBe('delegate/task-test-1');
         }
       });
     });
@@ -473,7 +473,7 @@ describe('GitWorktreeManager', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(ClaudineError);
+        expect(result.error).toBeInstanceOf(DelegateError);
         expect(result.error.message).toContain('Failed to remove worktree');
       }
     });
@@ -498,7 +498,7 @@ describe('GitWorktreeManager', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(ClaudineError);
+        expect(result.error).toBeInstanceOf(DelegateError);
         expect(result.error.code).toBe(ErrorCode.TASK_NOT_FOUND);
       }
     });
@@ -517,7 +517,7 @@ describe('GitWorktreeManager', () => {
       if (result.ok) {
         expect(result.value.taskId).toBe(TaskId('status-task'));
         expect(result.value.path).toContain('status-task');
-        expect(result.value.branch).toMatch(/claudine\/task-/);
+        expect(result.value.branch).toMatch(/delegate\/task-/);
         expect(result.value.baseBranch).toBe('main');
         expect(result.value.ageInDays).toBeGreaterThan(30);
         expect(typeof result.value.hasUnpushedChanges).toBe('boolean');
@@ -613,7 +613,7 @@ describe('GitWorktreeManager', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(ClaudineError);
+        expect(result.error).toBeInstanceOf(DelegateError);
         expect(result.error.message).toContain('Failed to cleanup some worktrees');
       }
     });

@@ -9,10 +9,10 @@
  * Both InMemoryEventBus and TestEventBus satisfy this contract at runtime.
  */
 interface TestableEventBus {
-  on(event: string, handler: (data: any) => void): string | void;
-  once(event: string, handler: (data: any) => void): void;
-  removeListener(event: string, handler: (data: any) => void): void;
-  emit(event: string, data: any): void;
+  on(event: string, handler: (data: unknown) => void): string | void;
+  once(event: string, handler: (data: unknown) => void): void;
+  removeListener(event: string, handler: (data: unknown) => void): void;
+  emit(event: string, data: unknown): void;
 }
 
 type EventBus = TestableEventBus;
@@ -20,7 +20,7 @@ type EventBus = TestableEventBus;
 /**
  * Wait for a specific event to be emitted
  */
-export function waitForEvent<T = any>(eventBus: EventBus, eventType: string, timeout = 5000): Promise<T> {
+export function waitForEvent<T = unknown>(eventBus: EventBus, eventType: string, timeout = 5000): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error(`Timeout waiting for event '${eventType}' after ${timeout}ms`));
@@ -42,8 +42,8 @@ export async function waitForEvents(
   eventBus: EventBus,
   eventTypes: string[],
   timeout = 5000,
-): Promise<Map<string, any>> {
-  const results = new Map<string, any>();
+): Promise<Map<string, unknown>> {
+  const results = new Map<string, unknown>();
   const promises = eventTypes.map((eventType) =>
     waitForEvent(eventBus, eventType, timeout).then((data) => {
       results.set(eventType, data);
@@ -57,14 +57,19 @@ export async function waitForEvents(
 /**
  * Collect events over a period of time
  */
-export function collectEvents(eventBus: EventBus, eventType: string, count: number, timeout = 5000): Promise<any[]> {
+export function collectEvents(
+  eventBus: EventBus,
+  eventType: string,
+  count: number,
+  timeout = 5000,
+): Promise<unknown[]> {
   return new Promise((resolve, reject) => {
-    const events: any[] = [];
+    const events: unknown[] = [];
     const timer = setTimeout(() => {
       reject(new Error(`Timeout collecting ${count} '${eventType}' events after ${timeout}ms. Got ${events.length}`));
     }, timeout);
 
-    const handler = (data: any) => {
+    const handler = (data: unknown) => {
       events.push(data);
       if (events.length >= count) {
         clearTimeout(timer);
@@ -82,7 +87,7 @@ export function collectEvents(eventBus: EventBus, eventType: string, count: numb
 /**
  * Wait for a condition based on event data
  */
-export function waitForCondition<T = any>(
+export function waitForCondition<T = unknown>(
   eventBus: EventBus,
   eventType: string,
   condition: (data: T) => boolean,
@@ -109,10 +114,10 @@ export function waitForCondition<T = any>(
 /**
  * Emit an event and wait for a response event
  */
-export async function emitAndWait<T = any>(
+export async function emitAndWait<T = unknown>(
   eventBus: EventBus,
   emitType: string,
-  emitData: any,
+  emitData: unknown,
   waitType: string,
   timeout = 5000,
 ): Promise<T> {

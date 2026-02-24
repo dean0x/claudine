@@ -6,8 +6,8 @@
  */
 
 import type { Schedule } from '../../core/domain.js';
-import { createTask, ScheduleStatus, ScheduleType, updateSchedule } from '../../core/domain.js';
-import { ClaudineError, ErrorCode } from '../../core/errors.js';
+import { createTask, isTerminalState, ScheduleStatus, ScheduleType, updateSchedule } from '../../core/domain.js';
+import { DelegateError, ErrorCode } from '../../core/errors.js';
 import { EventBus } from '../../core/events/event-bus.js';
 import {
   ScheduleCancelledEvent,
@@ -66,7 +66,7 @@ export class ScheduleHandler extends BaseEventHandler {
     eventBus: EventBus,
     logger: Logger,
     options?: ScheduleHandlerOptions,
-  ): Promise<Result<ScheduleHandler, ClaudineError>> {
+  ): Promise<Result<ScheduleHandler, DelegateError>> {
     const handlerLogger = logger.child ? logger.child({ module: 'ScheduleHandler' }) : logger;
 
     // Create handler
@@ -89,7 +89,7 @@ export class ScheduleHandler extends BaseEventHandler {
    * Subscribe to all relevant events
    * ARCHITECTURE: Called by factory after initialization
    */
-  private subscribeToEvents(): Result<void, ClaudineError> {
+  private subscribeToEvents(): Result<void, DelegateError> {
     const subscriptions = [
       // Schedule lifecycle events
       this.eventBus.subscribe('ScheduleCreated', this.handleScheduleCreated.bind(this)),
@@ -106,7 +106,7 @@ export class ScheduleHandler extends BaseEventHandler {
     for (const result of subscriptions) {
       if (!result.ok) {
         return err(
-          new ClaudineError(ErrorCode.SYSTEM_ERROR, `Failed to subscribe to events: ${result.error.message}`, {
+          new DelegateError(ErrorCode.SYSTEM_ERROR, `Failed to subscribe to events: ${result.error.message}`, {
             error: result.error,
           }),
         );
@@ -140,7 +140,7 @@ export class ScheduleHandler extends BaseEventHandler {
           timezone: schedule.timezone,
         });
         return err(
-          new ClaudineError(ErrorCode.INVALID_INPUT, `Invalid timezone: ${schedule.timezone}`, {
+          new DelegateError(ErrorCode.INVALID_INPUT, `Invalid timezone: ${schedule.timezone}`, {
             scheduleId: schedule.id,
             timezone: schedule.timezone,
           }),
@@ -154,7 +154,7 @@ export class ScheduleHandler extends BaseEventHandler {
         // Validate cron expression
         if (!schedule.cronExpression) {
           return err(
-            new ClaudineError(ErrorCode.INVALID_INPUT, 'CRON schedule requires cronExpression', {
+            new DelegateError(ErrorCode.INVALID_INPUT, 'CRON schedule requires cronExpression', {
               scheduleId: schedule.id,
             }),
           );
@@ -179,7 +179,7 @@ export class ScheduleHandler extends BaseEventHandler {
         // ONE_TIME uses scheduledAt directly
         if (!schedule.scheduledAt) {
           return err(
-            new ClaudineError(ErrorCode.INVALID_INPUT, 'ONE_TIME schedule requires scheduledAt timestamp', {
+            new DelegateError(ErrorCode.INVALID_INPUT, 'ONE_TIME schedule requires scheduledAt timestamp', {
               scheduleId: schedule.id,
             }),
           );
@@ -188,7 +188,7 @@ export class ScheduleHandler extends BaseEventHandler {
       } else {
         const _exhaustive: never = schedule.scheduleType;
         return err(
-          new ClaudineError(ErrorCode.INVALID_INPUT, `Unknown schedule type: ${schedule.scheduleType}`, {
+          new DelegateError(ErrorCode.INVALID_INPUT, `Unknown schedule type: ${schedule.scheduleType}`, {
             scheduleId: schedule.id,
           }),
         );
@@ -235,7 +235,7 @@ export class ScheduleHandler extends BaseEventHandler {
 
       const schedule = scheduleResult.value;
       if (!schedule) {
-        return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`, { scheduleId }));
+        return err(new DelegateError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`, { scheduleId }));
       }
 
       // Check if schedule is still active
@@ -247,8 +247,44 @@ export class ScheduleHandler extends BaseEventHandler {
         return ok(undefined);
       }
 
+      // afterScheduleId enforcement: inject dependency on chained schedule's latest task
+      let taskTemplate = schedule.taskTemplate;
+
+      if (schedule.afterScheduleId) {
+        const historyResult = await this.scheduleRepo.getExecutionHistory(schedule.afterScheduleId, 1);
+
+        if (historyResult.ok && historyResult.value.length > 0) {
+          const latestExecution = historyResult.value[0];
+
+          if (latestExecution.taskId) {
+            const depTaskResult = await this.taskRepo.findById(latestExecution.taskId);
+
+            if (depTaskResult.ok && depTaskResult.value && !isTerminalState(depTaskResult.value.status)) {
+              taskTemplate = {
+                ...schedule.taskTemplate,
+                dependsOn: [...(schedule.taskTemplate.dependsOn ?? []), latestExecution.taskId],
+              };
+              this.logger.info('Injected afterSchedule dependency', {
+                scheduleId,
+                afterScheduleId: schedule.afterScheduleId,
+                dependsOnTaskId: latestExecution.taskId,
+              });
+            } else {
+              this.logger.info('afterSchedule dependency already resolved, skipping', {
+                scheduleId,
+                afterScheduleId: schedule.afterScheduleId,
+                taskId: latestExecution.taskId,
+                taskStatus: depTaskResult.ok ? (depTaskResult.value?.status ?? 'not-found') : 'lookup-failed',
+              });
+            }
+          }
+          // No taskId on execution (failed before creating task) → skip
+        }
+        // No execution history → nothing to chain after
+      }
+
       // Create task from template
-      const task = createTask(schedule.taskTemplate);
+      const task = createTask(taskTemplate);
       const taskSaveResult = await this.taskRepo.save(task);
       if (!taskSaveResult.ok) {
         // Record failed execution (audit trail - log on failure but don't block)
@@ -429,7 +465,7 @@ export class ScheduleHandler extends BaseEventHandler {
 
       const schedule = scheduleResult.value;
       if (!schedule) {
-        return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`, { scheduleId }));
+        return err(new DelegateError(ErrorCode.TASK_NOT_FOUND, `Schedule ${scheduleId} not found`, { scheduleId }));
       }
 
       // Recalculate nextRunAt for CRON schedules

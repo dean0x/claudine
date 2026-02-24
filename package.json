@@ -1,15 +1,14 @@
 {
-  "name": "claudine",
+  "name": "@dean0x/delegate",
   "version": "0.4.0",
   "main": "dist/index.js",
   "bin": {
-    "claudine": "./dist/cli.js"
+    "delegate": "./dist/cli.js"
   },
   "files": [
     "dist",
     "README.md",
-    "LICENSE",
-    "config/mcp-servers.example.json"
+    "LICENSE"
   ],
   "directories": {
     "doc": "docs"
@@ -68,15 +67,18 @@
   ],
   "author": "dean0x",
   "license": "MIT",
-  "description": "MCP server for delegating tasks to Claude Code",
+  "description": "MCP server for delegating tasks to background Claude Code instances",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/dean0x/claudine.git"
+    "url": "https://github.com/dean0x/delegate.git"
   },
   "bugs": {
-    "url": "https://github.com/dean0x/claudine/issues"
+    "url": "https://github.com/dean0x/delegate/issues"
   },
-  "homepage": "https://github.com/dean0x/claudine#readme",
+  "homepage": "https://github.com/dean0x/delegate#readme",
   "engines": {
     "node": ">=20.0.0"
   },

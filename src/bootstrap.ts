@@ -6,7 +6,7 @@
 import { validateConfiguration } from './core/config-validator.js';
 import { Configuration, loadConfiguration } from './core/configuration.js';
 import { Container } from './core/container.js';
-import { ClaudineError, ErrorCode } from './core/errors.js';
+import { DelegateError, ErrorCode } from './core/errors.js';
 import { EventBus, InMemoryEventBus } from './core/events/event-bus.js';
 import {
   CheckpointRepository,
@@ -37,6 +37,8 @@ export interface BootstrapOptions {
   resourceMonitor?: ResourceMonitor;
   /** Skip starting resource monitoring (useful for tests to prevent CPU/memory overhead) */
   skipResourceMonitoring?: boolean;
+  /** Skip starting ScheduleExecutor (for short-lived CLI commands that exit before workers finish) */
+  skipScheduleExecutor?: boolean;
 }
 
 // Adapter
@@ -107,7 +109,7 @@ const getFromContainerSafe = <T>(container: Container, key: string): Result<T> =
   const result = container.get(key);
   if (!result.ok) {
     return err(
-      new ClaudineError(ErrorCode.DEPENDENCY_INJECTION_FAILED, `Failed to get ${key} from container`, {
+      new DelegateError(ErrorCode.DEPENDENCY_INJECTION_FAILED, `Failed to get ${key} from container`, {
         key,
         error: result.error.message,
       }),
@@ -127,21 +129,21 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
   // Register configuration
   container.registerValue('config', config);
 
-  // Register logger
-  const logLevel =
-    config.logLevel === 'debug'
-      ? LogLevel.DEBUG
-      : config.logLevel === 'warn'
-        ? LogLevel.WARN
-        : config.logLevel === 'error'
-          ? LogLevel.ERROR
-          : LogLevel.INFO;
+  // Register logger with resolved log level
+  const LOG_LEVEL_MAP: Record<Configuration['logLevel'], LogLevel> = {
+    debug: LogLevel.DEBUG,
+    info: LogLevel.INFO,
+    warn: LogLevel.WARN,
+    error: LogLevel.ERROR,
+  };
+
+  const logLevel = LOG_LEVEL_MAP[config.logLevel];
 
   container.registerSingleton('logger', () => {
     if (process.env.NODE_ENV === 'production') {
       return new StructuredLogger({}, logLevel);
     } else {
-      return new ConsoleLogger('[Claudine]', true);
+      return new ConsoleLogger('[Delegate]', true, logLevel);
     }
   });
 
@@ -185,7 +187,7 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
   const loggerResult = container.get<Logger>('logger');
   if (!loggerResult.ok) {
     return err(
-      new ClaudineError(ErrorCode.DEPENDENCY_INJECTION_FAILED, 'Failed to create logger', {
+      new DelegateError(ErrorCode.DEPENDENCY_INJECTION_FAILED, 'Failed to create logger', {
         error: loggerResult.error.message,
       }),
     );
@@ -193,7 +195,7 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
   const logger = loggerResult.value;
 
   // All logs go to stderr to keep stdout clean for MCP protocol
-  logger.info('Bootstrapping Claudine', { config });
+  logger.info('Bootstrapping Delegate', { config });
 
   // Register database with structured logging
   container.registerSingleton('database', () => {
@@ -448,17 +450,22 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
 
   // Initialize schedule executor after recovery completes
   // ARCHITECTURE: Starts the 60-second tick loop for checking due schedules
-  const executorResult = container.get<ScheduleExecutor>('scheduleExecutor');
-  if (executorResult.ok) {
-    const executor = executorResult.value;
-    const startResult = executor.start();
-    if (!startResult.ok) {
-      logger.error('Failed to start ScheduleExecutor', startResult.error);
+  // Skip for short-lived CLI commands — only the MCP server daemon needs the executor
+  if (!options?.skipScheduleExecutor) {
+    const executorResult = container.get<ScheduleExecutor>('scheduleExecutor');
+    if (executorResult.ok) {
+      const executor = executorResult.value;
+      const startResult = executor.start();
+      if (!startResult.ok) {
+        logger.error('Failed to start ScheduleExecutor', startResult.error);
+      } else {
+        logger.info('ScheduleExecutor started');
+      }
     } else {
-      logger.info('ScheduleExecutor started');
+      logger.error('Failed to get ScheduleExecutor', executorResult.error);
     }
   } else {
-    logger.error('Failed to get ScheduleExecutor', executorResult.error);
+    logger.info('Skipping ScheduleExecutor (skipScheduleExecutor=true)');
   }
 
   logger.info('Bootstrap complete');

@@ -8,7 +8,7 @@
 - **Dependencies:** MCP server must be running
 
 ## Test Description
-Verify that Claudine can successfully delegate a simple task to a background Claude Code instance and retrieve the results.
+Verify that Delegate can successfully delegate a simple task to a background Claude Code instance and retrieve the results.
 
 ## Prerequisites
 ```yaml
@@ -31,7 +31,7 @@ npm run build
 - dist/ directory created
 
 ### Step 2: Check CLI Available
-**Action:** Check if claudine CLI is available
+**Action:** Check if delegate CLI is available
 ```bash
 node dist/cli.js status
 ```
@@ -43,11 +43,11 @@ node dist/cli.js status
 ### Step 3: Initialize Database
 **Action:** Initialize the database
 ```bash
-mkdir -p .claudine && rm -f .claudine/claudine.db
+mkdir -p .delegate && rm -f .delegate/delegate.db
 ```
 **Expected:** Database directory created
 **Verify:**
-- .claudine directory exists
+- .delegate directory exists
 - No existing database file
 
 ### Step 4: Test Direct Task Delegation
@@ -63,7 +63,7 @@ node dist/cli.js delegate "echo Testing direct delegation"
 ### Step 5: Verify Task Repository
 **Action:** Check if database was created
 ```bash
-ls -la .claudine/claudine.db 2>/dev/null || echo "Database not created"
+ls -la .delegate/delegate.db 2>/dev/null || echo "Database not created"
 ```
 **Expected:** Database file status
 **Verify:**
@@ -73,7 +73,7 @@ ls -la .claudine/claudine.db 2>/dev/null || echo "Database not created"
 ### Step 6: Cleanup
 **Action:** Clean up test artifacts
 ```bash
-rm -rf .claudine/claudine.db
+rm -rf .delegate/delegate.db
 ```
 **Expected:** Cleanup successful
 **Verify:**
@@ -89,7 +89,7 @@ rm -rf .claudine/claudine.db
 
 ## Rollback Plan
 If test fails:
-1. Kill all claudine processes
+1. Kill all delegate processes
 2. Clear task database
 3. Reset working directory
 

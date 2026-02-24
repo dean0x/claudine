@@ -94,7 +94,7 @@ describe('Network Failure Scenarios', () => {
   describe('Event Bus Communication Failures', () => {
     it('should handle event emission timeout', async () => {
       // Subscribe with slow handler
-      const slowHandler = async (event: any) => {
+      const slowHandler = async (_event: unknown) => {
         await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.LONG));
       };
 
@@ -265,7 +265,7 @@ describe('Network Failure Scenarios', () => {
     });
 
     it('should handle partial message delivery', async () => {
-      const receivedEvents: any[] = [];
+      const receivedEvents: unknown[] = [];
 
       eventBus.subscribe('TestEvent', async (event) => {
         receivedEvents.push(event);
@@ -310,7 +310,7 @@ describe('Network Failure Scenarios', () => {
     it('should handle packet loss simulation', async () => {
       const packetLossRate = 0.3; // 30% packet loss
 
-      const simulatePacketLoss = async (operation: () => Promise<any>) => {
+      const simulatePacketLoss = async (operation: () => Promise<unknown>) => {
         if (Math.random() < packetLossRate) {
           throw new Error('Packet lost');
         }

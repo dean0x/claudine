@@ -16,7 +16,7 @@ import {
   ScheduleType,
   TaskId,
 } from '../core/domain.js';
-import { ClaudineError, ErrorCode, operationErrorHandler } from '../core/errors.js';
+import { DelegateError, ErrorCode, operationErrorHandler } from '../core/errors.js';
 import { ScheduleExecution, ScheduleRepository } from '../core/interfaces.js';
 import { err, ok, Result, tryCatchAsync } from '../core/result.js';
 import { Database } from './database.js';
@@ -39,6 +39,7 @@ const ScheduleRowSchema = z.object({
   last_run_at: z.number().nullable(),
   next_run_at: z.number().nullable(),
   expires_at: z.number().nullable(),
+  after_schedule_id: z.string().nullable(),
   created_at: z.number(),
   updated_at: z.number(),
 });
@@ -101,6 +102,7 @@ interface ScheduleRow {
   readonly last_run_at: number | null;
   readonly next_run_at: number | null;
   readonly expires_at: number | null;
+  readonly after_schedule_id: string | null;
   readonly created_at: number;
   readonly updated_at: number;
 }
@@ -144,11 +146,11 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
       INSERT OR REPLACE INTO schedules (
         id, task_template, schedule_type, cron_expression, scheduled_at,
         timezone, missed_run_policy, status, max_runs, run_count,
-        last_run_at, next_run_at, expires_at, created_at, updated_at
+        last_run_at, next_run_at, expires_at, after_schedule_id, created_at, updated_at
       ) VALUES (
         @id, @taskTemplate, @scheduleType, @cronExpression, @scheduledAt,
         @timezone, @missedRunPolicy, @status, @maxRuns, @runCount,
-        @lastRunAt, @nextRunAt, @expiresAt, @createdAt, @updatedAt
+        @lastRunAt, @nextRunAt, @expiresAt, @afterScheduleId, @createdAt, @updatedAt
       )
     `);
 
@@ -168,6 +170,7 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
         last_run_at = @lastRunAt,
         next_run_at = @nextRunAt,
         expires_at = @expiresAt,
+        after_schedule_id = @afterScheduleId,
         updated_at = @updatedAt
       WHERE id = @id
     `);
@@ -241,6 +244,7 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
           lastRunAt: schedule.lastRunAt ?? null,
           nextRunAt: schedule.nextRunAt ?? null,
           expiresAt: schedule.expiresAt ?? null,
+          afterScheduleId: schedule.afterScheduleId ?? null,
           createdAt: schedule.createdAt,
           updatedAt: schedule.updatedAt,
         };
@@ -267,7 +271,7 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
     }
 
     if (!existingResult.value) {
-      return err(new ClaudineError(ErrorCode.TASK_NOT_FOUND, `Schedule ${id} not found`));
+      return err(new DelegateError(ErrorCode.TASK_NOT_FOUND, `Schedule ${id} not found`));
     }
 
     // Merge updates with existing schedule
@@ -295,6 +299,7 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
           lastRunAt: updatedSchedule.lastRunAt ?? null,
           nextRunAt: updatedSchedule.nextRunAt ?? null,
           expiresAt: updatedSchedule.expiresAt ?? null,
+          afterScheduleId: updatedSchedule.afterScheduleId ?? null,
           updatedAt: updatedSchedule.updatedAt,
         });
       },
@@ -484,6 +489,7 @@ export class SQLiteScheduleRepository implements ScheduleRepository {
       lastRunAt: data.last_run_at ?? undefined,
       nextRunAt: data.next_run_at ?? undefined,
       expiresAt: data.expires_at ?? undefined,
+      afterScheduleId: data.after_schedule_id ? ScheduleId(data.after_schedule_id) : undefined,
       createdAt: data.created_at,
       updatedAt: data.updated_at,
     };

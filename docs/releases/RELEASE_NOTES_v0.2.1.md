@@ -1,15 +1,15 @@
-# 🚀 Claudine v0.2.1 - Event-Driven Architecture & CLI Interface
+# 🚀 Delegate v0.2.1 - Event-Driven Architecture & CLI Interface
 
 ## Major Features
 
 ### 🖥️ Direct CLI Interface
 No more MCP reconnections needed for testing! New commands:
 ```bash
-claudine delegate "analyze the codebase for security issues"
-claudine status                    # Check all tasks  
-claudine status <task-id>          # Check specific task
-claudine logs <task-id>            # Get task output
-claudine cancel <task-id> "reason" # Cancel with reason
+delegate delegate "analyze the codebase for security issues"
+delegate status                    # Check all tasks  
+delegate status <task-id>          # Check specific task
+delegate logs <task-id>            # Get task output
+delegate cancel <task-id> "reason" # Cancel with reason
 ```
 
 ### 🏗️ Complete Event-Driven Architecture Overhaul
@@ -74,11 +74,11 @@ claudine cancel <task-id> "reason" # Cancel with reason
 
 ```bash
 # Global installation (recommended)
-npm install -g claudine@0.2.1
+npm install -g @dean0x/delegate@0.2.1
 
 # Or from source
-git clone https://github.com/dean0x/claudine.git
-cd claudine
+git clone https://github.com/dean0x/delegate.git
+cd delegate
 npm install && npm run build
 ```
 
@@ -91,5 +91,5 @@ See [ROADMAP.md](./ROADMAP.md):
 ---
 
 **Full Details**: [CHANGELOG.md](./CHANGELOG.md)  
-**Repository**: https://github.com/dean0x/claudine  
-**Issues**: [GitHub Issues](https://github.com/dean0x/claudine/issues)
+**Repository**: https://github.com/dean0x/delegate  
+**Issues**: [GitHub Issues](https://github.com/dean0x/delegate/issues)

@@ -15,7 +15,7 @@ Verify the event-driven architecture is working correctly: events are emitted, h
 preconditions:
   - Clean system state
   - Build completed successfully
-  - No running claudine processes
+  - No running delegate processes
 ```
 
 ## Test Steps
@@ -43,7 +43,7 @@ node dist/cli.js delegate "echo 'Event test task'" --priority P0
 ### Step 3: Verify TaskDelegated Event
 **Action:** Check logs for TaskDelegated event
 ```bash
-grep -r "TaskDelegated" .claudine/logs/ 2>/dev/null | head -1 || echo "No TaskDelegated event found in logs"
+grep -r "TaskDelegated" .delegate/logs/ 2>/dev/null | head -1 || echo "No TaskDelegated event found in logs"
 ```
 **Expected:** Event emission logged
 **Verify:**
@@ -164,13 +164,13 @@ node dist/cli.js delegate "echo 'Final disposal test'"
 ### Step 14: Cleanup
 **Action:** Clean up all test artifacts
 ```bash
-pkill -f "claudine" || true
-rm -rf .claudine/
+pkill -f "delegate" || true
+rm -rf .delegate/
 ```
 **Expected:** Cleanup successful
 **Verify:**
 - No processes running
-- .claudine directory removed
+- .delegate directory removed
 
 ## Success Criteria
 - [ ] Events emitted and handled correctly
@@ -185,7 +185,7 @@ rm -rf .claudine/
 ## Rollback Plan
 If test fails:
 1. Kill all processes: `pkill -9 -f node`
-2. Clear logs: `rm -rf .claudine/logs/`
+2. Clear logs: `rm -rf .delegate/logs/`
 3. Check system resources: `free -h`
 4. Review event bus implementation
 

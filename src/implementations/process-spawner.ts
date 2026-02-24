@@ -5,7 +5,7 @@
 
 import { ChildProcess, spawn } from 'child_process';
 import { Configuration } from '../core/configuration.js';
-import { ClaudineError, ErrorCode, processSpawnFailed } from '../core/errors.js';
+import { DelegateError, ErrorCode, processSpawnFailed } from '../core/errors.js';
 import { ProcessSpawner } from '../core/interfaces.js';
 import { err, ok, Result, tryCatch } from '../core/result.js';
 
@@ -47,11 +47,17 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
       // console.error(`[ProcessSpawner] Working directory: ${workingDirectory}`);
       // console.error(`[ProcessSpawner] Environment keys: ${Object.keys(process.env).length}`);
 
-      // Add Claudine-specific environment variables for identification
+      // Add Delegate-specific environment variables for identification
+      // CRITICAL: Strip all Claude Code nesting indicators to prevent rejection
+      // Workers are independent Claude Code instances, not nested sessions
+      // Claude Code checks CLAUDECODE and any CLAUDE_CODE_* prefixed vars
+      const cleanEnv = Object.fromEntries(
+        Object.entries(process.env).filter(([key]) => key !== 'CLAUDECODE' && !key.startsWith('CLAUDE_CODE_')),
+      );
       const env = {
-        ...process.env,
-        CLAUDINE_WORKER: 'true',
-        ...(taskId && { CLAUDINE_TASK_ID: taskId }),
+        ...cleanEnv,
+        DELEGATE_WORKER: 'true',
+        ...(taskId && { DELEGATE_TASK_ID: taskId }),
       };
 
       const child = spawn(this.claudeCommand, args, {
@@ -95,7 +101,7 @@ export class ClaudeProcessSpawner implements ProcessSpawner {
         this.killTimeouts.set(pid, timeoutId);
       },
       (error) =>
-        new ClaudineError(ErrorCode.PROCESS_KILL_FAILED, `Failed to kill process ${pid}: ${error}`, { pid, error }),
+        new DelegateError(ErrorCode.PROCESS_KILL_FAILED, `Failed to kill process ${pid}: ${error}`, { pid, error }),
     );
   }
 

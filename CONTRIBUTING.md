@@ -1,17 +1,17 @@
-# Contributing to Claudine
+# Contributing to Delegate
 
 ## Development Setup
 
 ```bash
-git clone https://github.com/dean0x/claudine.git
-cd claudine
+git clone https://github.com/dean0x/delegate.git
+cd delegate
 npm install
 npm run build
 ```
 
 ## Running Tests
 
-Claudine uses [Vitest](https://vitest.dev/) with grouped test commands. The full suite is memory-intensive, so tests are split into safe groups:
+Delegate uses [Vitest](https://vitest.dev/) with grouped test commands. The full suite is memory-intensive, so tests are split into safe groups:
 
 ```bash
 # Safe to run from Claude Code or any environment
@@ -45,7 +45,7 @@ Biome enforces `noExplicitAny` as an error in `src/` and a warning in `tests/`. 
 
 ## Architecture
 
-Claudine uses an event-driven architecture. Key rules:
+Delegate uses an event-driven architecture. Key rules:
 
 - **All state changes go through EventBus** - no direct repository access from services
 - **Commands** use fire-and-forget `emit()`

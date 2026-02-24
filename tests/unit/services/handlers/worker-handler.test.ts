@@ -10,7 +10,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Configuration } from '../../../../src/core/configuration';
-import { ClaudineError, ErrorCode, taskNotFound } from '../../../../src/core/errors';
+import type { Task, Worker } from '../../../../src/core/domain';
+import { DelegateError, ErrorCode, taskNotFound } from '../../../../src/core/errors';
 import type { ResourceMonitor, WorkerPool } from '../../../../src/core/interfaces';
 import { err, ok } from '../../../../src/core/result';
 import { WorkerHandler } from '../../../../src/services/handlers/worker-handler';
@@ -21,13 +22,13 @@ import { TestEventBus, TestLogger } from '../../../fixtures/test-doubles';
  * Mock WorkerPool for testing
  */
 class MockWorkerPool implements WorkerPool {
-  spawnCalls: any[] = [];
-  killCalls: any[] = [];
+  spawnCalls: Task[] = [];
+  killCalls: string[] = [];
   killAllCalls: number = 0;
   workerCount = 0;
-  workers = new Map<string, any>();
+  workers = new Map<string, Worker>();
 
-  async spawn(task: any) {
+  async spawn(task: Task) {
     this.spawnCalls.push(task);
     const worker = new WorkerFactory().withTaskId(task.id).build();
     this.workers.set(worker.id, worker);
@@ -442,7 +443,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
     it('should decrement resource monitor worker count on timeout', async () => {
       resourceMonitor.incrementWorkerCount();
       const task = new TaskFactory().build();
-      const error = new ClaudineError(ErrorCode.TASK_TIMEOUT, 'Task timed out', { taskId: task.id });
+      const error = new DelegateError(ErrorCode.TASK_TIMEOUT, 'Task timed out', { taskId: task.id });
 
       await workerHandler.onWorkerTimeout(task.id, error);
 
@@ -451,7 +452,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
     it('should emit TaskTimeout event when worker times out', async () => {
       const task = new TaskFactory().build();
-      const error = new ClaudineError(ErrorCode.TASK_TIMEOUT, 'Task timed out', { taskId: task.id });
+      const error = new DelegateError(ErrorCode.TASK_TIMEOUT, 'Task timed out', { taskId: task.id });
 
       await workerHandler.onWorkerTimeout(task.id, error);
 
@@ -460,7 +461,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
     it('should include error in TaskTimeout event', async () => {
       const task = new TaskFactory().build();
-      const error = new ClaudineError(ErrorCode.TASK_TIMEOUT, 'Task exceeded 5 minute limit', {
+      const error = new DelegateError(ErrorCode.TASK_TIMEOUT, 'Task exceeded 5 minute limit', {
         taskId: task.id,
         timeoutMs: 300000,
       });
@@ -520,7 +521,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       // Make spawn fail
       workerPool.spawn = vi
         .fn()
-        .mockResolvedValue(err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {})));
+        .mockResolvedValue(err(new DelegateError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {})));
 
       resourceMonitor.setCanSpawn(true);
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
@@ -536,7 +537,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
       workerPool.spawn = vi
         .fn()
-        .mockResolvedValue(err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {})));
+        .mockResolvedValue(err(new DelegateError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {})));
 
       resourceMonitor.setCanSpawn(true);
       eventBus.setRequestResponse('NextTaskQuery', ok(task));
@@ -551,7 +552,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
       const task = new TaskFactory().withPrompt('test task').build();
 
       // Simulate error in event processing
-      eventBus.setRequestResponse('NextTaskQuery', err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'Query failed', {})));
+      eventBus.setRequestResponse('NextTaskQuery', err(new DelegateError(ErrorCode.SYSTEM_ERROR, 'Query failed', {})));
 
       resourceMonitor.setCanSpawn(true);
 
@@ -651,7 +652,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
         workerPool.spawn = vi
           .fn()
-          .mockResolvedValue(err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {})));
+          .mockResolvedValue(err(new DelegateError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {})));
 
         resourceMonitor.setCanSpawn(true);
         eventBus.setRequestResponse('NextTaskQuery', ok(task));
@@ -725,7 +726,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
         workerPool.spawn = vi
           .fn()
-          .mockResolvedValue(err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {})));
+          .mockResolvedValue(err(new DelegateError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {})));
 
         resourceMonitor.setCanSpawn(true);
         eventBus.setRequestResponse('NextTaskQuery', ok(task));
@@ -743,7 +744,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
         resourceMonitor.setCanSpawn(true);
         eventBus.setRequestResponse('NextTaskQuery', ok(null)); // Empty queue
 
-        await eventBus.emit('TaskQueued', { taskId: 'test' as any, task: {} as any });
+        await eventBus.emit('TaskQueued', { taskId: 'test', task: {} as unknown as Task });
         await eventBus.flushHandlers();
 
         // Should not emit any task lifecycle events
@@ -779,7 +780,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
 
         workerPool.spawn = vi
           .fn()
-          .mockResolvedValue(err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {})));
+          .mockResolvedValue(err(new DelegateError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {})));
 
         resourceMonitor.setCanSpawn(true);
         eventBus.setRequestResponse('NextTaskQuery', ok(task));
@@ -903,7 +904,7 @@ describe('WorkerHandler - Event-Driven Worker Lifecycle', () => {
           callCount++;
           if (callCount === 1) {
             // First spawn fails
-            return err(new ClaudineError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {}));
+            return err(new DelegateError(ErrorCode.PROCESS_SPAWN_FAILED, 'Spawn failed', {}));
           }
           // Subsequent spawns succeed (but won't happen due to delay)
           return ok(new WorkerFactory().build());

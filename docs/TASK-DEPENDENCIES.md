@@ -1,6 +1,6 @@
 # Task Dependencies
 
-Claudine supports task dependencies through a DAG (Directed Acyclic Graph) based dependency system. Tasks can depend on other tasks, and Claudine ensures that dependent tasks only execute after their dependencies have completed.
+Delegate supports task dependencies through a DAG (Directed Acyclic Graph) based dependency system. Tasks can depend on other tasks, and Delegate ensures that dependent tasks only execute after their dependencies have completed.
 
 ## Architecture
 
@@ -39,7 +39,7 @@ const test = await taskManager.delegate({
 
 **CLI:**
 ```bash
-claudine delegate "npm test" --depends-on task-abc123 --continue-from task-abc123
+delegate delegate "npm test" --depends-on task-abc123 --continue-from task-abc123
 ```
 
 ### Dependency-Aware Queueing

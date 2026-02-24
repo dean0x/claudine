@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Claudine will be documented in this file.
+All notable changes to Delegate will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -134,7 +134,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Atomic check-and-add operations using better-sqlite3
   - Verified protection with concurrent operation tests
 - **Error Handling Improvements**:
-  - Preserve semantic ClaudineError types in addDependency (TASK_NOT_FOUND, INVALID_OPERATION)
+  - Preserve semantic DelegateError types in addDependency (TASK_NOT_FOUND, INVALID_OPERATION)
   - Fixed error masking that converted validation failures to SYSTEM_ERROR
   - Migration error handling only catches "no such table" errors
   - Re-throws permission, corruption, and connection errors
@@ -186,10 +186,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### 🚀 Major Features
 - **🖥️ CLI Interface**: Direct task management without MCP connection
-  - `claudine delegate <prompt>`: Delegate tasks directly
-  - `claudine status [task-id]`: Check task status
-  - `claudine logs <task-id>`: Retrieve task output
-  - `claudine cancel <task-id> [reason]`: Cancel running tasks
+  - `delegate delegate <prompt>`: Delegate tasks directly
+  - `delegate status [task-id]`: Check task status
+  - `delegate logs <task-id>`: Retrieve task output
+  - `delegate cancel <task-id> [reason]`: Cancel running tasks
 - **🏗️ Event-Driven Architecture**: Complete architectural overhaul
   - EventBus-based coordination across all components
   - Event handlers for persistence, queue, worker, and output management
@@ -336,7 +336,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Upgrading to v0.2.0
 
 #### For New Users
-- Install via npm: `npm install -g claudine`
+- Install via npm: `npm install -g @dean0x/delegate`
 - Configure MCP: See [README.md](./README.md#configuration) for setup instructions
 - No migration needed for new installations
 
@@ -356,5 +356,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Documentation**: See [README.md](./README.md) for setup and usage
 - **Features**: See [FEATURES.md](./FEATURES.md) for complete feature list
 - **Roadmap**: See [ROADMAP.md](./ROADMAP.md) for future plans
-- **Issues**: Report bugs at [GitHub Issues](https://github.com/dean0x/claudine/issues)
-- **Discussions**: Feature requests at [GitHub Discussions](https://github.com/dean0x/claudine/discussions)
+- **Issues**: Report bugs at [GitHub Issues](https://github.com/dean0x/delegate/issues)
+- **Discussions**: Feature requests at [GitHub Discussions](https://github.com/dean0x/delegate/discussions)

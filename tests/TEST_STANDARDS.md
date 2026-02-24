@@ -1,4 +1,4 @@
-# Claudine Test Standards and Guidelines
+# Delegate Test Standards and Guidelines
 
 **Version**: 2.0.0
 **Last Updated**: 2025-01-26

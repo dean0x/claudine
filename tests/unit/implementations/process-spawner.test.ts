@@ -8,9 +8,9 @@ import { createTestConfiguration } from '../../fixtures/factories';
 import { createMockChildProcess } from '../../fixtures/test-helpers';
 
 // Mock child_process module
-let mockSpawnImpl: any = () => null;
+let mockSpawnImpl: (...args: unknown[]) => ChildProcess | null = () => null;
 vi.mock('child_process', () => ({
-  spawn: (...args: any[]) => mockSpawnImpl(...args),
+  spawn: (...args: unknown[]) => mockSpawnImpl(...args),
 }));
 
 describe('ClaudeProcessSpawner - Behavioral Tests', () => {
@@ -36,7 +36,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
     }) as ChildProcess & EventEmitter;
 
     // Create a spy function that tracks calls
-    spawnSpy = vi.fn((...args: any[]) => mockProcess);
+    spawnSpy = vi.fn((...args: unknown[]) => mockProcess);
     mockSpawnImpl = spawnSpy;
   });
 
@@ -88,7 +88,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
         expect(result.error).toBeInstanceOf(Error);
         expect(result.error.message).toContain('Command not found');
         expect(typeof result.error.message).toBe('string');
-        expect(result.error.name).toBe('ClaudineError');
+        expect(result.error.name).toBe('DelegateError');
         expect(result.error.stack).toBeDefined();
       }
       if (!result.ok) {
@@ -205,7 +205,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
         }
         return true;
       });
-      process.kill = processKillSpy as any;
+      process.kill = processKillSpy as typeof process.kill;
     });
 
     afterEach(() => {
@@ -254,7 +254,7 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
         expect(result.error.code).toBe('PROCESS_KILL_FAILED');
         expect(result.error.message).toContain('99999');
         expect(result.error.message).toContain('No such process');
-        expect(result.error.name).toBe('ClaudineError');
+        expect(result.error.name).toBe('DelegateError');
         expect(result.error.context).toBeDefined();
         expect(result.error.context?.pid).toBe(invalidPid);
         expect(typeof result.error.message).toBe('string');
@@ -319,19 +319,19 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
       const spawnCall = spawnSpy.mock.calls[0];
       expect(spawnCall[2].env.CUSTOM_VAR).toBe('test-value');
       expect(spawnCall[2].env.PATH).toBe('/usr/bin:/bin');
-      expect(spawnCall[2].env.CLAUDINE_WORKER).toBe('true');
+      expect(spawnCall[2].env.DELEGATE_WORKER).toBe('true');
 
       process.env = originalEnv;
     });
 
-    it('should add CLAUDINE_TASK_ID when task ID provided', () => {
+    it('should add DELEGATE_TASK_ID when task ID provided', () => {
       const taskId = 'task-abc-123';
       const result = spawner.spawn('test', '/tmp', taskId);
 
       expect(result.ok).toBe(true);
       const spawnCall = spawnSpy.mock.calls[0];
-      expect(spawnCall[2].env.CLAUDINE_TASK_ID).toBe(taskId);
-      expect(spawnCall[2].env.CLAUDINE_WORKER).toBe('true');
+      expect(spawnCall[2].env.DELEGATE_TASK_ID).toBe(taskId);
+      expect(spawnCall[2].env.DELEGATE_WORKER).toBe('true');
     });
   });
 
@@ -427,6 +427,112 @@ describe('ClaudeProcessSpawner - Behavioral Tests', () => {
       expect(vi.getTimerCount()).toBe(0);
 
       vi.useRealTimers();
+    });
+  });
+
+  describe('Environment variable handling', () => {
+    it('should strip all Claude Code nesting indicators from worker environment', () => {
+      // Capture originals for restoration
+      const saved: Record<string, string | undefined> = {};
+      const varsToSet: Record<string, string> = {
+        CLAUDECODE: 'true',
+        CLAUDE_CODE_ENTRYPOINT: 'cli',
+        CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+      };
+
+      for (const key of Object.keys(varsToSet)) {
+        saved[key] = process.env[key];
+        process.env[key] = varsToSet[key];
+      }
+
+      try {
+        const result = spawner.spawn('test task', '/tmp', 'task-123');
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const spawnCall = spawnSpy.mock.calls[0];
+          const env = (spawnCall[2] as { env: Record<string, string> }).env;
+
+          // All nesting indicators must be stripped
+          expect(env.CLAUDECODE).toBeUndefined();
+          expect(env.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
+          expect(env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS).toBeUndefined();
+
+          // Delegate vars must be present
+          expect(env.DELEGATE_WORKER).toBe('true');
+          expect(env.DELEGATE_TASK_ID).toBe('task-123');
+        }
+      } finally {
+        for (const [key, original] of Object.entries(saved)) {
+          if (original !== undefined) {
+            process.env[key] = original;
+          } else {
+            delete process.env[key];
+          }
+        }
+      }
+    });
+
+    it('should strip all CLAUDE_CODE_* prefixed env vars', () => {
+      const saved = process.env.CLAUDE_CODE_FUTURE_FLAG;
+      process.env.CLAUDE_CODE_FUTURE_FLAG = 'enabled';
+
+      try {
+        const result = spawner.spawn('test task', '/tmp');
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const spawnCall = spawnSpy.mock.calls[0];
+          const env = (spawnCall[2] as { env: Record<string, string> }).env;
+
+          expect(env.CLAUDE_CODE_FUTURE_FLAG).toBeUndefined();
+        }
+      } finally {
+        if (saved !== undefined) {
+          process.env.CLAUDE_CODE_FUTURE_FLAG = saved;
+        } else {
+          delete process.env.CLAUDE_CODE_FUTURE_FLAG;
+        }
+      }
+    });
+
+    it('should preserve non-Claude-Code env vars', () => {
+      const saved: Record<string, string | undefined> = {};
+      const safeVars: Record<string, string> = {
+        CLAUDE_API_KEY: 'sk-test-key',
+        ANTHROPIC_API_KEY: 'sk-ant-key',
+        PATH: '/usr/bin:/bin',
+        HOME: '/home/test',
+      };
+
+      for (const key of Object.keys(safeVars)) {
+        saved[key] = process.env[key];
+        process.env[key] = safeVars[key];
+      }
+
+      try {
+        const result = spawner.spawn('test task', '/tmp');
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const spawnCall = spawnSpy.mock.calls[0];
+          const env = (spawnCall[2] as { env: Record<string, string> }).env;
+
+          // These must NOT be stripped
+          expect(env.CLAUDE_API_KEY).toBe('sk-test-key');
+          expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-key');
+          expect(env.PATH).toBe('/usr/bin:/bin');
+          expect(env.HOME).toBe('/home/test');
+        }
+      } finally {
+        for (const [key, original] of Object.entries(saved)) {
+          if (original !== undefined) {
+            process.env[key] = original;
+          } else {
+            delete process.env[key];
+          }
+        }
+      }
     });
   });
 });

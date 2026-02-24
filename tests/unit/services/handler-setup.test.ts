@@ -190,7 +190,7 @@ describe('handler-setup', () => {
 
       // Verify handlers are working by checking event subscriptions exist
       // The eventBus should have subscriptions for all handler event types
-      const subscriptionCount = (eventBus as any).handlers?.size ?? 0;
+      const subscriptionCount = (eventBus as unknown as { handlers?: Map<string, unknown[]> }).handlers?.size ?? 0;
 
       // With all handlers setup, we should have multiple event subscriptions
       // PersistenceHandler: TaskDelegated, TaskStarted, TaskCompleted, TaskFailed, etc.
@@ -228,12 +228,12 @@ describe('handler-setup', () => {
       // Mock DependencyHandler.create() to return an error
       const { DependencyHandler } = await import('../../../src/services/handlers/dependency-handler');
       const { err } = await import('../../../src/core/result');
-      const { ClaudineError, ErrorCode } = await import('../../../src/core/errors');
+      const { DelegateError, ErrorCode } = await import('../../../src/core/errors');
 
       const originalCreate = DependencyHandler.create;
       DependencyHandler.create = vi
         .fn()
-        .mockResolvedValue(err(new ClaudineError(ErrorCode.INTERNAL_ERROR, 'DependencyHandler creation failed')));
+        .mockResolvedValue(err(new DelegateError(ErrorCode.INTERNAL_ERROR, 'DependencyHandler creation failed')));
 
       try {
         const result = await setupEventHandlers(depsResult.value);

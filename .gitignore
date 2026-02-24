@@ -19,7 +19,7 @@ logs/
 Thumbs.db
 
 # Config files with local paths
-config/claudine-config.json
+config/delegate-config.json
 config/mcp-config-snippet.json
 config/mcp-config-ready.json
 
@@ -27,6 +27,7 @@ config/mcp-config-ready.json
 .worktrees/
 task-outputs/
 data/
+.delegate-patches/
 
 # Package files
 *.tgz
@@ -52,12 +53,15 @@ temp/
 *.sqlite3
 
 
+# Launch marketing materials (keep local only)
+launch/
+
 # Internal documentation (keep local only)
 .docs/
 .claude/
 .mcp.json
 output/
-.claudine/
+.delegate/
 
 # Local memory/session files
 .memory/

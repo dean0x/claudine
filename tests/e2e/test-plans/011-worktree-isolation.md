@@ -24,8 +24,8 @@ preconditions:
 **Action:** Verify git repository exists
 ```bash
 git status || git init
-git config user.email "test@claudine.ai" || true
-git config user.name "Claudine Test" || true
+git config user.email "test@delegate.ai" || true
+git config user.name "Delegate Test" || true
 ```
 **Expected:** Git repository ready
 **Verify:**
@@ -201,8 +201,8 @@ git worktree prune
 # Clean branches
 git branch -D test-worktree-1 test-keep test-delete concurrent-1 concurrent-2 concurrent-3 from-base test-base 2>/dev/null || true
 # Clean directories
-rm -rf .worktrees/ .claudine/
-pkill -f "claudine" || true
+rm -rf .worktrees/ .delegate/
+pkill -f "delegate" || true
 ```
 **Expected:** Cleanup successful
 **Verify:**

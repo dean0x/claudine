@@ -70,7 +70,7 @@ export const createMockEventBus = () => {
       handlers.get(event)!.add(handler);
       return () => handlers.get(event)?.delete(handler);
     },
-    emit: (event: string, payload: any) => {
+    emit: (event: string, payload: unknown) => {
       const eventHandlers = handlers.get(event) || [];
       const wildcardHandlers = handlers.get('*') || [];
 
@@ -83,7 +83,7 @@ export const createMockEventBus = () => {
       });
     },
     once: (event: string, handler: Function) => {
-      const wrapper = (data: any) => {
+      const wrapper = (data: unknown) => {
         handler(data);
         handlers.get(event)?.delete(wrapper);
       };

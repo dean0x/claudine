@@ -714,10 +714,8 @@ describe('DependencyHandler - Behavioral Tests', () => {
         expect(addSpy).not.toHaveBeenCalled();
 
         // Should NOT emit any dependency events
-        const events = (eventBus as any).emittedEvents || [];
-        const depEvents = events.filter(
-          (e: any) => e.type === 'TaskDependencyAdded' || e.type === 'TaskDependencyFailed',
-        );
+        const events = (eventBus as unknown as { emittedEvents?: Array<{ type: string }> }).emittedEvents || [];
+        const depEvents = events.filter((e) => e.type === 'TaskDependencyAdded' || e.type === 'TaskDependencyFailed');
         expect(depEvents).toHaveLength(0);
       });
 
@@ -811,7 +809,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
         await taskRepo.save(child);
 
         // Track emitted events
-        let addedEvents: any[] = [];
+        let addedEvents: Array<Record<string, unknown>> = [];
         eventBus.subscribe('TaskDependencyAdded', async (event) => {
           addedEvents.push(event);
         });
@@ -857,9 +855,9 @@ describe('DependencyHandler - Behavioral Tests', () => {
         });
         await taskRepo.save(child);
 
-        let failedEvent: any = null;
+        let failedEvent: Record<string, unknown> | null = null;
         eventBus.subscribe('TaskDependencyFailed', async (event) => {
-          failedEvent = event;
+          failedEvent = event as Record<string, unknown>;
         });
 
         await eventBus.emit('TaskDelegated', { task: child });
@@ -867,7 +865,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
 
         // Should have emitted failure event
         expect(failedEvent).not.toBeNull();
-        expect(failedEvent.taskId).toBe(child.id);
+        expect(failedEvent!.taskId).toBe(child.id);
       });
     });
 
@@ -883,9 +881,9 @@ describe('DependencyHandler - Behavioral Tests', () => {
         await flushEventLoop();
 
         // Track failure events
-        let failedEvent: any = null;
+        let failedEvent: Record<string, unknown> | null = null;
         eventBus.subscribe('TaskDependencyFailed', async (event) => {
-          failedEvent = event;
+          failedEvent = event as Record<string, unknown>;
         });
 
         // Try to create cycle
@@ -895,7 +893,7 @@ describe('DependencyHandler - Behavioral Tests', () => {
 
         // Cycle should trigger TaskDependencyFailed with cycle error
         expect(failedEvent).not.toBeNull();
-        expect(failedEvent.error.message).toContain('would create cycle');
+        expect((failedEvent!.error as Error).message).toContain('would create cycle');
       });
 
       it('INVARIANT: Database errors log as ERROR (unexpected system error)', async () => {
@@ -949,9 +947,8 @@ describe('DependencyHandler - Behavioral Tests', () => {
       }
       handlerWithCheckpoint = handlerResult.value;
 
-      // Store references for use in tests
-      (this as any).__enrichTaskRepo = enrichTaskRepo;
-      (this as any).__enrichDepRepo = enrichDepRepo;
+      // NOTE: enrichTaskRepo and enrichDepRepo are created per-test below
+      // as test-local variables, avoiding `this` context entirely
     });
 
     afterEach(async () => {

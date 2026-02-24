@@ -22,24 +22,24 @@ const noOpLogger: Logger = {
 };
 
 /**
- * SQLite database wrapper for Claudine task persistence.
+ * SQLite database wrapper for Delegate task persistence.
  *
  * @remarks
  * Database location can be configured via environment variables:
- * - `CLAUDINE_DATABASE_PATH`: Full absolute path to database file (e.g., `/tmp/test.db`)
- * - `CLAUDINE_DATA_DIR`: Directory to store `claudine.db` (e.g., `~/.claudine`)
- * - Default: `~/.claudine/claudine.db`
+ * - `DELEGATE_DATABASE_PATH`: Full absolute path to database file (e.g., `/tmp/test.db`)
+ * - `DELEGATE_DATA_DIR`: Directory to store `delegate.db` (e.g., `~/.delegate`)
+ * - Default: `~/.delegate/delegate.db`
  *
  * Security: Both environment variables are validated to prevent path traversal attacks.
  * Paths must be absolute and cannot contain `..` sequences.
  *
  * @example
  * ```typescript
- * // Use default path (~/.claudine/claudine.db)
+ * // Use default path (~/.delegate/delegate.db)
  * const db = new Database();
  *
  * // Use custom path (for testing)
- * process.env.CLAUDINE_DATABASE_PATH = '/tmp/test.db';
+ * process.env.DELEGATE_DATABASE_PATH = '/tmp/test.db';
  * const testDb = new Database();
  * ```
  */
@@ -89,50 +89,50 @@ export class Database {
     // Allow override via environment variables
     // SECURITY: Validate environment variables to prevent path traversal
 
-    // CLAUDINE_DATABASE_PATH: Full path to database file (used by tests)
-    if (process.env.CLAUDINE_DATABASE_PATH) {
-      const dbPath = process.env.CLAUDINE_DATABASE_PATH;
+    // DELEGATE_DATABASE_PATH: Full path to database file (used by tests)
+    if (process.env.DELEGATE_DATABASE_PATH) {
+      const dbPath = process.env.DELEGATE_DATABASE_PATH;
 
       // Validate path is absolute and doesn't contain traversal
       if (!path.isAbsolute(dbPath)) {
-        throw new Error('CLAUDINE_DATABASE_PATH must be an absolute path');
+        throw new Error('DELEGATE_DATABASE_PATH must be an absolute path');
       }
 
       const normalized = path.normalize(dbPath);
       if (normalized.includes('..')) {
-        throw new Error('CLAUDINE_DATABASE_PATH must not contain path traversal sequences (..)');
+        throw new Error('DELEGATE_DATABASE_PATH must not contain path traversal sequences (..)');
       }
 
       return normalized;
     }
 
-    // CLAUDINE_DATA_DIR: Directory containing claudine.db
-    if (process.env.CLAUDINE_DATA_DIR) {
-      const dataDir = process.env.CLAUDINE_DATA_DIR;
+    // DELEGATE_DATA_DIR: Directory containing delegate.db
+    if (process.env.DELEGATE_DATA_DIR) {
+      const dataDir = process.env.DELEGATE_DATA_DIR;
 
       // Validate path is absolute and doesn't contain traversal
       if (!path.isAbsolute(dataDir)) {
-        throw new Error('CLAUDINE_DATA_DIR must be an absolute path');
+        throw new Error('DELEGATE_DATA_DIR must be an absolute path');
       }
 
       const normalized = path.normalize(dataDir);
       if (normalized.includes('..')) {
-        throw new Error('CLAUDINE_DATA_DIR must not contain path traversal sequences (..)');
+        throw new Error('DELEGATE_DATA_DIR must not contain path traversal sequences (..)');
       }
 
-      return path.join(normalized, 'claudine.db');
+      return path.join(normalized, 'delegate.db');
     }
 
     // Platform-specific defaults
     const homeDir = os.homedir();
 
     if (process.platform === 'win32') {
-      // Windows: %APPDATA%/claudine
+      // Windows: %APPDATA%/delegate
       const appData = process.env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
-      return path.join(appData, 'claudine', 'claudine.db');
+      return path.join(appData, 'delegate', 'delegate.db');
     } else {
-      // Linux/Mac: ~/.claudine
-      return path.join(homeDir, '.claudine', 'claudine.db');
+      // Linux/Mac: ~/.delegate
+      return path.join(homeDir, '.delegate', 'delegate.db');
     }
   }
 

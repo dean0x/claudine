@@ -19,7 +19,7 @@ import { TestLogger } from '../fixtures/test-doubles.js';
 
 describe('Integration: Task persistence', () => {
   it('should persist tasks across restarts', async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), 'claudine-test-'));
+    const tempDir = await mkdtemp(join(tmpdir(), 'delegate-test-'));
     const dbPath = join(tempDir, 'test.db');
     const logger = new TestLogger();
 
@@ -119,7 +119,7 @@ describe('Integration: Task persistence', () => {
   });
 
   it('should handle database transaction rollback', async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), 'claudine-test-'));
+    const tempDir = await mkdtemp(join(tmpdir(), 'delegate-test-'));
     const dbPath = join(tempDir, 'test.db');
 
     try {
@@ -157,7 +157,7 @@ describe('Integration: Task persistence', () => {
   });
 
   it('should maintain queue persistence and priority ordering', async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), 'claudine-test-'));
+    const tempDir = await mkdtemp(join(tmpdir(), 'delegate-test-'));
     const dbPath = join(tempDir, 'test.db');
     const logger = new TestLogger();
 
@@ -170,7 +170,7 @@ describe('Integration: Task persistence', () => {
       const eventBus = new InMemoryEventBus(config, logger);
 
       // Setup persistence handler with promise tracking
-      const updatePromises: Promise<any>[] = [];
+      const updatePromises: Promise<unknown>[] = [];
 
       eventBus.on('TaskQueued', async (data) => {
         const promise = repository.update(data.task.id, { status: 'queued' });
@@ -238,7 +238,7 @@ describe('Integration: Task persistence', () => {
   });
 
   it('should handle concurrent database operations', async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), 'claudine-test-'));
+    const tempDir = await mkdtemp(join(tmpdir(), 'delegate-test-'));
     const dbPath = join(tempDir, 'test.db');
 
     try {
@@ -287,7 +287,7 @@ describe('Integration: Task persistence', () => {
   });
 
   it('should recover with partial data', async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), 'claudine-test-'));
+    const tempDir = await mkdtemp(join(tmpdir(), 'delegate-test-'));
     const dbPath = join(tempDir, 'test.db');
     const logger = new TestLogger();
 

@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Configuration } from '../../../src/core/configuration';
 import type { DelegateRequest, Task, TaskCheckpoint } from '../../../src/core/domain';
 import { Priority, TaskId, TaskStatus } from '../../../src/core/domain';
-import { ClaudineError, ErrorCode } from '../../../src/core/errors';
+import { DelegateError, ErrorCode } from '../../../src/core/errors';
 import type { EventBus } from '../../../src/core/events/event-bus';
 import type { CheckpointRepository, Logger } from '../../../src/core/interfaces';
 import { err, ok } from '../../../src/core/result';
@@ -192,7 +192,7 @@ describe('TaskManagerService', () => {
     });
 
     it('should return error when event emission fails', async () => {
-      const emitError = new ClaudineError(ErrorCode.SYSTEM_ERROR, 'bus failure');
+      const emitError = new DelegateError(ErrorCode.SYSTEM_ERROR, 'bus failure');
       eventBus.emit.mockResolvedValue(err(emitError));
 
       const result = await service.delegate(baseRequest);
@@ -227,12 +227,12 @@ describe('TaskManagerService', () => {
 
         expect(result.ok).toBe(false);
         if (result.ok) return;
-        expect(result.error).toBeInstanceOf(ClaudineError);
-        expect((result.error as ClaudineError).code).toBe(ErrorCode.TASK_NOT_FOUND);
+        expect(result.error).toBeInstanceOf(DelegateError);
+        expect((result.error as DelegateError).code).toBe(ErrorCode.TASK_NOT_FOUND);
       });
 
       it('should return error when continueFrom lookup fails', async () => {
-        eventBus.request.mockResolvedValue(err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'query failed')));
+        eventBus.request.mockResolvedValue(err(new DelegateError(ErrorCode.SYSTEM_ERROR, 'query failed')));
 
         const result = await service.delegate({
           prompt: 'continue work',
@@ -335,12 +335,12 @@ describe('TaskManagerService', () => {
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error).toBeInstanceOf(ClaudineError);
-      expect((result.error as ClaudineError).code).toBe(ErrorCode.TASK_NOT_FOUND);
+      expect(result.error).toBeInstanceOf(DelegateError);
+      expect((result.error as DelegateError).code).toBe(ErrorCode.TASK_NOT_FOUND);
     });
 
     it('should propagate event bus errors', async () => {
-      const busError = new ClaudineError(ErrorCode.SYSTEM_ERROR, 'query failed');
+      const busError = new DelegateError(ErrorCode.SYSTEM_ERROR, 'query failed');
       eventBus.request.mockResolvedValue(err(busError));
 
       const result = await service.getStatus(TaskId('any'));
@@ -388,7 +388,7 @@ describe('TaskManagerService', () => {
     });
 
     it('should propagate event bus errors', async () => {
-      const busError = new ClaudineError(ErrorCode.SYSTEM_ERROR, 'logs failed');
+      const busError = new DelegateError(ErrorCode.SYSTEM_ERROR, 'logs failed');
       eventBus.request.mockResolvedValue(err(busError));
 
       const result = await service.getLogs(TaskId('any'));
@@ -423,7 +423,7 @@ describe('TaskManagerService', () => {
     });
 
     it('should return error when event emission fails', async () => {
-      const emitError = new ClaudineError(ErrorCode.SYSTEM_ERROR, 'emit failed');
+      const emitError = new DelegateError(ErrorCode.SYSTEM_ERROR, 'emit failed');
       eventBus.emit.mockResolvedValue(err(emitError));
 
       const result = await service.cancel(TaskId('cancel-1'));
@@ -499,8 +499,8 @@ describe('TaskManagerService', () => {
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error).toBeInstanceOf(ClaudineError);
-      expect((result.error as ClaudineError).code).toBe(ErrorCode.INVALID_OPERATION);
+      expect(result.error).toBeInstanceOf(DelegateError);
+      expect((result.error as DelegateError).code).toBe(ErrorCode.INVALID_OPERATION);
     });
 
     it('should reject retry for a queued task', async () => {
@@ -514,7 +514,7 @@ describe('TaskManagerService', () => {
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect((result.error as ClaudineError).code).toBe(ErrorCode.INVALID_OPERATION);
+      expect((result.error as DelegateError).code).toBe(ErrorCode.INVALID_OPERATION);
     });
 
     it('should return error when task not found', async () => {
@@ -523,11 +523,11 @@ describe('TaskManagerService', () => {
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect((result.error as ClaudineError).code).toBe(ErrorCode.TASK_NOT_FOUND);
+      expect((result.error as DelegateError).code).toBe(ErrorCode.TASK_NOT_FOUND);
     });
 
     it('should propagate event bus query errors', async () => {
-      eventBus.request.mockResolvedValue(err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'bus down')));
+      eventBus.request.mockResolvedValue(err(new DelegateError(ErrorCode.SYSTEM_ERROR, 'bus down')));
 
       const result = await service.retry(TaskId('any'));
 
@@ -537,7 +537,7 @@ describe('TaskManagerService', () => {
     it('should return error when TaskDelegated emission fails', async () => {
       const failedTask = buildFailedTask({ id: TaskId('fail-emit') });
       eventBus.request.mockResolvedValue(ok(failedTask));
-      eventBus.emit.mockResolvedValue(err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'emit failed')));
+      eventBus.emit.mockResolvedValue(err(new DelegateError(ErrorCode.SYSTEM_ERROR, 'emit failed')));
 
       const result = await service.retry(TaskId('fail-emit'));
 
@@ -659,7 +659,7 @@ describe('TaskManagerService', () => {
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect((result.error as ClaudineError).code).toBe(ErrorCode.TASK_NOT_FOUND);
+      expect((result.error as DelegateError).code).toBe(ErrorCode.TASK_NOT_FOUND);
     });
 
     it('should reject resume for a running task', async () => {
@@ -672,7 +672,7 @@ describe('TaskManagerService', () => {
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect((result.error as ClaudineError).code).toBe(ErrorCode.INVALID_OPERATION);
+      expect((result.error as DelegateError).code).toBe(ErrorCode.INVALID_OPERATION);
     });
 
     it('should reject resume for a queued task', async () => {
@@ -685,7 +685,7 @@ describe('TaskManagerService', () => {
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect((result.error as ClaudineError).code).toBe(ErrorCode.INVALID_OPERATION);
+      expect((result.error as DelegateError).code).toBe(ErrorCode.INVALID_OPERATION);
     });
 
     it('should create enriched task without checkpoint when repo has none', async () => {
@@ -815,7 +815,7 @@ describe('TaskManagerService', () => {
     it('should return error when TaskDelegated emission fails', async () => {
       const failed = buildFailedTask({ id: TaskId('fail-emit') });
       eventBus.request.mockResolvedValue(ok(failed));
-      eventBus.emit.mockResolvedValue(err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'emit failed')));
+      eventBus.emit.mockResolvedValue(err(new DelegateError(ErrorCode.SYSTEM_ERROR, 'emit failed')));
 
       const result = await svcWithCheckpoint.resume({
         taskId: TaskId('fail-emit'),
@@ -831,7 +831,7 @@ describe('TaskManagerService', () => {
       });
       eventBus.request.mockResolvedValue(ok(failed));
       (checkpointRepo.findLatest as ReturnType<typeof vi.fn>).mockResolvedValue(
-        err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'db error')),
+        err(new DelegateError(ErrorCode.SYSTEM_ERROR, 'db error')),
       );
 
       const result = await svcWithCheckpoint.resume({
@@ -860,7 +860,7 @@ describe('TaskManagerService', () => {
     });
 
     it('should propagate event bus query errors', async () => {
-      eventBus.request.mockResolvedValue(err(new ClaudineError(ErrorCode.SYSTEM_ERROR, 'query failed')));
+      eventBus.request.mockResolvedValue(err(new DelegateError(ErrorCode.SYSTEM_ERROR, 'query failed')));
 
       const result = await svcWithCheckpoint.resume({
         taskId: TaskId('any'),

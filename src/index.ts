@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Claudine MCP Server - New Architecture
+ * Delegate MCP Server - New Architecture
  * Main entry point with autoscaling
  */
 
@@ -25,7 +25,7 @@ process.on('unhandledRejection', (error) => {
 
 async function main() {
   // Set process title for easy identification in ps/pgrep/pkill
-  process.title = 'claudine-mcp';
+  process.title = 'delegate-mcp';
 
   let container: Container | null = null;
   let autoscaler: AutoscalingManager | null = null;
@@ -57,7 +57,7 @@ async function main() {
     autoscaler = autoscalerResult.value;
 
     // All logs go to stderr to keep stdout clean for MCP protocol
-    logger.info(`Starting Claudine MCP Server v${pkg.version}`);
+    logger.info(`Starting Delegate MCP Server v${pkg.version}`);
 
     // Start autoscaling
     autoscaler.start();
@@ -103,7 +103,7 @@ async function main() {
     process.on('SIGTERM', () => shutdown('SIGTERM'));
 
     // Log ready state
-    logger.info('Claudine is ready', {
+    logger.info('Delegate is ready', {
       autoscaling: true,
       cpuThreshold: process.env.CPU_THRESHOLD || '80',
       memoryReserve: process.env.MEMORY_RESERVE || '1GB',

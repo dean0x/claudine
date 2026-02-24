@@ -6,7 +6,7 @@
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { ClaudineError, ErrorCode } from '../core/errors.js';
+import { DelegateError, ErrorCode } from '../core/errors.js';
 import { err, ok, Result } from '../core/result.js';
 
 const execFileAsync = promisify(execFile);
@@ -68,7 +68,7 @@ export async function captureGitState(workingDirectory: string): Promise<Result<
     return ok({ branch, commitSha, dirtyFiles });
   } catch (error) {
     return err(
-      new ClaudineError(
+      new DelegateError(
         ErrorCode.SYSTEM_ERROR,
         `Failed to capture git state: ${error instanceof Error ? error.message : String(error)}`,
         { workingDirectory },

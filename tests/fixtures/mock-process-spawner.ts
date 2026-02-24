@@ -1,6 +1,6 @@
 import { ChildProcess, spawn } from 'child_process';
 import { EventEmitter } from 'events';
-import { ClaudineError } from '../../src/core/errors';
+import { DelegateError } from '../../src/core/errors';
 import { ProcessSpawner } from '../../src/core/interfaces';
 import { err, ok, Result } from '../../src/core/result';
 
@@ -16,7 +16,7 @@ export class MockProcessSpawner implements ProcessSpawner {
 
   spawn(prompt: string, workingDirectory: string, taskId?: string): Result<{ process: ChildProcess; pid: number }> {
     if (this.shouldFail) {
-      return err(new ClaudineError(this.failureMessage, 'SPAWN_FAILED'));
+      return err(new DelegateError(this.failureMessage, 'SPAWN_FAILED'));
     }
 
     // Simulate Claude command execution
@@ -32,7 +32,7 @@ export class MockProcessSpawner implements ProcessSpawner {
     setTimeout(() => mockProcess.execute(), 10);
 
     return ok({
-      process: mockProcess as any,
+      process: mockProcess as unknown as ChildProcess,
       pid: mockProcess.pid,
     });
   }
@@ -143,8 +143,8 @@ class MockChildProcess extends EventEmitter {
     this.executionDelay = executionDelay;
 
     // Make stdout and stderr look like streams
-    (this.stdout as any).pipe = () => this.stdout;
-    (this.stderr as any).pipe = () => this.stderr;
+    (this.stdout as unknown as Record<string, unknown>).pipe = () => this.stdout;
+    (this.stderr as unknown as Record<string, unknown>).pipe = () => this.stderr;
   }
 
   execute(): void {
@@ -192,7 +192,7 @@ class MockChildProcess extends EventEmitter {
     } else if (this.prompt.includes('pwd')) {
       // Simulate pwd command
       this.timeout = setTimeout(() => {
-        this.stdout.emit('data', Buffer.from('/workspace/claudine\n'));
+        this.stdout.emit('data', Buffer.from('/workspace/delegate\n'));
         this.exitCode = 0;
         this.emit('exit', 0, null);
       }, this.executionDelay);

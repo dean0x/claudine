@@ -136,10 +136,10 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
     }
 
     return new EventDrivenWorkerPool(
-      spawnerResult.value as any,
+      spawnerResult.value as ClaudeProcessSpawner,
       loggerResult.value as Logger,
       eventBusResult.value as EventBus,
-      captureResult.value as any,
+      captureResult.value as BufferedOutputCapture,
     );
   });
 
@@ -160,10 +160,10 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
 
     return new TaskManagerService(
       eventBusResult.value as EventBus,
-      repoResult.ok ? (repoResult.value as any) : undefined,
+      repoResult.ok ? (repoResult.value as SQLiteTaskRepository) : undefined,
       loggerResult.value as Logger,
       configResult.value as Configuration,
-      captureResult.ok ? (captureResult.value as any) : undefined,
+      captureResult.ok ? (captureResult.value as BufferedOutputCapture) : undefined,
     );
   });
 
@@ -185,8 +185,8 @@ export async function createTestContainer(options: TestContainerOptions = {}): P
       }
 
       const manager = new AutoscalingManager(
-        poolResult.value as any,
-        monitorResult.value as any,
+        poolResult.value as EventDrivenWorkerPool,
+        monitorResult.value as ResourceMonitor,
         loggerResult.value as Logger,
         configResult.value as Configuration,
         eventBusResult.value as EventBus,

@@ -1,6 +1,6 @@
 # Integration Tests
 
-This directory contains integration tests that verify component interactions and service coordination within Claudine.
+This directory contains integration tests that verify component interactions and service coordination within Delegate.
 
 ## Overview
 

@@ -6,7 +6,7 @@ import { bootstrap } from '../../src/bootstrap.js';
 import { Container } from '../../src/core/container.js';
 import { Priority, Task, TaskId } from '../../src/core/domain.js';
 import { EventBus, TaskDependencyFailedEvent } from '../../src/core/events/events.js';
-import { DependencyRepository, TaskManager } from '../../src/core/interfaces.js';
+import { DependencyRepository, TaskManager, TaskQueue } from '../../src/core/interfaces.js';
 import { Database } from '../../src/implementations/database.js';
 import { TestResourceMonitor } from '../../src/implementations/resource-monitor.js';
 import { NoOpProcessSpawner } from '../fixtures/no-op-spawner.js';
@@ -22,8 +22,8 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
 
   beforeEach(async () => {
     // Create isolated temp directory for each test
-    tempDir = await mkdtemp(join(tmpdir(), 'claudine-deps-test-'));
-    process.env.CLAUDINE_DATABASE_PATH = join(tempDir, 'test.db');
+    tempDir = await mkdtemp(join(tmpdir(), 'delegate-deps-test-'));
+    process.env.DELEGATE_DATABASE_PATH = join(tempDir, 'test.db');
 
     const result = await bootstrap({
       processSpawner: new NoOpProcessSpawner(),
@@ -66,7 +66,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       await container.dispose();
     }
     // Clean up env var and temp directory
-    delete process.env.CLAUDINE_DATABASE_PATH;
+    delete process.env.DELEGATE_DATABASE_PATH;
     if (tempDir) {
       await rm(tempDir, { recursive: true, force: true });
     }
@@ -487,7 +487,7 @@ describe('Integration: Task Dependencies - End-to-End Flow', () => {
       // If this fails, tasks will block forever even after dependencies complete
 
       // Get queue stats to verify Task B was enqueued
-      const queueResult = await container.get<any>('taskQueue');
+      const queueResult = container.get<TaskQueue>('taskQueue');
       if (!queueResult.ok) {
         throw new Error('Failed to get task queue');
       }

@@ -1,10 +1,10 @@
-# 🚀 Claudine Setup Guide for Claude Code
+# 🚀 Delegate Setup Guide for Claude Code
 
 ## Quick Setup (2 minutes)
 
-### Step 1: Build Claudine
+### Step 1: Build Delegate
 ```bash
-cd /workspace/claudine
+cd /workspace/delegate
 npm run build
 ```
 
@@ -26,9 +26,9 @@ cat ~/.config/claude/mcp_servers.json
 ```json
 {
   "mcpServers": {
-    "claudine": {
+    "delegate": {
       "command": "node",
-      "args": ["/workspace/claudine/dist/index.js"],
+      "args": ["/workspace/delegate/dist/index.js"],
       "env": {
         "MOCK_MODE": "true"
       }
@@ -40,7 +40,7 @@ cat ~/.config/claude/mcp_servers.json
 3. If it doesn't exist, create it:
 ```bash
 mkdir -p ~/.config/claude
-cp /workspace/claudine/config/mcp-config-ready.json ~/.config/claude/mcp_servers.json
+cp /workspace/delegate/config/mcp-config-ready.json ~/.config/claude/mcp_servers.json
 ```
 
 ### Step 3: Start NEW Claude Code Session
@@ -51,7 +51,7 @@ cp /workspace/claudine/config/mcp-config-ready.json ~/.config/claude/mcp_servers
 exit
 
 # Start fresh session
-claude "Let's test Claudine MCP tools"
+claude "Let's test Delegate MCP tools"
 ```
 
 ### Step 4: Test Integration
@@ -62,7 +62,7 @@ In the new Claude Code session, try:
    > "What MCP tools are available?"
 
 2. **Test delegation**:
-   > "Use DelegateTask to run: echo 'Claudine is working!'"
+   > "Use DelegateTask to run: echo 'Delegate is working!'"
 
 3. **Check status**:
    > "Use TaskStatus to check the current task"
@@ -79,14 +79,14 @@ When working correctly, you should see:
 ### "Tools not found"
 - Ensure NEW session (not --continue)
 - Check config exists: `ls ~/.config/claude/mcp_servers.json`
-- Verify path is correct: `/workspace/claudine/dist/index.js`
+- Verify path is correct: `/workspace/delegate/dist/index.js`
 
 ### "Server won't start"
 ```bash
 # Test directly
-MOCK_MODE=true node /workspace/claudine/dist/index.js
+MOCK_MODE=true node /workspace/delegate/dist/index.js
 
-# Should see: "Claudine MCP Server running"
+# Should see: "Delegate MCP Server running"
 ```
 
 ### "Build errors"
@@ -106,7 +106,7 @@ To use with actual Claude CLI (not mock):
 
 ## What You Can Do Now
 
-With Claudine running, you can:
+With Delegate running, you can:
 
 1. **Parallel Development**:
    > "Use DelegateTask to run: Update all test files while I work on the API"
@@ -132,7 +132,7 @@ ls -la ~/.config/claude/mcp_servers.json
 cat ~/.config/claude/mcp_servers.json
 
 # Test server directly
-MOCK_MODE=true timeout 5 node /workspace/claudine/dist/index.js
+MOCK_MODE=true timeout 5 node /workspace/delegate/dist/index.js
 
 # Run full validation
 npm run validate
@@ -140,7 +140,7 @@ npm run validate
 
 ## Success! 🎉
 
-Once you see the tools in Claude Code, Claudine is ready!
+Once you see the tools in Claude Code, Delegate is ready!
 You can now delegate tasks to background Claude Code instances.
 
 ---

@@ -10,7 +10,7 @@ import { promisify } from 'util';
 const execAsync = promisify(exec);
 
 import { Task, TaskId, Worker, WorkerId } from '../core/domain.js';
-import { ClaudineError, ErrorCode, taskTimeout } from '../core/errors.js';
+import { DelegateError, ErrorCode, taskTimeout } from '../core/errors.js';
 import { EventBus } from '../core/events/event-bus.js';
 import {
   CompletionResult,
@@ -62,7 +62,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
     }
 
     if (!canSpawnResult.value) {
-      return err(new ClaudineError(ErrorCode.INSUFFICIENT_RESOURCES, 'Insufficient resources to spawn worker'));
+      return err(new DelegateError(ErrorCode.INSUFFICIENT_RESOURCES, 'Insufficient resources to spawn worker'));
     }
 
     // Handle git worktree creation if requested
@@ -140,7 +140,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
       }
 
       return err(
-        new ClaudineError(ErrorCode.WORKER_SPAWN_FAILED, `Failed to spawn worker: ${spawnResult.error.message}`),
+        new DelegateError(ErrorCode.WORKER_SPAWN_FAILED, `Failed to spawn worker: ${spawnResult.error.message}`),
       );
     }
 
@@ -189,7 +189,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
     const worker = this.workers.get(workerId);
 
     if (!worker) {
-      return err(new ClaudineError(ErrorCode.WORKER_NOT_FOUND, `Worker ${workerId} not found`));
+      return err(new DelegateError(ErrorCode.WORKER_NOT_FOUND, `Worker ${workerId} not found`));
     }
 
     this.logger.info('Killing worker', {
@@ -235,7 +235,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
 
       return ok(undefined);
     } catch (error) {
-      return err(new ClaudineError(ErrorCode.WORKER_KILL_FAILED, `Failed to kill worker: ${error}`));
+      return err(new DelegateError(ErrorCode.WORKER_KILL_FAILED, `Failed to kill worker: ${error}`));
     }
   }
 
@@ -406,7 +406,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
       await this.eventBus.emit('TaskFailed', {
         taskId,
         exitCode,
-        error: new ClaudineError(ErrorCode.TASK_EXECUTION_FAILED, `Task failed with exit code ${exitCode}`),
+        error: new DelegateError(ErrorCode.TASK_EXECUTION_FAILED, `Task failed with exit code ${exitCode}`),
       });
     }
 
@@ -463,7 +463,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
     await this.eventBus.emit('TaskFailed', {
       taskId,
       exitCode: 1,
-      error: new ClaudineError(ErrorCode.TASK_EXECUTION_FAILED, `Worker process error: ${error.message}`),
+      error: new DelegateError(ErrorCode.TASK_EXECUTION_FAILED, `Worker process error: ${error.message}`),
     });
   }
 

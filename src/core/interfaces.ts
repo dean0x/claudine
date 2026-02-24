@@ -19,7 +19,7 @@ import {
   Worker,
   WorkerId,
 } from './domain.js';
-import { BaseEvent, ClaudineEvent, EventHandler } from './events/events.js';
+import { BaseEvent, DelegateEvent, EventHandler } from './events/events.js';
 import { Result } from './result.js';
 
 /**

@@ -23,8 +23,8 @@ preconditions:
 ### Step 1: Clean State
 **Action:** Ensure clean starting state
 ```bash
-rm -rf .claudine/
-pkill -f "claudine" || true
+rm -rf .delegate/
+pkill -f "delegate" || true
 ```
 **Expected:** Clean state achieved
 **Verify:**
@@ -204,8 +204,8 @@ done
 ### Step 15: Cleanup
 **Action:** Clean up test artifacts
 ```bash
-pkill -f "claudine" || true
-rm -rf .claudine/
+pkill -f "delegate" || true
+rm -rf .delegate/
 ```
 **Expected:** Cleanup successful
 **Verify:**
@@ -225,7 +225,7 @@ rm -rf .claudine/
 ## Rollback Plan
 If test fails:
 1. Kill all workers: `pkill -9 -f claude`
-2. Clear database: `rm -rf .claudine/`
+2. Clear database: `rm -rf .delegate/`
 3. Check for orphans: `ps aux | grep claude`
 4. Review retry logic in code
 

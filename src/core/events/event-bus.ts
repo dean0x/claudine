@@ -4,10 +4,10 @@
  */
 
 import { Configuration } from '../configuration.js';
-import { ClaudineError, ErrorCode } from '../errors.js';
+import { DelegateError, ErrorCode } from '../errors.js';
 import { Logger } from '../interfaces.js';
 import { err, ok, Result } from '../result.js';
-import { BaseEvent, ClaudineEvent, createEvent, EventHandler } from './events.js';
+import { BaseEvent, createEvent, DelegateEvent, EventHandler } from './events.js';
 
 /**
  * Event bus interface for dependency injection
@@ -16,12 +16,12 @@ import { BaseEvent, ClaudineEvent, createEvent, EventHandler } from './events.js
  * for pure event-driven architecture. All service operations go through this bus.
  */
 export interface EventBus {
-  emit<T extends ClaudineEvent>(type: T['type'], payload: Omit<T, keyof BaseEvent | 'type'>): Promise<Result<void>>;
-  request<T extends ClaudineEvent, R = unknown>(
+  emit<T extends DelegateEvent>(type: T['type'], payload: Omit<T, keyof BaseEvent | 'type'>): Promise<Result<void>>;
+  request<T extends DelegateEvent, R = unknown>(
     type: T['type'],
     payload: Omit<T, keyof BaseEvent | 'type'>,
   ): Promise<Result<R>>;
-  subscribe<T extends ClaudineEvent>(eventType: T['type'], handler: EventHandler<T>): Result<string>;
+  subscribe<T extends DelegateEvent>(eventType: T['type'], handler: EventHandler<T>): Result<string>;
   unsubscribe(subscriptionId: string): Result<void>;
   subscribeAll(handler: EventHandler): Result<string>;
   unsubscribeAll(): void;
@@ -145,7 +145,7 @@ export class InMemoryEventBus implements EventBus {
     });
   }
 
-  async emit<T extends ClaudineEvent>(
+  async emit<T extends DelegateEvent>(
     type: T['type'],
     payload: Omit<T, keyof BaseEvent | 'type'>,
   ): Promise<Result<void>> {
@@ -219,7 +219,7 @@ export class InMemoryEventBus implements EventBus {
 
         // Return error if any handler failed
         return err(
-          new ClaudineError(
+          new DelegateError(
             ErrorCode.SYSTEM_ERROR,
             `Event handler failures for ${type}: ${failures.map((f) => f.reason).join(', ')}`,
             { eventId: event.eventId, failures: failures.length },
@@ -235,7 +235,7 @@ export class InMemoryEventBus implements EventBus {
       });
 
       return err(
-        new ClaudineError(ErrorCode.SYSTEM_ERROR, `Event emission failed for ${type}: ${error}`, {
+        new DelegateError(ErrorCode.SYSTEM_ERROR, `Event emission failed for ${type}: ${error}`, {
           eventId: event.eventId,
         }),
       );
@@ -247,7 +247,7 @@ export class InMemoryEventBus implements EventBus {
    * ARCHITECTURE: Thread-safe implementation using correlation IDs and promises
    * Includes automatic timeout (default 5s) to prevent hanging queries
    */
-  async request<T extends ClaudineEvent, R = unknown>(
+  async request<T extends DelegateEvent, R = unknown>(
     type: T['type'],
     payload: Omit<T, keyof BaseEvent | 'type'>,
     timeoutMs: number = this.defaultRequestTimeoutMs,
@@ -265,7 +265,7 @@ export class InMemoryEventBus implements EventBus {
             correlationId,
             timeoutMs,
           });
-          resolve(err(new ClaudineError(ErrorCode.SYSTEM_ERROR, `Request timeout after ${timeoutMs}ms for ${type}`)));
+          resolve(err(new DelegateError(ErrorCode.SYSTEM_ERROR, `Request timeout after ${timeoutMs}ms for ${type}`)));
         }
       }, timeoutMs);
 
@@ -285,7 +285,7 @@ export class InMemoryEventBus implements EventBus {
             clearTimeout(timeoutId);
             this.pendingRequests.delete(correlationId);
             resolve(
-              err(error instanceof ClaudineError ? error : new ClaudineError(ErrorCode.SYSTEM_ERROR, error.message)),
+              err(error instanceof DelegateError ? error : new DelegateError(ErrorCode.SYSTEM_ERROR, error.message)),
             );
           }
         },
@@ -315,7 +315,7 @@ export class InMemoryEventBus implements EventBus {
       if (handlers.length === 0) {
         const pending = this.pendingRequests.get(correlationId);
         if (pending) {
-          pending.reject(new ClaudineError(ErrorCode.SYSTEM_ERROR, `No handlers registered for query: ${type}`));
+          pending.reject(new DelegateError(ErrorCode.SYSTEM_ERROR, `No handlers registered for query: ${type}`));
         }
         return;
       }
@@ -373,7 +373,7 @@ export class InMemoryEventBus implements EventBus {
     return false;
   }
 
-  subscribe<T extends ClaudineEvent>(eventType: T['type'], handler: EventHandler<T>): Result<string> {
+  subscribe<T extends DelegateEvent>(eventType: T['type'], handler: EventHandler<T>): Result<string> {
     // Check global subscription limit
     if (this.subscriptions.size >= this.maxTotalSubscriptions) {
       this.logger.error('Maximum total subscriptions reached', undefined, {
@@ -381,7 +381,7 @@ export class InMemoryEventBus implements EventBus {
         current: this.subscriptions.size,
       });
       return err(
-        new ClaudineError(
+        new DelegateError(
           ErrorCode.RESOURCE_LIMIT_EXCEEDED,
           `Maximum subscription limit (${this.maxTotalSubscriptions}) reached`,
         ),
@@ -426,7 +426,7 @@ export class InMemoryEventBus implements EventBus {
     const subscription = this.subscriptions.get(subscriptionId);
 
     if (!subscription) {
-      return err(new ClaudineError(ErrorCode.CONFIGURATION_ERROR, `Subscription not found: ${subscriptionId}`));
+      return err(new DelegateError(ErrorCode.CONFIGURATION_ERROR, `Subscription not found: ${subscriptionId}`));
     }
 
     // Remove from subscriptions map
@@ -505,7 +505,7 @@ export class InMemoryEventBus implements EventBus {
     const wrappedHandler: EventHandler = async (evt) => {
       handler(evt);
     };
-    // biome-ignore lint/suspicious/noExplicitAny: string event name can't be narrowed to ClaudineEvent union at this call site
+    // biome-ignore lint/suspicious/noExplicitAny: string event name can't be narrowed to DelegateEvent union at this call site
     const result = this.subscribe(event as any, wrappedHandler);
     return result.ok ? result.value : '';
   }
@@ -548,7 +548,7 @@ export class InMemoryEventBus implements EventBus {
         }
       }
     };
-    // biome-ignore lint/suspicious/noExplicitAny: string event name can't be narrowed to ClaudineEvent union at this call site
+    // biome-ignore lint/suspicious/noExplicitAny: string event name can't be narrowed to DelegateEvent union at this call site
     const result = this.subscribe(event as any, wrappedHandler);
     return result.ok ? result.value : '';
   }
@@ -560,15 +560,15 @@ export class InMemoryEventBus implements EventBus {
 export class NullEventBus implements EventBus {
   private subscriptionCounter = 0;
 
-  async emit<T extends ClaudineEvent>(): Promise<Result<void>> {
+  async emit<T extends DelegateEvent>(): Promise<Result<void>> {
     return ok(undefined);
   }
 
-  async request<T extends ClaudineEvent, R = unknown>(): Promise<Result<R>> {
+  async request<T extends DelegateEvent, R = unknown>(): Promise<Result<R>> {
     return ok(undefined as R);
   }
 
-  subscribe<T extends ClaudineEvent>(): Result<string> {
+  subscribe<T extends DelegateEvent>(): Result<string> {
     return ok(`null-sub-${++this.subscriptionCounter}`);
   }
 

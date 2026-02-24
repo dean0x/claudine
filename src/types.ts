@@ -32,13 +32,13 @@ export enum ErrorCode {
   INTERNAL_ERROR = 'INTERNAL_ERROR',
 }
 
-export class ClaudineError extends Error {
+export class DelegateError extends Error {
   constructor(
     public code: ErrorCode,
     message: string,
     public taskId?: string,
   ) {
     super(message);
-    this.name = 'ClaudineError';
+    this.name = 'DelegateError';
   }
 }

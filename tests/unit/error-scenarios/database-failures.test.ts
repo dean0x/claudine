@@ -5,6 +5,7 @@
  * ARCHITECTURE: These tests validate proper error handling for all database failure modes
  */
 
+import type SQLite from 'better-sqlite3';
 import { chmod, mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -14,6 +15,11 @@ import { Database } from '../../../src/implementations/database';
 import { SQLiteTaskRepository } from '../../../src/implementations/task-repository';
 import { DB_CONFIG, ERROR_MESSAGES, TEST_COUNTS, TIMEOUTS } from '../../constants';
 import { TaskFactory } from '../../fixtures/factories';
+
+/** Type-safe accessor for the private `db` field on Database (test-only). */
+interface DatabaseInternals {
+  db: SQLite.Database;
+}
 
 describe('Database Failure Scenarios', () => {
   let repository: SQLiteTaskRepository;
@@ -153,7 +159,7 @@ describe('Database Failure Scenarios', () => {
       database = new Database(dbPath);
 
       // Directly execute SQL to attempt inserting corrupted data
-      const db = (database as any).db;
+      const db = (database as unknown as DatabaseInternals).db;
 
       // Migration v3 added CHECK constraints on status and priority columns
       // This test verifies the defense-in-depth prevents invalid data at DB level
@@ -190,7 +196,7 @@ describe('Database Failure Scenarios', () => {
       database = new Database(dbPath);
 
       // Drop a column to simulate schema corruption
-      const db = (database as any).db;
+      const db = (database as unknown as DatabaseInternals).db;
 
       // Create a new table without status column (required field)
       db.exec(`
@@ -349,7 +355,7 @@ describe('Database Failure Scenarios', () => {
       database = new Database(dbPath);
 
       // Verify WAL mode is enabled
-      const db = (database as { db: any }).db;
+      const db = (database as unknown as DatabaseInternals).db;
       const walMode = db.prepare('PRAGMA journal_mode').get();
       expect(walMode.journal_mode).toBe('wal');
 
@@ -380,7 +386,7 @@ describe('Database Failure Scenarios', () => {
       database = new Database(dbPath);
 
       // Modify schema version
-      const db = (database as { db: any }).db;
+      const db = (database as unknown as DatabaseInternals).db;
       db.prepare('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER)').run();
       db.prepare('INSERT INTO schema_version (version) VALUES (999)').run();
 

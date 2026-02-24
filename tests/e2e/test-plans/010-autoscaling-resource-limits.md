@@ -34,8 +34,8 @@ which stress || echo "stress tool not found - install with: apt install stress"
 ### Step 2: Clean State
 **Action:** Ensure clean starting state
 ```bash
-rm -rf .claudine/
-pkill -f "claudine" || true
+rm -rf .delegate/
+pkill -f "delegate" || true
 pkill -f "stress" || true
 ```
 **Expected:** Clean state achieved
@@ -230,8 +230,8 @@ echo "Workers under combined load: $workers_combined"
 **Action:** Clean up all test artifacts
 ```bash
 pkill -f "stress" || true
-pkill -f "claudine" || true
-rm -rf .claudine/
+pkill -f "delegate" || true
+rm -rf .delegate/
 ```
 **Expected:** Cleanup successful
 **Verify:**

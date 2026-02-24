@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Task } from '../../../src/core/domain.js';
+import { type Task, TaskId } from '../../../src/core/domain.js';
 import { Database } from '../../../src/implementations/database.js';
 import { SQLiteTaskRepository } from '../../../src/implementations/task-repository.js';
 import { createTestTask } from '../../fixtures/test-data.js';
@@ -154,8 +154,8 @@ describe('SQLiteTaskRepository', () => {
       }
 
       // Delete 2 tasks
-      await repo.delete('task-0' as any);
-      await repo.delete('task-1' as any);
+      await repo.delete(TaskId('task-0'));
+      await repo.delete(TaskId('task-1'));
 
       const result = await repo.count();
       expect(result.ok).toBe(true);
@@ -172,7 +172,7 @@ describe('SQLiteTaskRepository', () => {
       });
       await repo.save(task);
 
-      const result = await repo.findById('task-with-continue' as any);
+      const result = await repo.findById(TaskId('task-with-continue'));
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value).not.toBeNull();
@@ -185,7 +185,7 @@ describe('SQLiteTaskRepository', () => {
       });
       await repo.save(task);
 
-      const result = await repo.findById('task-no-continue' as any);
+      const result = await repo.findById(TaskId('task-no-continue'));
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value).not.toBeNull();
@@ -199,12 +199,12 @@ describe('SQLiteTaskRepository', () => {
       await repo.save(task);
 
       // Update with continueFrom
-      const updateResult = await repo.update('task-update-continue' as any, {
-        continueFrom: 'task-dep-456' as any,
+      const updateResult = await repo.update(TaskId('task-update-continue'), {
+        continueFrom: TaskId('task-dep-456'),
       });
       expect(updateResult.ok).toBe(true);
 
-      const result = await repo.findById('task-update-continue' as any);
+      const result = await repo.findById(TaskId('task-update-continue'));
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value!.continueFrom).toBe('task-dep-456');
@@ -220,7 +220,7 @@ describe('SQLiteTaskRepository', () => {
       const saveResult = await repo.save(task);
       expect(saveResult.ok).toBe(true);
 
-      const findResult = await repo.findById('task-migration-test' as any);
+      const findResult = await repo.findById(TaskId('task-migration-test'));
       expect(findResult.ok).toBe(true);
       if (findResult.ok && findResult.value) {
         expect(findResult.value.continueFrom).toBe('task-parent-migration');

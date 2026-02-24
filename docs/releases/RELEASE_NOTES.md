@@ -1,17 +1,19 @@
-# 🚀 Claudine v0.2.0 - Latest Release
+# 🚀 Delegate v0.4.0 - Latest Release
 
-See [RELEASE_NOTES_v0.2.0.md](./RELEASE_NOTES_v0.2.0.md) for the latest release notes.
+See [RELEASE_NOTES_v0.4.0.md](./RELEASE_NOTES_v0.4.0.md) for the latest release notes.
 
 ## Previous Releases
+- [v0.3.0](./RELEASE_NOTES_v0.3.0.md) - Task Dependencies & DAG Support
+- [v0.2.0](./RELEASE_NOTES_v0.2.0.md) - Concurrent Execution & Auto-scaling
 - [v0.1.0](./RELEASE_NOTES_v0.1.0.md) - Initial Release
 
 ---
 
-# 🚀 Claudine v0.1.0 - Initial Release
+# 🚀 Delegate v0.1.0 - Initial Release
 
-## Introducing Claudine: Your MCP Sidekick for Claude Code
+## Introducing Delegate: Your MCP Sidekick for Claude Code
 
-Claudine is an MCP (Model Context Protocol) server that enables Claude Code to delegate tasks to background Claude Code instances, allowing for true parallel task execution without context switching.
+Delegate is an MCP (Model Context Protocol) server that enables Claude Code to delegate tasks to background Claude Code instances, allowing for true parallel task execution without context switching.
 
 ## ✨ Features
 
@@ -31,8 +33,8 @@ Claudine is an MCP (Model Context Protocol) server that enables Claude Code to d
 
 ```bash
 # Clone the repository
-git clone https://github.com/dean0x/claudine.git
-cd claudine
+git clone https://github.com/dean0x/delegate.git
+cd delegate
 
 # Install and build
 npm install
@@ -72,9 +74,9 @@ Add to `~/.config/claude/mcp_servers.json`:
 ```json
 {
   "mcpServers": {
-    "claudine": {
+    "delegate": {
       "command": "node",
-      "args": ["/path/to/claudine/dist/index.js"],
+      "args": ["/path/to/delegate/dist/index.js"],
       "env": {}
     }
   }
@@ -125,13 +127,13 @@ MIT License - see [LICENSE](./LICENSE) file for details
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/dean0x/claudine/issues)
+- **Issues**: [GitHub Issues](https://github.com/dean0x/delegate/issues)
 - **Documentation**: [Full Docs](./docs/)
 - **Examples**: [Use Cases](./examples/use-cases.md)
 
 ## 🎉 Get Started
 
-1. Install Claudine
+1. Install Delegate
 2. Configure MCP
 3. Start delegating tasks!
 
@@ -139,6 +141,6 @@ Ready to parallelize your development workflow? Let's go! 🚀
 
 ---
 
-**Repository**: https://github.com/dean0x/claudine  
+**Repository**: https://github.com/dean0x/delegate  
 **Version**: 0.1.0  
 **Release Date**: August 16, 2024

@@ -8,14 +8,14 @@
 - **Dependencies:** MCP server running, sufficient resources
 
 ## Test Description
-Verify that Claudine can handle multiple concurrent tasks and properly manage worker pool scaling.
+Verify that Delegate can handle multiple concurrent tasks and properly manage worker pool scaling.
 
 ## Prerequisites
 ```yaml
 preconditions:
   - At least 4GB RAM available
   - CPU usage below 50%
-  - No running claudine processes
+  - No running delegate processes
 ```
 
 ## Test Steps
@@ -23,7 +23,7 @@ preconditions:
 ### Step 1: Start MCP Server
 **Action:** Start MCP server with debug logging
 ```bash
-LOG_LEVEL=debug claudine mcp start &
+LOG_LEVEL=debug delegate mcp start &
 ```
 **Expected:** Server starts with debug logging enabled
 **Verify:** Process running
@@ -32,7 +32,7 @@ LOG_LEVEL=debug claudine mcp start &
 **Action:** Submit 5 tasks in quick succession
 ```bash
 for i in {1..5}; do
-  claudine delegate "sleep $((i*2)) && echo Task $i completed"
+  delegate delegate "sleep $((i*2)) && echo Task $i completed"
 done
 ```
 **Expected:** All tasks are accepted
@@ -49,7 +49,7 @@ ps aux | grep 'claude ' | grep -v grep | wc -l
 ### Step 4: Verify Concurrent Execution
 **Action:** Check all tasks are running or queued
 ```bash
-claudine status
+delegate status
 ```
 **Expected:** Tasks in various states
 **Verify:** 
@@ -61,7 +61,7 @@ claudine status
 **Action:** Wait for all tasks to complete
 ```bash
 sleep 15
-claudine status
+delegate status
 ```
 **Expected:** All tasks completed
 **Verify:** All 5 tasks show COMPLETED status
@@ -70,7 +70,7 @@ claudine status
 **Action:** Check task outputs
 ```bash
 for i in {1..5}; do
-  claudine logs $(claudine status --json | jq -r ".tasks[$((i-1))].id")
+  delegate logs $(delegate status --json | jq -r ".tasks[$((i-1))].id")
 done
 ```
 **Expected:** Each task has correct output
@@ -87,7 +87,7 @@ ps aux | grep 'claude ' | grep -v grep
 ### Step 8: Cleanup
 **Action:** Stop server
 ```bash
-killall claudine
+killall delegate
 ```
 **Expected:** Clean shutdown
 **Verify:** All processes terminated

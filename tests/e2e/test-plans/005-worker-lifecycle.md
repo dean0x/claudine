@@ -168,7 +168,7 @@ sleep 7 && node dist/cli.js status $(node dist/cli.js status --json 2>/dev/null 
 **Action:** Clean up all test artifacts
 ```bash
 pkill -f "claude" || true
-rm -rf .claudine/claudine.db*
+rm -rf .delegate/delegate.db*
 ```
 **Expected:** Cleanup successful
 **Verify:**
