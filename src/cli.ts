@@ -7,8 +7,17 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { bootstrap } from './bootstrap.js';
+import type { Container } from './core/container.js';
 import type { DelegateRequest, Task } from './core/domain.js';
 import { Priority, ScheduleId, TaskId } from './core/domain.js';
+import type { EventBus } from './core/events/event-bus.js';
+import type {
+  OutputCapturedEvent,
+  TaskCancelledEvent,
+  TaskCompletedEvent,
+  TaskFailedEvent,
+  TaskTimeoutEvent,
+} from './core/events/events.js';
 import type { ScheduleService, TaskManager } from './core/interfaces.js';
 import { validateBufferSize, validatePath, validateTimeout } from './utils/validation.js';
 
@@ -68,6 +77,7 @@ MCP Server Commands:
 
 Task Commands:
   delegate <prompt> [options]  Delegate a task to Claude Code (runs in current directory by default)
+    -d, --detach               Fire-and-forget mode (exit immediately, don't wait for completion)
     -p, --priority P0|P1|P2    Task priority (P0=critical, P1=high, P2=normal)
     -w, --working-directory D  Working directory for task execution
     --depends-on TASK_IDS      Comma-separated task IDs this task depends on (blocks until complete)
@@ -195,6 +205,71 @@ Learn more: https://github.com/dean0x/delegate#configuration
 `);
 }
 
+/**
+ * Subscribe to EventBus events for a specific task and wait for terminal state.
+ * Streams OutputCaptured to stdout/stderr in real-time.
+ * Returns the worker's exit code (0 = success, non-zero = failure).
+ */
+function waitForTaskCompletion(container: Container, taskId: string): Promise<number> {
+  const eventBusResult = container.get<EventBus>('eventBus');
+  if (!eventBusResult.ok) {
+    console.error('❌ Failed to get event bus:', eventBusResult.error.message);
+    return Promise.resolve(1);
+  }
+  const eventBus = eventBusResult.value;
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    const subscriptionIds: string[] = [];
+
+    const cleanup = () => {
+      for (const id of subscriptionIds) {
+        eventBus.unsubscribe(id);
+      }
+    };
+
+    const resolveOnce = (exitCode: number) => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve(exitCode);
+    };
+
+    // Stream output in real-time
+    const outputSub = eventBus.subscribe<OutputCapturedEvent>('OutputCaptured', async (event) => {
+      if (event.taskId !== taskId) return;
+      const stream = event.outputType === 'stderr' ? process.stderr : process.stdout;
+      stream.write(event.data);
+    });
+    if (outputSub.ok) subscriptionIds.push(outputSub.value);
+
+    // Terminal states
+    const completedSub = eventBus.subscribe<TaskCompletedEvent>('TaskCompleted', async (event) => {
+      if (event.taskId !== taskId) return;
+      resolveOnce(event.exitCode);
+    });
+    if (completedSub.ok) subscriptionIds.push(completedSub.value);
+
+    const failedSub = eventBus.subscribe<TaskFailedEvent>('TaskFailed', async (event) => {
+      if (event.taskId !== taskId) return;
+      resolveOnce(event.exitCode ?? 1);
+    });
+    if (failedSub.ok) subscriptionIds.push(failedSub.value);
+
+    const cancelledSub = eventBus.subscribe<TaskCancelledEvent>('TaskCancelled', async (event) => {
+      if (event.taskId !== taskId) return;
+      resolveOnce(1);
+    });
+    if (cancelledSub.ok) subscriptionIds.push(cancelledSub.value);
+
+    const timeoutSub = eventBus.subscribe<TaskTimeoutEvent>('TaskTimeout', async (event) => {
+      if (event.taskId !== taskId) return;
+      resolveOnce(1);
+    });
+    if (timeoutSub.ok) subscriptionIds.push(timeoutSub.value);
+  });
+}
+
 async function delegateTask(
   prompt: string,
   options?: {
@@ -213,20 +288,26 @@ async function delegateTask(
     prBody?: string;
     timeout?: number;
     maxOutputBuffer?: number;
+    detach?: boolean;
   },
 ) {
+  let container: Container | undefined;
   try {
     console.log('🚀 Bootstrapping Delegate...');
-    const containerResult = await bootstrap({ skipScheduleExecutor: true });
+    const containerResult = await bootstrap({
+      skipScheduleExecutor: true,
+      skipResourceMonitoring: true,
+    });
     if (!containerResult.ok) {
       console.error('❌ Bootstrap failed:', containerResult.error.message);
       process.exit(1);
     }
-    const container = containerResult.value;
+    container = containerResult.value;
 
     const taskManagerResult = await container.resolve<TaskManager>('taskManager');
     if (!taskManagerResult.ok) {
       console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
+      await container.dispose();
       process.exit(1);
     }
 
@@ -257,22 +338,46 @@ async function delegateTask(
       if (options.useWorktree) console.log('  Use Worktree:', options.useWorktree);
       if (options.timeout) console.log('  Timeout:', options.timeout, 'ms');
       if (options.maxOutputBuffer) console.log('  Max Output Buffer:', options.maxOutputBuffer, 'bytes');
+      if (options.detach) console.log('  Mode: detached (fire-and-forget)');
     }
 
     const result = await taskManager.delegate(request);
-    if (result.ok) {
-      const task = result.value;
-      console.log('✅ Task delegated successfully!');
-      console.log('📋 Task ID:', task.id);
-      console.log('🔍 Status:', task.status);
-      console.log('⏰ Check status with: delegate status', task.id);
-      process.exit(0);
-    } else {
+    if (!result.ok) {
       console.error('❌ Failed to delegate task:', result.error.message);
+      await container.dispose();
       process.exit(1);
     }
+
+    const task = result.value;
+    console.log('✅ Task delegated successfully!');
+    console.log('📋 Task ID:', task.id);
+
+    // Detach mode: print status instructions and exit immediately
+    if (options?.detach) {
+      console.log('🔍 Status:', task.status);
+      console.log('⏰ Check status with: delegate status', task.id);
+      await container.dispose();
+      process.exit(0);
+    }
+
+    // Default: wait for worker completion with real-time output streaming
+    let cancelledBySigint = false;
+    const sigintHandler = () => {
+      console.error('\n🛑 Cancelling task...');
+      cancelledBySigint = true;
+      taskManager.cancel(task.id, 'User interrupted (SIGINT)');
+    };
+    process.on('SIGINT', sigintHandler);
+
+    console.log('⏳ Waiting for task completion... (Ctrl+C to cancel)');
+    const exitCode = await waitForTaskCompletion(container, task.id);
+
+    process.removeListener('SIGINT', sigintHandler);
+    await container.dispose();
+    process.exit(cancelledBySigint ? 130 : exitCode);
   } catch (error) {
     console.error('❌ Error:', error);
+    if (container) await container.dispose();
     process.exit(1);
   }
 }
@@ -1044,6 +1149,7 @@ if (mainCommand === 'mcp') {
     prBody?: string;
     timeout?: number;
     maxOutputBuffer?: number;
+    detach?: boolean;
   } = {
     useWorktree: true, // Default: use worktree
     worktreeCleanup: 'auto', // Default: smart cleanup
@@ -1185,6 +1291,8 @@ if (mainCommand === 'mcp') {
       }
       options.maxOutputBuffer = bufferResult.value;
       i++; // skip next arg
+    } else if (arg === '--detach' || arg === '-d') {
+      options.detach = true;
     } else if (arg.startsWith('-')) {
       console.error(`❌ Unknown flag: ${arg}`);
       process.exit(1);
@@ -1197,6 +1305,7 @@ if (mainCommand === 'mcp') {
   if (!prompt) {
     console.error('❌ Usage: delegate "<prompt>" [options]');
     console.error('Options:');
+    console.error('  -d, --detach                  Fire-and-forget mode (exit immediately)');
     console.error('  -p, --priority P0|P1|P2      Task priority (P0=critical, P1=high, P2=normal)');
     console.error('  -w, --working-directory DIR   Working directory for task execution');
     console.error('');
@@ -1219,8 +1328,8 @@ if (mainCommand === 'mcp') {
     console.error('  --max-output-buffer BYTES     Maximum output buffer size');
     console.error('');
     console.error('Examples:');
-    console.error('  delegate "refactor auth"                     # Default: PR with worktree');
-    console.error('  delegate "quick fix" --no-worktree           # Direct execution');
+    console.error('  delegate "refactor auth"                     # Wait for completion (default)');
+    console.error('  delegate "quick fix" --detach                # Fire-and-forget');
     console.error('  delegate "feature" --strategy auto           # Auto-merge');
     console.error('  delegate "experiment" --keep-worktree        # Preserve worktree');
     process.exit(1);

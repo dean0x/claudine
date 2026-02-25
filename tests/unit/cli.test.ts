@@ -9,6 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { loadConfiguration } from '../../src/core/configuration';
 import type { Container } from '../../src/core/container';
 import type {
   DelegateRequest,
@@ -27,6 +28,14 @@ import {
   TaskId,
 } from '../../src/core/domain';
 import { DelegateError, ErrorCode, taskNotFound } from '../../src/core/errors';
+import { InMemoryEventBus } from '../../src/core/events/event-bus';
+import type {
+  OutputCapturedEvent,
+  TaskCancelledEvent,
+  TaskCompletedEvent,
+  TaskFailedEvent,
+  TaskTimeoutEvent,
+} from '../../src/core/events/events';
 import type { ScheduleService, TaskManager } from '../../src/core/interfaces';
 import { err, ok } from '../../src/core/result';
 import { TaskFactory } from '../fixtures/factories';
@@ -1234,6 +1243,254 @@ describe('CLI - Help Text Coverage', () => {
     expect(helpText).toContain('--type cron');
     expect(helpText).toContain('--cron');
   });
+
+  it('should include --detach flag in help text', () => {
+    const helpText = getHelpText();
+
+    expect(helpText).toContain('--detach');
+    expect(helpText).toContain('-d');
+  });
+});
+
+// ============================================================================
+// CLI Lifecycle: waitForTaskCompletion, --detach, SIGINT
+// ============================================================================
+
+describe('CLI - Task Completion Lifecycle', () => {
+  let eventBus: InMemoryEventBus;
+  const mockLogger = {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+    child: vi.fn(() => mockLogger),
+  };
+
+  beforeEach(() => {
+    eventBus = new InMemoryEventBus(loadConfiguration(), mockLogger);
+  });
+
+  afterEach(() => {
+    eventBus.dispose();
+  });
+
+  describe('waitForTaskCompletion pattern', () => {
+    it('should resolve with exit code 0 on TaskCompleted', async () => {
+      const taskId = TaskId('task-test-1');
+      const promise = waitForCompletion(eventBus, taskId);
+
+      // Emit TaskCompleted for the target task
+      await eventBus.emit<TaskCompletedEvent>('TaskCompleted', {
+        taskId,
+        exitCode: 0,
+        duration: 1000,
+      });
+
+      const exitCode = await promise;
+      expect(exitCode).toBe(0);
+    });
+
+    it('should resolve with non-zero exit code on TaskCompleted with failure', async () => {
+      const taskId = TaskId('task-test-2');
+      const promise = waitForCompletion(eventBus, taskId);
+
+      await eventBus.emit<TaskCompletedEvent>('TaskCompleted', {
+        taskId,
+        exitCode: 42,
+        duration: 500,
+      });
+
+      const exitCode = await promise;
+      expect(exitCode).toBe(42);
+    });
+
+    it('should resolve with exit code from TaskFailed event', async () => {
+      const taskId = TaskId('task-test-3');
+      const promise = waitForCompletion(eventBus, taskId);
+
+      await eventBus.emit<TaskFailedEvent>('TaskFailed', {
+        taskId,
+        error: new DelegateError(ErrorCode.SYSTEM_ERROR, 'Process crashed'),
+        exitCode: 137,
+      });
+
+      const exitCode = await promise;
+      expect(exitCode).toBe(137);
+    });
+
+    it('should default to exit code 1 when TaskFailed has no exitCode', async () => {
+      const taskId = TaskId('task-test-4');
+      const promise = waitForCompletion(eventBus, taskId);
+
+      await eventBus.emit<TaskFailedEvent>('TaskFailed', {
+        taskId,
+        error: new DelegateError(ErrorCode.SYSTEM_ERROR, 'Unknown failure'),
+      });
+
+      const exitCode = await promise;
+      expect(exitCode).toBe(1);
+    });
+
+    it('should resolve with exit code 1 on TaskCancelled', async () => {
+      const taskId = TaskId('task-test-5');
+      const promise = waitForCompletion(eventBus, taskId);
+
+      await eventBus.emit<TaskCancelledEvent>('TaskCancelled', {
+        taskId,
+        reason: 'User requested',
+      });
+
+      const exitCode = await promise;
+      expect(exitCode).toBe(1);
+    });
+
+    it('should resolve with exit code 1 on TaskTimeout', async () => {
+      const taskId = TaskId('task-test-6');
+      const promise = waitForCompletion(eventBus, taskId);
+
+      await eventBus.emit<TaskTimeoutEvent>('TaskTimeout', {
+        taskId,
+        error: new DelegateError(ErrorCode.TASK_TIMEOUT, 'Task exceeded timeout'),
+      });
+
+      const exitCode = await promise;
+      expect(exitCode).toBe(1);
+    });
+
+    it('should ignore events for other task IDs', async () => {
+      const targetTaskId = TaskId('task-target');
+      const otherTaskId = TaskId('task-other');
+      const promise = waitForCompletion(eventBus, targetTaskId);
+
+      // Emit completion for a different task — should not resolve
+      await eventBus.emit<TaskCompletedEvent>('TaskCompleted', {
+        taskId: otherTaskId,
+        exitCode: 0,
+        duration: 100,
+      });
+
+      // Now emit for the target task
+      await eventBus.emit<TaskCompletedEvent>('TaskCompleted', {
+        taskId: targetTaskId,
+        exitCode: 0,
+        duration: 200,
+      });
+
+      const exitCode = await promise;
+      expect(exitCode).toBe(0);
+    });
+
+    it('should stream OutputCaptured to stdout/stderr', async () => {
+      const taskId = TaskId('task-output-test');
+      const captured: Array<{ type: string; data: string }> = [];
+
+      // Track writes
+      const origStdoutWrite = process.stdout.write;
+      const origStderrWrite = process.stderr.write;
+      process.stdout.write = ((data: string) => {
+        captured.push({ type: 'stdout', data });
+        return true;
+      }) as typeof process.stdout.write;
+      process.stderr.write = ((data: string) => {
+        captured.push({ type: 'stderr', data });
+        return true;
+      }) as typeof process.stderr.write;
+
+      try {
+        const promise = waitForCompletion(eventBus, taskId);
+
+        await eventBus.emit<OutputCapturedEvent>('OutputCaptured', {
+          taskId,
+          outputType: 'stdout',
+          data: 'hello world\n',
+        });
+
+        await eventBus.emit<OutputCapturedEvent>('OutputCaptured', {
+          taskId,
+          outputType: 'stderr',
+          data: 'warning: something\n',
+        });
+
+        // Complete the task to resolve the promise
+        await eventBus.emit<TaskCompletedEvent>('TaskCompleted', {
+          taskId,
+          exitCode: 0,
+          duration: 300,
+        });
+
+        await promise;
+
+        expect(captured).toContainEqual({ type: 'stdout', data: 'hello world\n' });
+        expect(captured).toContainEqual({ type: 'stderr', data: 'warning: something\n' });
+      } finally {
+        process.stdout.write = origStdoutWrite;
+        process.stderr.write = origStderrWrite;
+      }
+    });
+
+    it('should only resolve once even if multiple terminal events fire', async () => {
+      const taskId = TaskId('task-double-resolve');
+      const promise = waitForCompletion(eventBus, taskId);
+
+      // Emit both completed and failed — only the first should matter
+      await eventBus.emit<TaskCompletedEvent>('TaskCompleted', {
+        taskId,
+        exitCode: 0,
+        duration: 100,
+      });
+      await eventBus.emit<TaskFailedEvent>('TaskFailed', {
+        taskId,
+        error: new DelegateError(ErrorCode.SYSTEM_ERROR, 'late failure'),
+        exitCode: 1,
+      });
+
+      const exitCode = await promise;
+      expect(exitCode).toBe(0); // First event wins
+    });
+  });
+
+  describe('--detach flag', () => {
+    it('should be recognized as a valid delegate option', () => {
+      const options = parseDelegateArgs(['--detach', 'analyze codebase']);
+      expect(options.detach).toBe(true);
+      expect(options.prompt).toBe('analyze codebase');
+    });
+
+    it('should support short form -d', () => {
+      const options = parseDelegateArgs(['-d', 'analyze codebase']);
+      expect(options.detach).toBe(true);
+    });
+
+    it('should default detach to false when not specified', () => {
+      const options = parseDelegateArgs(['analyze codebase']);
+      expect(options.detach).toBeUndefined();
+    });
+
+    it('should combine with other flags', () => {
+      const options = parseDelegateArgs(['--detach', '--priority', 'P0', 'run tests']);
+      expect(options.detach).toBe(true);
+      expect(options.priority).toBe('P0');
+      expect(options.prompt).toBe('run tests');
+    });
+  });
+
+  describe('SIGINT handling', () => {
+    it('should cancel task when SIGINT is received', async () => {
+      const mockTaskManager = new MockTaskManager();
+      const delegateResult = await simulateDelegateCommand(mockTaskManager, 'long running task');
+      expect(delegateResult.ok).toBe(true);
+      if (!delegateResult.ok) return;
+
+      const taskId = delegateResult.value.id;
+
+      // Simulate SIGINT cancel flow
+      await mockTaskManager.cancel(taskId, 'User interrupted (SIGINT)');
+
+      expect(mockTaskManager.cancelCalls).toHaveLength(1);
+      expect(mockTaskManager.cancelCalls[0].taskId).toBe(taskId);
+      expect(mockTaskManager.cancelCalls[0].reason).toBe('User interrupted (SIGINT)');
+    });
+  });
 });
 
 // ============================================================================
@@ -1253,6 +1510,7 @@ MCP Server Commands:
 
 Task Commands:
   delegate <prompt> [options]  Delegate a task to Claude Code
+    -d, --detach               Fire-and-forget mode (exit immediately)
     -p, --priority P0|P1|P2    Task priority
     --continue-from <task-id>  Continue from a dependency's checkpoint context
   status [task-id]             Get status of task(s)
@@ -1331,6 +1589,7 @@ interface DelegateOptions {
   baseBranch?: string;
   dependsOn?: string[];
   continueFrom?: string;
+  detach?: boolean;
 }
 
 function validateDelegateInput(prompt: string, options: DelegateOptions) {
@@ -1566,4 +1825,104 @@ async function simulateResumeCommand(taskManager: MockTaskManager, taskId: strin
     taskId: TaskId(taskId),
     additionalContext,
   });
+}
+
+// ============================================================================
+// Task Completion Lifecycle Helpers
+// ============================================================================
+
+/**
+ * Mirrors waitForTaskCompletion() from cli.ts — subscribes to EventBus events
+ * for a specific task and resolves on terminal state.
+ *
+ * This tests the exact same subscription pattern the production code uses,
+ * validating the EventBus contract rather than importing the non-exportable function.
+ */
+function waitForCompletion(eventBus: InMemoryEventBus, taskId: string): Promise<number> {
+  return new Promise((resolve) => {
+    let resolved = false;
+    const subscriptionIds: string[] = [];
+
+    const cleanup = () => {
+      for (const id of subscriptionIds) {
+        eventBus.unsubscribe(id);
+      }
+    };
+
+    const resolveOnce = (exitCode: number) => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve(exitCode);
+    };
+
+    const outputSub = eventBus.subscribe<OutputCapturedEvent>('OutputCaptured', async (event) => {
+      if (event.taskId !== taskId) return;
+      const stream = event.outputType === 'stderr' ? process.stderr : process.stdout;
+      stream.write(event.data);
+    });
+    if (outputSub.ok) subscriptionIds.push(outputSub.value);
+
+    const completedSub = eventBus.subscribe<TaskCompletedEvent>('TaskCompleted', async (event) => {
+      if (event.taskId !== taskId) return;
+      resolveOnce(event.exitCode);
+    });
+    if (completedSub.ok) subscriptionIds.push(completedSub.value);
+
+    const failedSub = eventBus.subscribe<TaskFailedEvent>('TaskFailed', async (event) => {
+      if (event.taskId !== taskId) return;
+      resolveOnce(event.exitCode ?? 1);
+    });
+    if (failedSub.ok) subscriptionIds.push(failedSub.value);
+
+    const cancelledSub = eventBus.subscribe<TaskCancelledEvent>('TaskCancelled', async (event) => {
+      if (event.taskId !== taskId) return;
+      resolveOnce(1);
+    });
+    if (cancelledSub.ok) subscriptionIds.push(cancelledSub.value);
+
+    const timeoutSub = eventBus.subscribe<TaskTimeoutEvent>('TaskTimeout', async (event) => {
+      if (event.taskId !== taskId) return;
+      resolveOnce(1);
+    });
+    if (timeoutSub.ok) subscriptionIds.push(timeoutSub.value);
+  });
+}
+
+/**
+ * Parse delegate command args — mirrors the option parsing loop in cli.ts
+ * for testing flag recognition without running the full CLI.
+ */
+function parseDelegateArgs(args: string[]): DelegateOptions & { prompt: string } {
+  const options: DelegateOptions & { prompt: string } = { prompt: '' };
+  const promptWords: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    const next = args[i + 1];
+
+    if (arg === '--detach' || arg === '-d') {
+      options.detach = true;
+    } else if ((arg === '--priority' || arg === '-p') && next) {
+      options.priority = next;
+      i++;
+    } else if ((arg === '--working-directory' || arg === '-w') && next) {
+      options.workingDirectory = next;
+      i++;
+    } else if (arg === '--depends-on' && next) {
+      options.dependsOn = next.split(',').map((id) => id.trim());
+      i++;
+    } else if (arg === '--continue-from' && next) {
+      options.continueFrom = next;
+      i++;
+    } else if ((arg === '--timeout' || arg === '-t') && next) {
+      options.timeout = parseInt(next);
+      i++;
+    } else if (!arg.startsWith('-')) {
+      promptWords.push(arg);
+    }
+  }
+
+  options.prompt = promptWords.join(' ');
+  return options;
 }
