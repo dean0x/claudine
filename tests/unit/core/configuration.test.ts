@@ -331,9 +331,6 @@ describe('loadConfiguration - REAL Configuration Loading', () => {
       expect(config.logLevel).toBe('info');
       expect(config.maxListenersPerEvent).toBe(100);
       expect(config.maxTotalSubscriptions).toBe(1000);
-      // Schema adds other defaults
-      expect(config.useWorktreesByDefault).toBe(false);
-      expect(config.maxWorktrees).toBe(50);
     });
   });
 

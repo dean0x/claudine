@@ -17,13 +17,10 @@ describe('isRetryableError - Error Classification', () => {
     ['Network error occurred', 'network error'],
     ['Socket timeout', 'socket error'],
     ['Socket connection failed', 'socket error'],
-    // Git remote errors
-    ['Could not read from remote repository', 'git remote error'],
-    ['Unable to access https://github.com/repo.git', 'git access error'],
+    // Connection errors
     ['SSL certificate problem: unable to verify', 'SSL/TLS error'],
     ['TLS handshake failed', 'SSL/TLS error'],
     // Rate limiting
-    ['API rate limit exceeded', 'rate limit'],
     ['Rate limit reached', 'rate limit'],
     ['Too many requests, please retry later', 'rate limit'],
     // File system race conditions
@@ -40,7 +37,6 @@ describe('isRetryableError - Error Classification', () => {
     ['Permission denied', 'permission'],
     ['Invalid input provided', 'validation'],
     ['Validation failed: name is required', 'validation'],
-    ['Merge conflict detected', 'conflict'],
     ['Resource already exists', 'conflict'],
     ['Some random error', 'unknown'],
     ['Unexpected failure', 'unknown'],
@@ -347,10 +343,10 @@ describe('Real-world scenarios', () => {
     vi.useRealTimers();
   });
 
-  it('should handle GitHub API rate limiting', async () => {
+  it('should handle rate limiting', async () => {
     const testFn = new RetryTestFunction<{ data: string }>()
-      .willFailWith('API rate limit exceeded')
-      .willFailWith('Rate limit exceeded')
+      .willFailWith('Rate limit reached')
+      .willFailWith('Too many requests')
       .willSucceedWith({ data: 'api response' });
 
     const resultPromise = retryWithBackoff(testFn.fn, {

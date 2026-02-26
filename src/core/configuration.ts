@@ -29,11 +29,6 @@ export const ConfigurationSchema = z.object({
   // EventBus resource limits - prevent memory leaks
   maxListenersPerEvent: z.number().min(10).max(10000).default(100),
   maxTotalSubscriptions: z.number().min(100).max(100000).default(1000),
-  // Worktree management settings (EXPERIMENTAL - default OFF)
-  useWorktreesByDefault: z.boolean().default(false), // Default: OFF - worktrees are experimental, opt-in only
-  maxWorktreeAgeDays: z.number().min(1).max(365).default(30), // Default: 30 days minimum age before auto-cleanup
-  maxWorktrees: z.number().min(5).max(1000).default(50), // Default: reasonable limit for teams
-  worktreeRequireSafetyCheck: z.boolean().default(true), // Default: always check safety before removal
   // Process management configuration
   killGracePeriodMs: z.number().min(1000).max(60000).default(5000), // Default: 5 second grace period
   resourceMonitorIntervalMs: z.number().min(1000).max(60000).default(5000), // Default: check every 5 seconds
@@ -67,11 +62,6 @@ const DEFAULT_CONFIG: Configuration = {
   logLevel: 'info',
   maxListenersPerEvent: 100, // Default: prevent memory leaks from excessive listeners
   maxTotalSubscriptions: 1000, // Default: global limit on subscriptions
-  // Worktree management defaults (EXPERIMENTAL - OFF by default)
-  useWorktreesByDefault: false, // Default: OFF - most users don't need worktree complexity
-  maxWorktreeAgeDays: 30, // Default: 30 days minimum age before auto-cleanup (safer for developers)
-  maxWorktrees: 50, // Default: reasonable limit for most development teams
-  worktreeRequireSafetyCheck: true, // Default: always check safety before removal
   // Process management defaults
   killGracePeriodMs: 5000, // Default: 5 seconds grace period for process termination
   resourceMonitorIntervalMs: 5000, // Default: check resources every 5 seconds
@@ -121,13 +111,6 @@ export function loadConfiguration(): Configuration {
     envConfig.maxListenersPerEvent = parseEnvNumber(process.env.EVENTBUS_MAX_LISTENERS_PER_EVENT, 0);
   if (process.env.EVENTBUS_MAX_TOTAL_SUBSCRIPTIONS)
     envConfig.maxTotalSubscriptions = parseEnvNumber(process.env.EVENTBUS_MAX_TOTAL_SUBSCRIPTIONS, 0);
-  if (process.env.USE_WORKTREES_BY_DEFAULT)
-    envConfig.useWorktreesByDefault = process.env.USE_WORKTREES_BY_DEFAULT.toLowerCase() === 'true';
-  if (process.env.WORKTREE_MAX_AGE_DAYS)
-    envConfig.maxWorktreeAgeDays = parseEnvNumber(process.env.WORKTREE_MAX_AGE_DAYS, 0);
-  if (process.env.WORKTREE_MAX_COUNT) envConfig.maxWorktrees = parseEnvNumber(process.env.WORKTREE_MAX_COUNT, 0);
-  if (process.env.WORKTREE_REQUIRE_SAFETY_CHECK)
-    envConfig.worktreeRequireSafetyCheck = process.env.WORKTREE_REQUIRE_SAFETY_CHECK.toLowerCase() === 'true';
   if (process.env.PROCESS_KILL_GRACE_PERIOD_MS)
     envConfig.killGracePeriodMs = parseEnvNumber(process.env.PROCESS_KILL_GRACE_PERIOD_MS, 0);
   if (process.env.RESOURCE_MONITOR_INTERVAL_MS)

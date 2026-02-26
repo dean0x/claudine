@@ -244,37 +244,6 @@ describe('MCPAdapter - Protocol Compliance', () => {
       }
     });
 
-    it('should accept valid merge strategy options', async () => {
-      const validStrategies = ['pr', 'auto', 'manual', 'patch'] as const;
-
-      for (const mergeStrategy of validStrategies) {
-        mockTaskManager.reset();
-        const result = await simulateDelegateTask(adapter, mockTaskManager, {
-          prompt: VALID_PROMPT,
-          mergeStrategy,
-        });
-
-        expect(result.isError).toBeFalsy();
-        expect(mockTaskManager.delegateCalls[0].prompt).toBe(VALID_PROMPT);
-      }
-    });
-
-    it('should accept valid worktree cleanup options', async () => {
-      const validOptions = ['auto', 'keep', 'delete'] as const;
-
-      for (const worktreeCleanup of validOptions) {
-        mockTaskManager.reset();
-        const result = await simulateDelegateTask(adapter, mockTaskManager, {
-          prompt: VALID_PROMPT,
-          useWorktree: true,
-          worktreeCleanup,
-        });
-
-        expect(result.isError).toBeFalsy();
-        expect(mockTaskManager.delegateCalls[0].prompt).toBe(VALID_PROMPT);
-      }
-    });
-
     it('should accept timeout within valid range', async () => {
       const validTimeouts = [1000, 60000, 300000, 86400000];
 
@@ -339,15 +308,6 @@ describe('MCPAdapter - Protocol Compliance', () => {
       expect(mockTaskManager.delegateCalls.length).toBe(1);
     });
 
-    it('should handle delegation without worktree options', async () => {
-      const result = await simulateDelegateTask(adapter, mockTaskManager, {
-        prompt: VALID_PROMPT,
-      });
-
-      expect(result.isError).toBeFalsy();
-      expect(mockTaskManager.delegateCalls.length).toBe(1);
-    });
-
     it('should handle delegation without timeout or buffer limits', async () => {
       const result = await simulateDelegateTask(adapter, mockTaskManager, {
         prompt: VALID_PROMPT,
@@ -374,15 +334,6 @@ describe('MCPAdapter - Protocol Compliance', () => {
         prompt: VALID_PROMPT,
         priority: 'P0',
         workingDirectory: '/workspace/test',
-        useWorktree: true,
-        worktreeCleanup: 'keep',
-        mergeStrategy: 'auto',
-        branchName: 'feature-branch',
-        baseBranch: 'main',
-        autoCommit: false,
-        pushToRemote: false,
-        prTitle: 'Test PR',
-        prBody: 'Test description',
         timeout: 60000,
         maxOutputBuffer: 5242880,
       });
@@ -391,9 +342,6 @@ describe('MCPAdapter - Protocol Compliance', () => {
       expect(call.prompt).toBe(VALID_PROMPT);
       expect(call.priority).toBe('P0');
       expect(call.workingDirectory).toBe('/workspace/test');
-      expect(call.useWorktree).toBe(true);
-      expect(call.worktreeCleanup).toBe('keep');
-      expect(call.mergeStrategy).toBe('auto');
     });
 
     it('should pass continueFrom field to TaskManager when provided', async () => {

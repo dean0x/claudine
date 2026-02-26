@@ -25,7 +25,6 @@ Delegate is an MCP (Model Context Protocol) server that enables Claude Code to d
 
 ### Advanced Capabilities
 - **Custom Working Directories**: Control exactly where tasks execute
-- **Git Worktree Isolation**: Run experimental changes in isolated environments
 - **Auto-Permissions**: Skip file permission prompts with `--dangerously-skip-permissions`
 - **Smart Output Capture**: 10MB buffer with overflow protection
 

@@ -15,7 +15,7 @@ import { createTestConfiguration } from '../fixtures/factories.js';
 import { MockProcessSpawner } from '../fixtures/mock-process-spawner.js';
 import { MockResourceMonitor } from '../fixtures/mock-resource-monitor.js';
 import { createTestTask as createTask } from '../fixtures/test-data.js';
-import { TestLogger, TestWorktreeManager } from '../fixtures/test-doubles.js';
+import { TestLogger } from '../fixtures/test-doubles.js';
 import { flushEventLoop } from '../utils/event-helpers.js';
 
 describe('Integration: Worker pool management', () => {
@@ -27,15 +27,11 @@ describe('Integration: Worker pool management', () => {
     const outputCapture = new BufferedOutputCapture(10 * 1024 * 1024, eventBus);
     const resourceMonitor = new MockResourceMonitor();
 
-    // Use proper test double for worktreeManager
-    const worktreeManager = new TestWorktreeManager();
-
     const workerPool = new EventDrivenWorkerPool(
       processSpawner, // spawner
       resourceMonitor, // monitor
       logger, // logger
       eventBus, // eventBus
-      worktreeManager, // worktreeManager
       outputCapture, // outputCapture
     );
 
@@ -164,15 +160,11 @@ describe('Integration: Worker pool management', () => {
     const processSpawner = new MockProcessSpawner();
     const outputCapture = new BufferedOutputCapture(10 * 1024 * 1024, eventBus);
 
-    // Use proper test double for worktreeManager
-    const worktreeManager = new TestWorktreeManager();
-
     const workerPool = new EventDrivenWorkerPool(
       processSpawner, // spawner
       resourceMonitor, // monitor
       logger, // logger
       eventBus, // eventBus
-      worktreeManager, // worktreeManager
       outputCapture, // outputCapture
     );
 

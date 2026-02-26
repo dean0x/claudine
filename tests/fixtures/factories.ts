@@ -82,11 +82,6 @@ export class TaskFactory {
     return this;
   }
 
-  withUseWorktree(use: boolean): this {
-    this.request.useWorktree = use;
-    return this;
-  }
-
   withError(error: unknown): this {
     this.overrides.error = error;
     return this;
@@ -259,11 +254,6 @@ export class ConfigFactory {
     logLevel: 'info',
     maxListenersPerEvent: 100,
     maxTotalSubscriptions: 1000,
-    // Worktree defaults
-    useWorktreesByDefault: false,
-    maxWorktreeAgeDays: 30,
-    maxWorktrees: 50,
-    worktreeRequireSafetyCheck: true,
     // Process management defaults
     killGracePeriodMs: 5000,
     resourceMonitorIntervalMs: 100, // Fast for tests

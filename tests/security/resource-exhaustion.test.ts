@@ -244,34 +244,6 @@ describe('Security: Configuration Schema Attack Prevention', () => {
     });
   });
 
-  describe('Worktree Security Limits', () => {
-    it('should reject excessive worktree count (disk exhaustion)', () => {
-      // ATTACK: Create 10K worktrees to exhaust disk space
-      const attack = { maxWorktrees: 10000 };
-      const result = ConfigurationSchema.safeParse(attack);
-
-      expect(result.success).toBe(false);
-    });
-
-    it('should reject worktree age below minimum', () => {
-      // ATTACK: Zero day age causing aggressive cleanup
-      const attack = { maxWorktreeAgeDays: 0 };
-      const result = ConfigurationSchema.safeParse(attack);
-
-      expect(result.success).toBe(false);
-    });
-
-    it('should accept maximum safe worktree limits', () => {
-      const maxSafe = {
-        maxWorktrees: 1000,
-        maxWorktreeAgeDays: 365,
-      };
-      const result = ConfigurationSchema.safeParse(maxSafe);
-
-      expect(result.success).toBe(true);
-    });
-  });
-
   describe('Process Management Security', () => {
     it('should reject excessive kill grace period (resource lock)', () => {
       // ATTACK: 10 minute grace period locks resources

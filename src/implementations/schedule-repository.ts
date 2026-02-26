@@ -67,21 +67,13 @@ const DelegateRequestSchema = z.object({
   prompt: z.string().min(1),
   priority: z.enum(['P0', 'P1', 'P2']).optional(),
   workingDirectory: z.string().optional(),
-  useWorktree: z.boolean().optional(),
-  worktreeCleanup: z.enum(['auto', 'keep', 'delete']).optional(),
-  mergeStrategy: z.enum(['pr', 'auto', 'manual', 'patch']).optional(),
-  branchName: z.string().optional(),
-  baseBranch: z.string().optional(),
-  autoCommit: z.boolean().optional(),
-  pushToRemote: z.boolean().optional(),
-  prTitle: z.string().optional(),
-  prBody: z.string().optional(),
   timeout: z.number().optional(),
   maxOutputBuffer: z.number().optional(),
   parentTaskId: z.string().optional(),
   retryCount: z.number().optional(),
   retryOf: z.string().optional(),
   dependsOn: z.array(z.string()).optional(),
+  continueFrom: z.string().optional(),
 });
 
 /**

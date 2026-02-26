@@ -101,21 +101,6 @@ export function validatePath(inputPath: string, baseDir?: string, mustExist = fa
 }
 
 /**
- * Sanitize a branch name for git
- * Removes characters that could cause command injection or git issues
- * @param name Raw branch name input
- * @returns Sanitized branch name safe for git operations
- */
-export function sanitizeBranchName(name: string): string {
-  // Remove any characters that aren't alphanumeric, dash, underscore, or slash
-  // Also remove leading/trailing dashes
-  return name
-    .replace(/[^a-zA-Z0-9\-_\/]/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 100); // Limit length
-}
-
-/**
  * Validate buffer size is within reasonable limits
  * Prevents memory exhaustion attacks by enforcing size limits
  * @param size Buffer size in bytes to validate

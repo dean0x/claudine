@@ -125,7 +125,6 @@ Reusable test data and mocks:
 ### Temporary Files
 Tests create temporary artifacts in:
 - `.delegate/` - Temporary databases
-- `.worktrees/` - Test git worktrees
 
 **Cleanup**: Tests automatically clean up after execution
 
@@ -242,7 +241,7 @@ E2E tests are written in markdown with:
 ### E2E Test Issues
 - **Database locks**: Clean `.delegate/` directory
 - **Orphaned processes**: Run `pkill -f delegate`
-- **Worktree issues**: Run `git worktree prune`
+- **Orphaned processes**: Run `pkill -f "claude.*delegate"`
 
 ## CI/CD Integration
 

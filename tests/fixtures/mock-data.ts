@@ -1,32 +1,26 @@
 import { randomUUID } from 'crypto';
-import { Task, TaskPriority, TaskStatus, WorkerInfo, WorkerStatus } from '@/core/domain';
+import type { Task, Worker } from '../../src/core/domain';
+import { Priority, TaskId, TaskStatus, WorkerId } from '../../src/core/domain';
 
 export function createMockTask(overrides?: Partial<Task>): Task {
   return {
-    id: randomUUID(),
+    id: TaskId(randomUUID()),
     prompt: 'Test task prompt',
-    status: 'queued' as TaskStatus,
-    priority: 'P1' as TaskPriority,
+    status: TaskStatus.QUEUED,
+    priority: Priority.P1,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     workingDirectory: '/tmp/test',
     timeout: 30000,
     maxOutputBuffer: 1024 * 1024,
-    useWorktree: false,
-    worktreeCleanup: 'auto',
-    mergeStrategy: 'manual',
-    baseBranch: 'main',
-    autoCommit: false,
-    pushToRemote: false,
     ...overrides,
   };
 }
 
-export function createMockWorkerInfo(overrides?: Partial<WorkerInfo>): WorkerInfo {
+export function createMockWorker(overrides?: Partial<Worker>): Worker {
   return {
-    id: randomUUID(),
-    taskId: randomUUID(),
-    status: 'idle' as WorkerStatus,
+    id: WorkerId(randomUUID()),
+    taskId: TaskId(randomUUID()),
     pid: 12345,
     startedAt: Date.now(),
     cpuUsage: 10,
@@ -44,9 +38,9 @@ export function createTaskBatch(count: number, overrides?: Partial<Task>): Task[
   );
 }
 
-export function createWorkerBatch(count: number, overrides?: Partial<WorkerInfo>): WorkerInfo[] {
+export function createWorkerBatch(count: number, overrides?: Partial<Worker>): Worker[] {
   return Array.from({ length: count }, (_, i) =>
-    createMockWorkerInfo({
+    createMockWorker({
       pid: 10000 + i,
       ...overrides,
     }),
