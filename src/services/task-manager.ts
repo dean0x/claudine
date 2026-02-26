@@ -26,22 +26,8 @@ import {
 } from '../core/domain.js';
 import { DelegateError, ErrorCode, taskNotFound } from '../core/errors.js';
 import { EventBus } from '../core/events/event-bus.js';
-import {
-  TaskLogsQueryEvent,
-  TaskStatusQueryEvent,
-  WorktreeCleanupRequestedEvent,
-  WorktreeListQueryEvent,
-  WorktreeStatusQueryEvent,
-} from '../core/events/events.js';
-import {
-  CheckpointRepository,
-  Logger,
-  OutputCapture,
-  TaskManager,
-  TaskRepository,
-  WorktreeCleanupResult,
-  WorktreeStatus,
-} from '../core/interfaces.js';
+import { TaskLogsQueryEvent, TaskStatusQueryEvent } from '../core/events/events.js';
+import { CheckpointRepository, Logger, TaskManager } from '../core/interfaces.js';
 import { err, ok, Result } from '../core/result.js';
 
 export class TaskManagerService implements TaskManager {
@@ -65,8 +51,6 @@ export class TaskManagerService implements TaskManager {
       ...request,
       timeout: request.timeout ?? this.config.timeout,
       maxOutputBuffer: request.maxOutputBuffer ?? this.config.maxOutputBuffer,
-      // Apply worktree default from configuration (default: false)
-      useWorktree: request.useWorktree ?? this.config.useWorktreesByDefault,
     };
 
     // continueFrom validation: verify task exists and ensure it's in dependsOn
@@ -234,18 +218,8 @@ export class TaskManagerService implements TaskManager {
       prompt: originalTask.prompt,
       priority: originalTask.priority,
       workingDirectory: originalTask.workingDirectory,
-      useWorktree: originalTask.useWorktree,
-      worktreeCleanup: originalTask.worktreeCleanup,
-      mergeStrategy: originalTask.mergeStrategy,
-      branchName: originalTask.branchName,
-      baseBranch: originalTask.baseBranch,
-      autoCommit: originalTask.autoCommit,
-      pushToRemote: originalTask.pushToRemote,
-      prTitle: originalTask.prTitle,
-      prBody: originalTask.prBody,
       timeout: originalTask.timeout,
       maxOutputBuffer: originalTask.maxOutputBuffer,
-      // Add retry tracking
       parentTaskId: TaskId(parentTaskId),
       retryCount,
       retryOf: taskId,
@@ -348,15 +322,6 @@ export class TaskManagerService implements TaskManager {
       prompt: enrichedPrompt,
       priority: originalTask.priority,
       workingDirectory: originalTask.workingDirectory,
-      useWorktree: originalTask.useWorktree,
-      worktreeCleanup: originalTask.worktreeCleanup,
-      mergeStrategy: originalTask.mergeStrategy,
-      branchName: originalTask.branchName,
-      baseBranch: originalTask.baseBranch,
-      autoCommit: originalTask.autoCommit,
-      pushToRemote: originalTask.pushToRemote,
-      prTitle: originalTask.prTitle,
-      prBody: originalTask.prBody,
       timeout: originalTask.timeout,
       maxOutputBuffer: originalTask.maxOutputBuffer,
       parentTaskId: TaskId(parentTaskId),
@@ -436,68 +401,5 @@ export class TaskManagerService implements TaskManager {
     parts.push("Please continue or retry the task, taking into account the previous attempt's results.");
 
     return parts.join('\n');
-  }
-
-  /**
-   * List all worktrees with optional filtering
-   * ARCHITECTURE: Pure event-driven query - no direct WorktreeManager access
-   */
-  async listWorktrees(includeStale = false, olderThanDays?: number): Promise<Result<readonly WorktreeStatus[]>> {
-    this.logger.debug('Listing worktrees', { includeStale, olderThanDays });
-
-    const result = await this.eventBus.request<WorktreeListQueryEvent, readonly WorktreeStatus[]>('WorktreeListQuery', {
-      includeStale,
-      olderThanDays,
-    });
-
-    if (!result.ok) {
-      this.logger.error('Worktree list query failed', result.error);
-      return result;
-    }
-
-    return ok(result.value);
-  }
-
-  /**
-   * Get worktree status for specific task
-   * ARCHITECTURE: Pure event-driven query - no direct WorktreeManager access
-   */
-  async getWorktreeStatus(taskId: TaskId): Promise<Result<WorktreeStatus>> {
-    this.logger.debug('Getting worktree status', { taskId });
-
-    const result = await this.eventBus.request<WorktreeStatusQueryEvent, WorktreeStatus>('WorktreeStatusQuery', {
-      taskId,
-    });
-
-    if (!result.ok) {
-      this.logger.error('Worktree status query failed', result.error, { taskId });
-      return result;
-    }
-
-    return ok(result.value);
-  }
-
-  /**
-   * Cleanup worktrees based on strategy
-   * ARCHITECTURE: Pure event-driven command - no direct WorktreeManager access
-   */
-  async cleanupWorktrees(
-    strategy: 'safe' | 'interactive' | 'force' = 'safe',
-    olderThanDays = 7,
-    taskIds?: TaskId[],
-  ): Promise<Result<WorktreeCleanupResult>> {
-    this.logger.info('Cleaning up worktrees', { strategy, olderThanDays, taskIds });
-
-    const result = await this.eventBus.request<WorktreeCleanupRequestedEvent, WorktreeCleanupResult>(
-      'WorktreeCleanupRequested',
-      { strategy, olderThanDays, taskIds },
-    );
-
-    if (!result.ok) {
-      this.logger.error('Worktree cleanup failed', result.error);
-      return result;
-    }
-
-    return ok(result.value);
   }
 }

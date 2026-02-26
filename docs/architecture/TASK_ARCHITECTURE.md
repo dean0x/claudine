@@ -30,7 +30,7 @@ export interface Task {
   readonly dependents?: readonly TaskId[];          // Tasks that depend on this task (blocked)
   readonly dependencyState?: 'blocked' | 'ready' | 'none'; // Computed dependency state
   
-  // ... other fields (worktree, retry tracking, execution control, timestamps)
+  // ... other fields (retry tracking, execution control, timestamps)
 }
 ```
 

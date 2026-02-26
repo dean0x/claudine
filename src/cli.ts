@@ -84,24 +84,8 @@ Task Commands:
     -w, --working-directory D  Working directory for task execution
     --depends-on TASK_IDS      Comma-separated task IDs this task depends on (blocks until complete)
     --continue-from TASK_ID    Continue from a dependency's checkpoint context (must be in dependsOn)
-    --use-worktree             [EXPERIMENTAL] Use git worktree for isolation (opt-in)
-    --keep-worktree            Always preserve worktree after completion (requires --use-worktree)
-    --delete-worktree          Always cleanup worktree after completion (requires --use-worktree)
-    -s, --strategy STRATEGY    Merge strategy: pr|auto|manual|patch (default: pr)
-    -b, --branch NAME          Custom branch name
-    --base BRANCH              Base branch (default: current)
     -t, --timeout MS           Task timeout in milliseconds
     --max-output-buffer BYTES  Max output buffer size (1KB-1GB, default: 10MB)
-
-⚠️  EXPERIMENTAL Worktree Features (advanced users only):
-  worktree list              List all active worktrees with status
-  worktree cleanup [options] Safely clean up old worktrees
-    --strategy safe|force      Cleanup strategy (default: safe)
-    --older-than N            Only remove worktrees older than N days (default: 30)
-  worktree status <task-id>  Get detailed status of specific worktree
-
-  Note: Worktrees are complex and most users don't need them. Tasks run in your
-        current directory by default. Use --use-worktree to opt-in to isolation.
 
 Schedule Commands:
   schedule create <prompt> [options]   Create a scheduled task
@@ -391,15 +375,6 @@ async function delegateTask(
     workingDirectory?: string;
     dependsOn?: readonly string[];
     continueFrom?: string;
-    useWorktree?: boolean;
-    worktreeCleanup?: 'auto' | 'keep' | 'delete';
-    mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch';
-    branchName?: string;
-    baseBranch?: string;
-    autoCommit?: boolean;
-    pushToRemote?: boolean;
-    prTitle?: string;
-    prBody?: string;
     timeout?: number;
     maxOutputBuffer?: number;
     detach?: boolean;
@@ -449,7 +424,6 @@ async function delegateTask(
         console.log('  Continue From:', options.continueFrom);
         console.log('  Task will receive checkpoint context from this dependency');
       }
-      if (options.useWorktree) console.log('  Use Worktree:', options.useWorktree);
       if (options.timeout) console.log('  Timeout:', options.timeout, 'ms');
       if (options.maxOutputBuffer) console.log('  Max Output Buffer:', options.maxOutputBuffer, 'bytes');
     }
@@ -1249,24 +1223,9 @@ if (mainCommand === 'mcp') {
       workingDirectory?: string;
       dependsOn?: readonly string[];
       continueFrom?: string;
-      useWorktree?: boolean;
-      worktreeCleanup?: 'auto' | 'keep' | 'delete';
-      mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch';
-      branchName?: string;
-      baseBranch?: string;
-      autoCommit?: boolean;
-      pushToRemote?: boolean;
-      prTitle?: string;
-      prBody?: string;
       timeout?: number;
       maxOutputBuffer?: number;
-    } = {
-      useWorktree: false, // Default: no worktree (opt-in via --use-worktree)
-      worktreeCleanup: 'auto', // Default: smart cleanup
-      mergeStrategy: 'pr', // Default: create PR
-      autoCommit: true,
-      pushToRemote: true,
-    };
+    } = {};
 
     let promptWords: string[] = [];
 
@@ -1325,61 +1284,6 @@ if (mainCommand === 'mcp') {
           console.error('❌ --continue-from requires a task ID');
           process.exit(1);
         }
-      } else if (arg === '--use-worktree') {
-        options.useWorktree = true;
-      } else if (arg === '--keep-worktree') {
-        options.worktreeCleanup = 'keep';
-      } else if (arg === '--delete-worktree') {
-        options.worktreeCleanup = 'delete';
-      } else if (arg === '--strategy' || arg === '-s') {
-        const next = delegateArgs[i + 1];
-        if (next && ['pr', 'auto', 'manual', 'patch'].includes(next)) {
-          options.mergeStrategy = next as 'pr' | 'auto' | 'manual' | 'patch';
-          i++;
-        } else {
-          console.error('❌ Invalid strategy. Must be pr, auto, manual, or patch');
-          process.exit(1);
-        }
-      } else if (arg === '--branch' || arg === '-b') {
-        const next = delegateArgs[i + 1];
-        if (next && !next.startsWith('-')) {
-          options.branchName = next;
-          i++;
-        } else {
-          console.error('❌ Branch name required');
-          process.exit(1);
-        }
-      } else if (arg === '--base') {
-        const next = delegateArgs[i + 1];
-        if (next && !next.startsWith('-')) {
-          options.baseBranch = next;
-          i++;
-        } else {
-          console.error('❌ Base branch required');
-          process.exit(1);
-        }
-      } else if (arg === '--pr-title') {
-        const next = delegateArgs[i + 1];
-        if (next && !next.startsWith('-')) {
-          options.prTitle = next;
-          i++;
-        } else {
-          console.error('❌ PR title required');
-          process.exit(1);
-        }
-      } else if (arg === '--pr-body') {
-        const next = delegateArgs[i + 1];
-        if (next && !next.startsWith('-')) {
-          options.prBody = next;
-          i++;
-        } else {
-          console.error('❌ PR body required');
-          process.exit(1);
-        }
-      } else if (arg === '--no-commit') {
-        options.autoCommit = false;
-      } else if (arg === '--no-push') {
-        options.pushToRemote = false;
       } else if (arg === '--timeout' || arg === '-t') {
         const next = delegateArgs[i + 1];
         const timeout = parseInt(next);
@@ -1415,30 +1319,12 @@ if (mainCommand === 'mcp') {
       console.error('  -d, --detach                  Fire-and-forget mode (run in background)');
       console.error('  -p, --priority P0|P1|P2      Task priority (P0=critical, P1=high, P2=normal)');
       console.error('  -w, --working-directory DIR   Working directory for task execution');
-      console.error('');
-      console.error('Worktree Control:');
-      console.error('  --use-worktree                Use git worktree for isolation (opt-in)');
-      console.error('  --keep-worktree               Always preserve worktree after completion');
-      console.error('  --delete-worktree             Always cleanup worktree after completion');
-      console.error('');
-      console.error('Merge Strategy (requires worktree):');
-      console.error('  -s, --strategy STRATEGY       Merge strategy: pr|auto|manual|patch (default: pr)');
-      console.error('  -b, --branch NAME             Custom branch name');
-      console.error('  --base BRANCH                 Base branch (default: current)');
-      console.error("  --no-commit                   Don't auto-commit changes");
-      console.error("  --no-push                     Don't push to remote");
-      console.error('  --pr-title TITLE              PR title (for pr strategy)');
-      console.error('  --pr-body BODY                PR description');
-      console.error('');
-      console.error('Execution:');
       console.error('  -t, --timeout MS              Task timeout in milliseconds');
       console.error('  --max-output-buffer BYTES     Maximum output buffer size');
       console.error('');
       console.error('Examples:');
       console.error('  delegate "refactor auth"                     # Wait for completion (default)');
       console.error('  delegate "quick fix" --detach                # Fire-and-forget');
-      console.error('  delegate "feature" --strategy auto           # Auto-merge');
-      console.error('  delegate "experiment" --keep-worktree        # Preserve worktree');
       process.exit(1);
     }
 
@@ -1502,30 +1388,6 @@ if (mainCommand === 'mcp') {
   }
 
   await retryTask(taskId);
-} else if (mainCommand === 'worktree') {
-  if (subCommand === 'list') {
-    console.log('🌳 Listing worktrees...');
-    console.log('⚠️  Worktree management is not yet fully implemented.');
-    console.log('📝 Use environment variables for now:');
-    console.log('   WORKTREE_MAX_AGE_DAYS=30');
-    console.log('   WORKTREE_MAX_COUNT=50');
-    console.log('   WORKTREE_REQUIRE_SAFETY_CHECK=true');
-  } else if (subCommand === 'cleanup') {
-    console.log('🧹 Cleaning up worktrees...');
-    console.log('⚠️  Worktree management is not yet fully implemented.');
-    console.log('📝 Use: git worktree prune (for now)');
-  } else if (subCommand === 'status') {
-    const taskId = args[2];
-    if (!taskId) {
-      console.error('❌ Usage: delegate worktree status <task-id>');
-      process.exit(1);
-    }
-    console.log(`🌳 Getting worktree status for task: ${taskId}`);
-    console.log('⚠️  Worktree management is not yet fully implemented.');
-  } else {
-    console.error('❌ Usage: delegate worktree <list|cleanup|status>');
-    process.exit(1);
-  }
 } else if (mainCommand === 'schedule') {
   await handleScheduleCommand(subCommand, args.slice(2));
 } else if (mainCommand === 'pipeline') {
@@ -1586,11 +1448,6 @@ if (mainCommand === 'mcp') {
     console.log(`   Memory Reserve: ${sanitizeValue(process.env.MEMORY_RESERVE || '2684354560', 'memory')}`);
     console.log(`   Log Level: ${process.env.LOG_LEVEL || 'info'}`);
     console.log('');
-    console.log('🌳 Worktree Settings:');
-    console.log(`   Max Age: ${process.env.WORKTREE_MAX_AGE_DAYS || '30'} days`);
-    console.log(`   Max Count: ${process.env.WORKTREE_MAX_COUNT || '50'} worktrees`);
-    console.log(`   Safety Check: ${process.env.WORKTREE_REQUIRE_SAFETY_CHECK || 'true'}`);
-    console.log('');
     console.log('⚡ Process Management:');
     console.log(
       `   Kill Grace Period: ${sanitizeValue(process.env.PROCESS_KILL_GRACE_PERIOD_MS || '5000', 'timeout')}`,
@@ -1621,7 +1478,6 @@ if (mainCommand === 'mcp') {
     console.log('⚠️  Note: Values are sanitized for security. Use --verbose for exact values (admin only).');
     console.log('📝 To change settings, use environment variables:');
     console.log('   export TASK_TIMEOUT=1800000  # Task timeout in milliseconds');
-    console.log('   export WORKTREE_MAX_AGE_DAYS=30  # Minimum worktree age for cleanup');
     console.log('   export PROCESS_KILL_GRACE_PERIOD_MS=5000  # Process termination grace period');
     console.log('   export EVENT_REQUEST_TIMEOUT_MS=5000  # Event request timeout');
     console.log('   export FILE_STORAGE_THRESHOLD_BYTES=102400  # File storage threshold');
@@ -1629,9 +1485,8 @@ if (mainCommand === 'mcp') {
   } else if (subCommand === 'set') {
     console.log('⚙️  Configuration updates are not yet implemented.');
     console.log('📝 Use environment variables for now:');
-    console.log('   export WORKTREE_MAX_AGE_DAYS=30');
-    console.log('   export WORKTREE_MAX_COUNT=50');
-    console.log('   export WORKTREE_REQUIRE_SAFETY_CHECK=true');
+    console.log('   export TASK_TIMEOUT=1800000');
+    console.log('   export LOG_LEVEL=info');
   } else {
     console.error('❌ Usage: delegate config <show|set>');
     process.exit(1);

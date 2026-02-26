@@ -11,7 +11,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadConfiguration } from '../../src/core/configuration.js';
 import type { Task, WorkerId } from '../../src/core/domain.js';
 import { InMemoryEventBus } from '../../src/core/events/event-bus.js';
-import type { WorktreeManager } from '../../src/core/interfaces.js';
 import { Database } from '../../src/implementations/database.js';
 import { EventDrivenWorkerPool } from '../../src/implementations/event-driven-worker-pool.js';
 import { BufferedOutputCapture } from '../../src/implementations/output-capture.js';
@@ -43,21 +42,11 @@ describe('Integration: Event-driven task delegation flow', () => {
     const processSpawner = new MockProcessSpawner();
     const outputCapture = new BufferedOutputCapture(10 * 1024 * 1024, eventBus);
 
-    // Initialize worker pool with test worktree manager
-    // Note: WorktreeManager is not fully implemented yet, using minimal stub for integration test
-    const worktreeManager = {
-      createWorktree: async () => ({ ok: false, error: new Error('Worktree creation not implemented in test') }),
-      cleanupWorktree: async () => ({ ok: true, value: undefined }),
-      removeWorktree: async () => ({ ok: true, value: undefined }),
-      completeTask: async () => ({ ok: true, value: { merged: false, prUrl: null } }),
-    } as unknown as WorktreeManager;
-
     const workerPool = new EventDrivenWorkerPool(
       processSpawner, // spawner
       resourceMonitor, // monitor
       logger, // logger
       eventBus, // eventBus
-      worktreeManager, // worktreeManager
       outputCapture, // outputCapture
     );
 

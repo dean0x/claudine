@@ -576,67 +576,6 @@ export class TestProcessSpawner implements ProcessSpawner {
 }
 
 /**
- * TestWorktreeManager - Mock worktree manager for testing
- */
-export class TestWorktreeManager {
-  private shouldFail = false;
-  private worktrees = new Set<string>();
-
-  async createWorktree(branchName: string, baseBranch?: string): Promise<Result<string, Error>> {
-    if (this.shouldFail) {
-      return err(new Error('Worktree creation failed'));
-    }
-
-    const worktreePath = `/tmp/worktree-${branchName}`;
-    this.worktrees.add(worktreePath);
-    return ok(worktreePath);
-  }
-
-  async cleanupWorktree(worktreePath: string): Promise<Result<void, Error>> {
-    if (this.shouldFail) {
-      return err(new Error('Worktree cleanup failed'));
-    }
-
-    this.worktrees.delete(worktreePath);
-    return ok(undefined);
-  }
-
-  async removeWorktree(worktreePath: string): Promise<Result<void, Error>> {
-    if (this.shouldFail) {
-      return err(new Error('Worktree removal failed'));
-    }
-
-    this.worktrees.delete(worktreePath);
-    return ok(undefined);
-  }
-
-  async completeTask(
-    taskId: string,
-    result: unknown,
-  ): Promise<Result<{ taskId: string; completed: boolean; result: unknown }, Error>> {
-    if (this.shouldFail) {
-      return err(new Error('Task completion failed'));
-    }
-
-    return ok({ taskId, completed: true, result });
-  }
-
-  // Test-specific methods
-  setShouldFail(shouldFail: boolean): void {
-    this.shouldFail = shouldFail;
-  }
-
-  getActiveWorktrees(): string[] {
-    return Array.from(this.worktrees);
-  }
-
-  clear(): void {
-    this.worktrees.clear();
-    this.shouldFail = false;
-  }
-}
-
-/**
  * TestResourceMonitor - Controllable resource monitor for testing
  * Implements ResourceMonitor interface from src/core/interfaces.ts
  */

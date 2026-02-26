@@ -7,7 +7,7 @@ Last Updated: February 2026
 ## ✅ Core Task Delegation
 
 ### MCP Tools
-- **DelegateTask**: Submit tasks to background Claude Code instances with full worktree/PR options
+- **DelegateTask**: Submit tasks to background Claude Code instances
 - **TaskStatus**: Check status of running/completed tasks
 - **TaskLogs**: Retrieve stdout/stderr output from tasks (with tail option)
 - **CancelTask**: Cancel running tasks with optional reason
@@ -18,10 +18,7 @@ Last Updated: February 2026
 - **Task Status Tracking**: QUEUED, RUNNING, COMPLETED, FAILED, CANCELLED
 - **Per-Task Configuration**: Custom timeout and output buffer per task
 - **Working Directory Support**: Run tasks in specific directories
-- **Git Worktree Isolation**: Branch-based task execution with automatic creation/cleanup
-- **Merge Strategies**: PR (pull request), auto, manual, patch
-- **GitHub Integration**: Automatic PR creation with custom titles/descriptions
-- **Retry Logic**: Exponential backoff for git push and API operations
+- **Retry Logic**: Exponential backoff for operations
 
 ## ✅ Autoscaling & Resource Management
 

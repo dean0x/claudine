@@ -55,9 +55,6 @@ function buildMockTask(overrides: Partial<Task> = {}): Task {
     status: TaskStatus.QUEUED,
     priority: Priority.P2,
     workingDirectory: '/workspace',
-    useWorktree: false,
-    autoCommit: true,
-    pushToRemote: true,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -163,32 +160,6 @@ describe('TaskManagerService', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.maxOutputBuffer).toBe(config.maxOutputBuffer);
-    });
-
-    it('should apply config useWorktreesByDefault when useWorktree not in request', async () => {
-      const svc = new TaskManagerService(eventBus as unknown as EventBus, logger, {
-        ...config,
-        useWorktreesByDefault: true,
-      });
-
-      const result = await svc.delegate({ prompt: 'test' });
-
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value.useWorktree).toBe(true);
-    });
-
-    it('should prefer explicit useWorktree over config default', async () => {
-      const svc = new TaskManagerService(eventBus as unknown as EventBus, logger, {
-        ...config,
-        useWorktreesByDefault: true,
-      });
-
-      const result = await svc.delegate({ prompt: 'test', useWorktree: false });
-
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value.useWorktree).toBe(false);
     });
 
     it('should return error when event emission fails', async () => {
@@ -614,29 +585,6 @@ describe('TaskManagerService', () => {
         expect(result.value.parentTaskId).toBe(TaskId('root'));
         expect(result.value.retryOf).toBe(TaskId('retry-3'));
       });
-    });
-
-    it('should preserve worktree config from original task', async () => {
-      const original = buildFailedTask({
-        id: TaskId('wt-task'),
-        useWorktree: true,
-        mergeStrategy: 'pr',
-        branchName: 'feat/my-branch',
-        baseBranch: 'main',
-        autoCommit: true,
-        pushToRemote: true,
-        prTitle: 'My PR',
-        prBody: 'PR body',
-      });
-      eventBus.request.mockResolvedValue(ok(original));
-
-      const result = await service.retry(TaskId('wt-task'));
-
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value.useWorktree).toBe(true);
-      expect(result.value.branchName).toBe('feat/my-branch');
-      expect(result.value.prTitle).toBe('My PR');
     });
   });
 

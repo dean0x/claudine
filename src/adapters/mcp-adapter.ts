@@ -27,15 +27,6 @@ const DelegateTaskSchema = z.object({
   prompt: z.string().min(1).max(4000),
   priority: z.enum(['P0', 'P1', 'P2']).optional(),
   workingDirectory: z.string().optional(),
-  useWorktree: z.boolean().optional().default(false), // Default: false - worktrees are opt-in (safer default)
-  worktreeCleanup: z.enum(['auto', 'keep', 'delete']).optional().default('auto'),
-  mergeStrategy: z.enum(['pr', 'auto', 'manual', 'patch']).optional().default('pr'),
-  branchName: z.string().optional(),
-  baseBranch: z.string().optional(),
-  autoCommit: z.boolean().optional().default(true),
-  pushToRemote: z.boolean().optional().default(true),
-  prTitle: z.string().optional(),
-  prBody: z.string().optional(),
   timeout: z.number().min(1000).max(86400000).optional(), // 1 second to 24 hours
   maxOutputBuffer: z.number().min(1024).max(1073741824).optional(), // 1KB to 1GB
   dependsOn: z.array(z.string()).optional(), // Task IDs this task depends on
@@ -247,49 +238,6 @@ export class MCPAdapter {
                   workingDirectory: {
                     type: 'string',
                     description: 'Optional working directory for task execution (absolute path)',
-                  },
-                  useWorktree: {
-                    type: 'boolean',
-                    description: 'Create a git worktree for isolated execution (opt-in)',
-                    default: false,
-                  },
-                  worktreeCleanup: {
-                    type: 'string',
-                    enum: ['auto', 'keep', 'delete'],
-                    description: 'Cleanup behavior: auto (based on strategy), keep, or delete',
-                    default: 'auto',
-                  },
-                  mergeStrategy: {
-                    type: 'string',
-                    enum: ['pr', 'auto', 'manual', 'patch'],
-                    description: 'How to handle changes after task completion',
-                    default: 'pr',
-                  },
-                  branchName: {
-                    type: 'string',
-                    description: 'Custom branch name (default: delegate/task-{id})',
-                  },
-                  baseBranch: {
-                    type: 'string',
-                    description: 'Base branch for worktree (default: current branch)',
-                  },
-                  autoCommit: {
-                    type: 'boolean',
-                    description: 'Auto-commit changes in worktree',
-                    default: true,
-                  },
-                  pushToRemote: {
-                    type: 'boolean',
-                    description: 'Push branch to remote (for PR/manual strategies)',
-                    default: true,
-                  },
-                  prTitle: {
-                    type: 'string',
-                    description: 'Custom PR title (for PR strategy)',
-                  },
-                  prBody: {
-                    type: 'string',
-                    description: 'Custom PR description (for PR strategy)',
                   },
                   timeout: {
                     type: 'number',
@@ -597,20 +545,11 @@ export class MCPAdapter {
       validatedWorkingDirectory = pathValidation.value;
     }
 
-    // Create request with all new fields and validated paths
+    // Create request with validated paths
     const request: DelegateRequest = {
       prompt: data.prompt,
       priority: data.priority as Priority,
       workingDirectory: validatedWorkingDirectory,
-      useWorktree: data.useWorktree,
-      worktreeCleanup: data.worktreeCleanup,
-      mergeStrategy: data.mergeStrategy,
-      branchName: data.branchName,
-      baseBranch: data.baseBranch,
-      autoCommit: data.autoCommit,
-      pushToRemote: data.pushToRemote,
-      prTitle: data.prTitle,
-      prBody: data.prBody,
       timeout: data.timeout,
       maxOutputBuffer: data.maxOutputBuffer,
       dependsOn: data.dependsOn ? data.dependsOn.map(TaskId) : undefined,

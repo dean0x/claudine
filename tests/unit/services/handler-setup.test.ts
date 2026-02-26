@@ -21,7 +21,6 @@ import {
   HandlerDependencies,
   setupEventHandlers,
 } from '../../../src/services/handler-setup';
-import { GitWorktreeManager } from '../../../src/services/worktree-manager';
 import { createTestConfiguration } from '../../fixtures/factories';
 import { TestLogger, TestProcessSpawner } from '../../fixtures/test-doubles';
 
@@ -64,14 +63,9 @@ describe('handler-setup', () => {
       resourceMonitor,
       logger.child({ module: 'WorkerPool' }),
       eventBus,
-      new GitWorktreeManager(logger.child({ module: 'WorktreeManager' }), eventBus),
       new BufferedOutputCapture(config.maxOutputBuffer, eventBus),
     );
     container.registerValue('workerPool', workerPool);
-    container.registerValue(
-      'worktreeManager',
-      new GitWorktreeManager(logger.child({ module: 'WorktreeManager' }), eventBus),
-    );
   });
 
   afterEach(async () => {
@@ -95,7 +89,6 @@ describe('handler-setup', () => {
         expect(result.value.outputCapture).toBeDefined();
         expect(result.value.workerPool).toBeDefined();
         expect(result.value.resourceMonitor).toBeDefined();
-        expect(result.value.worktreeManager).toBeDefined();
       }
     });
 

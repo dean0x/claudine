@@ -19,7 +19,6 @@ import {
   TaskQueue,
   TaskRepository,
   WorkerPool,
-  WorktreeManager,
 } from '../core/interfaces.js';
 import { err, ok, Result } from '../core/result.js';
 import { CheckpointHandler } from './handlers/checkpoint-handler.js';
@@ -31,7 +30,6 @@ import { QueryHandler } from './handlers/query-handler.js';
 import { QueueHandler } from './handlers/queue-handler.js';
 import { ScheduleHandler } from './handlers/schedule-handler.js';
 import { WorkerHandler } from './handlers/worker-handler.js';
-import { WorktreeHandler } from './handlers/worktree-handler.js';
 
 /**
  * Dependencies required for handler setup
@@ -47,7 +45,6 @@ export interface HandlerDependencies {
   readonly dependencyRepository: DependencyRepository;
   readonly workerPool: WorkerPool;
   readonly resourceMonitor: ResourceMonitor;
-  readonly worktreeManager: WorktreeManager;
   readonly scheduleRepository: ScheduleRepository;
   readonly checkpointRepository: CheckpointRepository;
 }
@@ -130,9 +127,6 @@ export function extractHandlerDependencies(container: Container): Result<Handler
   const resourceMonitorResult = getDependency<ResourceMonitor>(container, 'resourceMonitor');
   if (!resourceMonitorResult.ok) return resourceMonitorResult;
 
-  const worktreeManagerResult = getDependency<WorktreeManager>(container, 'worktreeManager');
-  if (!worktreeManagerResult.ok) return worktreeManagerResult;
-
   const scheduleRepositoryResult = getDependency<ScheduleRepository>(container, 'scheduleRepository');
   if (!scheduleRepositoryResult.ok) return scheduleRepositoryResult;
 
@@ -149,7 +143,6 @@ export function extractHandlerDependencies(container: Container): Result<Handler
     dependencyRepository: dependencyRepositoryResult.value,
     workerPool: workerPoolResult.value,
     resourceMonitor: resourceMonitorResult.value,
-    worktreeManager: worktreeManagerResult.value,
     scheduleRepository: scheduleRepositoryResult.value,
     checkpointRepository: checkpointRepositoryResult.value,
   });
@@ -192,7 +185,7 @@ export async function setupEventHandlers(deps: HandlerDependencies): Promise<Res
   // Helper for creating child loggers
   const childLogger = (module: string) => logger.child({ module });
 
-  // Create 6 standard handlers that use setup(eventBus) pattern
+  // Create 5 standard handlers that use setup(eventBus) pattern
   // ARCHITECTURE: All handlers are independent - no inter-handler dependencies
   const standardHandlers = [
     // 1. Persistence Handler - manages database operations
@@ -205,8 +198,6 @@ export async function setupEventHandlers(deps: HandlerDependencies): Promise<Res
     new WorkerHandler(deps.config, deps.workerPool, deps.resourceMonitor, eventBus, childLogger('WorkerHandler')),
     // 5. Output Handler - manages output and logs
     new OutputHandler(deps.outputCapture, childLogger('OutputHandler')),
-    // 6. Worktree Handler - manages git worktree operations
-    new WorktreeHandler(deps.worktreeManager, eventBus, childLogger('WorktreeHandler')),
   ];
 
   // Register all standard handlers

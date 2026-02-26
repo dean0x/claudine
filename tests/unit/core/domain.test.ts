@@ -46,8 +46,6 @@ describe('Domain Models - REAL Behavior Tests', () => {
       expect(task.prompt).toBe('echo hello world');
       expect(task.status).toBe(TaskStatus.QUEUED);
       expect(task.priority).toBe(Priority.P2); // Default
-      expect(task.useWorktree).toBe(false); // FIX: Default is false (experimental, opt-in only)
-      expect(task.autoCommit).toBe(true); // Default
 
       // Additional validations for complete task structure
       // FIX: timeout and maxOutputBuffer are undefined when not provided (no defaults in createTask)
@@ -61,9 +59,6 @@ describe('Domain Models - REAL Behavior Tests', () => {
       expect(typeof task.createdAt).toBe('number');
       expect(task.createdAt).toBeGreaterThan(0);
       expect(task.updatedAt).toBe(task.createdAt);
-      expect(task.pushToRemote).toBe(true); // Default
-      expect(task.createdAt).toBeGreaterThan(0);
-      expect(task.updatedAt).toBe(task.createdAt);
     });
 
     it('should create task with full configuration', () => {
@@ -71,7 +66,6 @@ describe('Domain Models - REAL Behavior Tests', () => {
         prompt: 'complex task',
         priority: Priority.P0,
         workingDirectory: '/workspace',
-        useWorktree: false,
         timeout: 60000,
         maxOutputBuffer: BUFFER_SIZES.SMALL,
       };
@@ -80,7 +74,6 @@ describe('Domain Models - REAL Behavior Tests', () => {
 
       expect(task.priority).toBe(Priority.P0);
       expect(task.workingDirectory).toBe('/workspace');
-      expect(task.useWorktree).toBe(false);
       expect(task.timeout).toBe(60000);
       expect(task.maxOutputBuffer).toBe(BUFFER_SIZES.SMALL);
       expect(task.prompt).toBe('complex task');
@@ -88,35 +81,6 @@ describe('Domain Models - REAL Behavior Tests', () => {
       expect(task.id).toMatch(/^task-[a-f0-9-]+$/);
       expect(typeof task.createdAt).toBe('number');
       expect(task.updatedAt).toBe(task.createdAt);
-      expect(task.autoCommit).toBe(true); // Default not overridden
-      expect(task.pushToRemote).toBe(true); // Default not overridden
-      expect(task.workingDirectory).toBe('/workspace');
-      expect(task.useWorktree).toBe(false);
-      expect(task.mergeStrategy).toBeUndefined(); // No merge strategy when worktree disabled
-      expect(task.timeout).toBe(60000);
-      expect(task.maxOutputBuffer).toBe(BUFFER_SIZES.SMALL);
-    });
-
-    it('should handle worktree configuration', () => {
-      const withWorktree = createTask({
-        prompt: 'test',
-        useWorktree: true,
-        mergeStrategy: 'auto',
-        branchName: 'feature/test',
-      });
-
-      expect(withWorktree.useWorktree).toBe(true);
-      expect(withWorktree.mergeStrategy).toBe('auto');
-      expect(withWorktree.branchName).toBe('feature/test');
-
-      const withoutWorktree = createTask({
-        prompt: 'test',
-        useWorktree: false,
-        mergeStrategy: 'pr', // Should be ignored
-      });
-
-      expect(withoutWorktree.useWorktree).toBe(false);
-      expect(withoutWorktree.mergeStrategy).toBeUndefined();
     });
 
     it('should generate unique task IDs', () => {
@@ -479,29 +443,6 @@ describe('Domain Models - REAL Behavior Tests', () => {
       expect(task.status).toBe(TaskStatus.CANCELLED);
       expect(isTerminalState(task.status)).toBe(true);
       expect(canCancel(task)).toBe(false);
-    });
-
-    it('should handle worktree-based task', () => {
-      const task = createTask({
-        prompt: 'git commit -m "test"',
-        useWorktree: true,
-        mergeStrategy: 'pr',
-        branchName: 'feature/test-branch',
-        baseBranch: 'main',
-        autoCommit: true,
-        pushToRemote: true,
-        prTitle: 'Test PR',
-        prBody: 'This is a test',
-      });
-
-      expect(task.useWorktree).toBe(true);
-      expect(task.mergeStrategy).toBe('pr');
-      expect(task.branchName).toBe('feature/test-branch');
-      expect(task.baseBranch).toBe('main');
-      expect(task.autoCommit).toBe(true);
-      expect(task.pushToRemote).toBe(true);
-      expect(task.prTitle).toBe('Test PR');
-      expect(task.prBody).toBe('This is a test');
     });
 
     it('should set continueFrom when provided in request', () => {

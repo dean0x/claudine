@@ -105,10 +105,6 @@ export const TaskFactory = {
     return TaskFactory.basic({ workingDirectory });
   },
 
-  withWorktree: (): Task => {
-    return TaskFactory.basic({ useWorktree: true });
-  },
-
   failed: (): Task => {
     const task = TaskFactory.basic();
     return {

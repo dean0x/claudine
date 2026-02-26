@@ -21,15 +21,6 @@ const TaskRowSchema = z.object({
   status: z.enum(['queued', 'running', 'completed', 'failed', 'cancelled']),
   priority: z.enum(['P0', 'P1', 'P2']),
   working_directory: z.string().nullable(),
-  use_worktree: z.number(),
-  worktree_cleanup: z.string().nullable(),
-  merge_strategy: z.string().nullable(),
-  branch_name: z.string().nullable(),
-  base_branch: z.string().nullable(),
-  auto_commit: z.number().nullable(),
-  push_to_remote: z.number().nullable(),
-  pr_title: z.string().nullable(),
-  pr_body: z.string().nullable(),
   timeout: z.number().nullable(),
   max_output_buffer: z.number().nullable(),
   parent_task_id: z.string().nullable(),
@@ -54,15 +45,6 @@ interface TaskRow {
   readonly status: string;
   readonly priority: string;
   readonly working_directory: string | null;
-  readonly use_worktree: number;
-  readonly worktree_cleanup: string | null;
-  readonly merge_strategy: string | null;
-  readonly branch_name: string | null;
-  readonly base_branch: string | null;
-  readonly auto_commit: number | null;
-  readonly push_to_remote: number | null;
-  readonly pr_title: string | null;
-  readonly pr_body: string | null;
   readonly timeout: number | null;
   readonly max_output_buffer: number | null;
   readonly parent_task_id: string | null;
@@ -98,16 +80,12 @@ export class SQLiteTaskRepository implements TaskRepository {
     // Prepare statements for better performance
     this.saveStmt = this.db.prepare(`
       INSERT OR IGNORE INTO tasks (
-        id, prompt, status, priority, working_directory, use_worktree,
-        worktree_cleanup, merge_strategy, branch_name, base_branch,
-        auto_commit, push_to_remote, pr_title, pr_body,
+        id, prompt, status, priority, working_directory,
         timeout, max_output_buffer,
         created_at, started_at, completed_at, worker_id, exit_code, dependencies,
         parent_task_id, retry_count, retry_of, continue_from
       ) VALUES (
-        @id, @prompt, @status, @priority, @workingDirectory, @useWorktree,
-        @worktreeCleanup, @mergeStrategy, @branchName, @baseBranch,
-        @autoCommit, @pushToRemote, @prTitle, @prBody,
+        @id, @prompt, @status, @priority, @workingDirectory,
         @timeout, @maxOutputBuffer,
         @createdAt, @startedAt, @completedAt, @workerId, @exitCode, @dependencies,
         @parentTaskId, @retryCount, @retryOf, @continueFrom
@@ -122,15 +100,6 @@ export class SQLiteTaskRepository implements TaskRepository {
         status = @status,
         priority = @priority,
         working_directory = @workingDirectory,
-        use_worktree = @useWorktree,
-        worktree_cleanup = @worktreeCleanup,
-        merge_strategy = @mergeStrategy,
-        branch_name = @branchName,
-        base_branch = @baseBranch,
-        auto_commit = @autoCommit,
-        push_to_remote = @pushToRemote,
-        pr_title = @prTitle,
-        pr_body = @prBody,
         timeout = @timeout,
         max_output_buffer = @maxOutputBuffer,
         started_at = @startedAt,
@@ -146,15 +115,27 @@ export class SQLiteTaskRepository implements TaskRepository {
     `);
 
     this.findByIdStmt = this.db.prepare(`
-      SELECT * FROM tasks WHERE id = ?
+      SELECT id, prompt, status, priority, working_directory,
+             timeout, max_output_buffer, parent_task_id, retry_count, retry_of,
+             created_at, started_at, completed_at, worker_id, exit_code,
+             dependencies, continue_from
+      FROM tasks WHERE id = ?
     `);
 
     this.findAllUnboundedStmt = this.db.prepare(`
-      SELECT * FROM tasks ORDER BY created_at DESC
+      SELECT id, prompt, status, priority, working_directory,
+             timeout, max_output_buffer, parent_task_id, retry_count, retry_of,
+             created_at, started_at, completed_at, worker_id, exit_code,
+             dependencies, continue_from
+      FROM tasks ORDER BY created_at DESC
     `);
 
     this.findByStatusStmt = this.db.prepare(`
-      SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC
+      SELECT id, prompt, status, priority, working_directory,
+             timeout, max_output_buffer, parent_task_id, retry_count, retry_of,
+             created_at, started_at, completed_at, worker_id, exit_code,
+             dependencies, continue_from
+      FROM tasks WHERE status = ? ORDER BY created_at DESC
     `);
 
     this.countStmt = this.db.prepare(`
@@ -162,7 +143,11 @@ export class SQLiteTaskRepository implements TaskRepository {
     `);
 
     this.findAllPaginatedStmt = this.db.prepare(`
-      SELECT * FROM tasks ORDER BY created_at DESC LIMIT ? OFFSET ?
+      SELECT id, prompt, status, priority, working_directory,
+             timeout, max_output_buffer, parent_task_id, retry_count, retry_of,
+             created_at, started_at, completed_at, worker_id, exit_code,
+             dependencies, continue_from
+      FROM tasks ORDER BY created_at DESC LIMIT ? OFFSET ?
     `);
 
     this.deleteStmt = this.db.prepare(`
@@ -170,8 +155,8 @@ export class SQLiteTaskRepository implements TaskRepository {
     `);
 
     this.cleanupOldTasksStmt = this.db.prepare(`
-      DELETE FROM tasks 
-      WHERE status IN ('completed', 'failed', 'cancelled') 
+      DELETE FROM tasks
+      WHERE status IN ('completed', 'failed', 'cancelled')
       AND completed_at < ?
     `);
   }
@@ -186,15 +171,6 @@ export class SQLiteTaskRepository implements TaskRepository {
           status: task.status,
           priority: task.priority,
           workingDirectory: task.workingDirectory || null,
-          useWorktree: task.useWorktree ? 1 : 0,
-          worktreeCleanup: task.worktreeCleanup || 'auto',
-          mergeStrategy: task.mergeStrategy || 'pr',
-          branchName: task.branchName || null,
-          baseBranch: task.baseBranch || null,
-          autoCommit: task.autoCommit ? 1 : 0,
-          pushToRemote: task.pushToRemote ? 1 : 0,
-          prTitle: task.prTitle || null,
-          prBody: task.prBody || null,
           timeout: task.timeout || null,
           maxOutputBuffer: task.maxOutputBuffer || null,
           createdAt: task.createdAt,
@@ -231,8 +207,6 @@ export class SQLiteTaskRepository implements TaskRepository {
     const updatedTask = { ...existingResult.value, ...update };
 
     // Use UPDATE (not INSERT OR REPLACE) to preserve child rows
-    // INSERT OR REPLACE deletes the old row first, triggering ON DELETE CASCADE/SET NULL
-    // on child tables like schedule_executions and task_checkpoints
     return tryCatchAsync(
       async () => {
         this.updateStmt.run({
@@ -241,15 +215,6 @@ export class SQLiteTaskRepository implements TaskRepository {
           status: updatedTask.status,
           priority: updatedTask.priority,
           workingDirectory: updatedTask.workingDirectory || null,
-          useWorktree: updatedTask.useWorktree ? 1 : 0,
-          worktreeCleanup: updatedTask.worktreeCleanup || 'auto',
-          mergeStrategy: updatedTask.mergeStrategy || 'pr',
-          branchName: updatedTask.branchName || null,
-          baseBranch: updatedTask.baseBranch || null,
-          autoCommit: updatedTask.autoCommit ? 1 : 0,
-          pushToRemote: updatedTask.pushToRemote ? 1 : 0,
-          prTitle: updatedTask.prTitle || null,
-          prBody: updatedTask.prBody || null,
           timeout: updatedTask.timeout || null,
           maxOutputBuffer: updatedTask.maxOutputBuffer || null,
           startedAt: updatedTask.startedAt || null,
@@ -355,7 +320,6 @@ export class SQLiteTaskRepository implements TaskRepository {
    */
   private rowToTask(row: TaskRow): Task {
     // Validate row data at system boundary (parse throws ZodError on invalid data)
-    // This catches database corruption or schema mismatches early
     const data = TaskRowSchema.parse(row);
     return {
       id: data.id as TaskId,
@@ -363,15 +327,6 @@ export class SQLiteTaskRepository implements TaskRepository {
       status: data.status as TaskStatus,
       priority: data.priority as Priority,
       workingDirectory: data.working_directory || undefined,
-      useWorktree: data.use_worktree === 1,
-      worktreeCleanup: (data.worktree_cleanup || 'auto') as 'auto' | 'keep' | 'delete',
-      mergeStrategy: (data.merge_strategy || 'pr') as 'auto' | 'pr' | 'manual' | 'patch',
-      branchName: data.branch_name || undefined,
-      baseBranch: data.base_branch || undefined,
-      autoCommit: data.auto_commit === null || data.auto_commit === 1,
-      pushToRemote: data.push_to_remote === null || data.push_to_remote === 1,
-      prTitle: data.pr_title || undefined,
-      prBody: data.pr_body || undefined,
       timeout: data.timeout || undefined,
       maxOutputBuffer: data.max_output_buffer || undefined,
       parentTaskId: data.parent_task_id ? (data.parent_task_id as TaskId) : undefined,

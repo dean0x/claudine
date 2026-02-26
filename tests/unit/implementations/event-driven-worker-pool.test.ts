@@ -4,13 +4,7 @@ import type { Task } from '../../../src/core/domain';
 import { TaskId, WorkerId } from '../../../src/core/domain';
 import { DelegateError, ErrorCode } from '../../../src/core/errors';
 import type { EventBus } from '../../../src/core/events/event-bus';
-import type {
-  Logger,
-  OutputCapture,
-  ProcessSpawner,
-  ResourceMonitor,
-  WorktreeManager,
-} from '../../../src/core/interfaces';
+import type { Logger, OutputCapture, ProcessSpawner, ResourceMonitor } from '../../../src/core/interfaces';
 import { err, ok } from '../../../src/core/result';
 import { EventDrivenWorkerPool } from '../../../src/implementations/event-driven-worker-pool';
 import { TaskFactory } from '../../fixtures/factories';
@@ -59,17 +53,6 @@ const createMockMonitor = () =>
     recordSpawn: vi.fn(),
   }) as unknown as ResourceMonitor;
 
-const createMockWorktreeManager = () =>
-  ({
-    createWorktree: vi.fn().mockResolvedValue(ok({ path: '/tmp/worktree', branch: 'task-branch', baseBranch: 'main' })),
-    removeWorktree: vi.fn().mockResolvedValue(ok(undefined)),
-    completeTask: vi.fn().mockResolvedValue(ok({ merged: true })),
-    getWorktreeStatuses: vi.fn(),
-    getWorktreeStatus: vi.fn(),
-    cleanup: vi.fn(),
-    getCurrentBranch: vi.fn().mockResolvedValue('main'),
-  }) as unknown as WorktreeManager;
-
 const createMockOutputCapture = () =>
   ({
     capture: vi.fn().mockReturnValue(ok(undefined)),
@@ -105,7 +88,6 @@ describe('EventDrivenWorkerPool', () => {
   let monitor: ResourceMonitor;
   let logger: Logger;
   let eventBus: EventBus;
-  let worktreeManager: WorktreeManager;
   let outputCapture: OutputCapture;
 
   beforeEach(() => {
@@ -116,10 +98,9 @@ describe('EventDrivenWorkerPool', () => {
     monitor = createMockMonitor();
     logger = createMockLogger();
     eventBus = createTestEventBus();
-    worktreeManager = createMockWorktreeManager();
     outputCapture = createMockOutputCapture();
 
-    pool = new EventDrivenWorkerPool(spawner, monitor, logger, eventBus, worktreeManager, outputCapture);
+    pool = new EventDrivenWorkerPool(spawner, monitor, logger, eventBus, outputCapture);
   });
 
   afterEach(() => {
@@ -185,42 +166,6 @@ describe('EventDrivenWorkerPool', () => {
       await pool.spawn(task);
 
       expect(spawner.spawn as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task.prompt, process.cwd(), task.id);
-    });
-
-    it('should create worktree when task.useWorktree is true', async () => {
-      const task = buildTask((f) => f.withUseWorktree(true));
-
-      await pool.spawn(task);
-
-      expect(worktreeManager.createWorktree as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task);
-      expect(spawner.spawn as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task.prompt, '/tmp/worktree', task.id);
-    });
-
-    it('should fall back to normal execution when worktree creation fails', async () => {
-      (worktreeManager.createWorktree as ReturnType<typeof vi.fn>).mockResolvedValue(
-        err(new DelegateError(ErrorCode.SYSTEM_ERROR, 'git worktree failed')),
-      );
-      const task = buildTask((f) => f.withUseWorktree(true).withWorkingDirectory('/fallback/dir'));
-
-      const result = await pool.spawn(task);
-
-      expect(result.ok).toBe(true);
-      expect(spawner.spawn as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task.prompt, '/fallback/dir', task.id);
-      expect(logger.warn as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
-        'Failed to create worktree, falling back to normal execution',
-        expect.objectContaining({ taskId: task.id }),
-      );
-    });
-
-    it('should clean up worktree if spawn fails after worktree was created', async () => {
-      const spawnError = new Error('spawn failed');
-      (spawner.spawn as ReturnType<typeof vi.fn>).mockReturnValue(err(spawnError));
-      const task = buildTask((f) => f.withUseWorktree(true));
-
-      const result = await pool.spawn(task);
-
-      expect(result.ok).toBe(false);
-      expect(worktreeManager.removeWorktree as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task.id);
     });
 
     it('should increase worker count after successful spawn', async () => {
@@ -314,18 +259,6 @@ describe('EventDrivenWorkerPool', () => {
           reason: 'Explicit kill request',
         }),
       );
-    });
-
-    it('should handle worktree cleanup on kill', async () => {
-      const task = buildTask((f) => f.withUseWorktree(true));
-      const spawnResult = await pool.spawn(task);
-      if (!spawnResult.ok) return;
-
-      await pool.kill(spawnResult.value.id);
-
-      // handleWorktreeCleanup is called; 'auto' cleanup (default) with mergeStrategy='pr' (default for useWorktree)
-      // auto + non-manual = should cleanup
-      expect(worktreeManager.removeWorktree as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task.id);
     });
   });
 
@@ -563,71 +496,6 @@ describe('EventDrivenWorkerPool', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(monitor.decrementWorkerCount as ReturnType<typeof vi.fn>).toHaveBeenCalled();
-    });
-  });
-
-  // --- Worktree cleanup strategy ---
-
-  describe('worktree cleanup strategy', () => {
-    it('should preserve worktree when cleanup is "keep"', async () => {
-      const task = { ...buildTask((f) => f.withUseWorktree(true)), worktreeCleanup: 'keep' as const };
-
-      const spawnResult = await pool.spawn(task);
-      if (!spawnResult.ok) return;
-
-      await pool.kill(spawnResult.value.id);
-
-      // removeWorktree should NOT be called for 'keep' strategy
-      expect(worktreeManager.removeWorktree as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
-      expect(logger.info as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
-        'Worktree preserved',
-        expect.objectContaining({ taskId: task.id }),
-      );
-    });
-
-    it('should delete worktree when cleanup is "delete"', async () => {
-      const task = { ...buildTask((f) => f.withUseWorktree(true)), worktreeCleanup: 'delete' as const };
-
-      const spawnResult = await pool.spawn(task);
-      if (!spawnResult.ok) return;
-
-      await pool.kill(spawnResult.value.id);
-
-      expect(worktreeManager.removeWorktree as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task.id);
-    });
-
-    it('should cleanup on "auto" when mergeStrategy is not "manual"', async () => {
-      const task = {
-        ...buildTask((f) => f.withUseWorktree(true)),
-        worktreeCleanup: 'auto' as const,
-        mergeStrategy: 'pr' as const,
-      };
-
-      const spawnResult = await pool.spawn(task);
-      if (!spawnResult.ok) return;
-
-      await pool.kill(spawnResult.value.id);
-
-      expect(worktreeManager.removeWorktree as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task.id);
-    });
-
-    it('should preserve on "auto" when mergeStrategy is "manual"', async () => {
-      const task = {
-        ...buildTask((f) => f.withUseWorktree(true)),
-        worktreeCleanup: 'auto' as const,
-        mergeStrategy: 'manual' as const,
-      };
-
-      const spawnResult = await pool.spawn(task);
-      if (!spawnResult.ok) return;
-
-      await pool.kill(spawnResult.value.id);
-
-      expect(worktreeManager.removeWorktree as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
-      expect(logger.info as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
-        'Worktree preserved',
-        expect.objectContaining({ taskId: task.id }),
-      );
     });
   });
 });

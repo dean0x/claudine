@@ -11,7 +11,7 @@ import type {
   TaskRepository,
 } from '../../src/core/interfaces';
 import type { Result } from '../../src/core/result';
-import { createMockTask, createMockWorker } from './index.js';
+import { createMockTask, createMockWorker } from './mock-data.js';
 
 export const createMockLogger = (): Logger => ({
   info: vi.fn(),

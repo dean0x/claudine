@@ -10,30 +10,6 @@ Delegate v0.4.0 is a fully-featured MCP server with autoscaling, persistence, ta
 
 ## Future Development
 
-### v0.2.5 - Enhanced Worktree Safety Features
-**Goal**: Add safety mechanisms for worktree operations  
-**Priority**: Medium - Stability and data protection
-
-#### Features
-- **Pre-execution Conflict Detection**: Analyze potential conflicts before task execution
-- **Automatic Patch Backups**: Create patch files before any merge operation
-- **Rollback Capability**: Restore to original state if operations fail
-- **Atomic Operations**: Ensure all git operations complete or none do
-- **Dry Run Mode**: Preview changes without applying them
-- **Worktree Preservation**: Never lose work due to failed merges
-
-#### Technical Implementation
-```typescript
-interface SafetyOptions {
-  conflictCheck: boolean;
-  autoBackup: boolean;
-  dryRun: boolean;
-  atomicOperations: boolean;
-}
-```
-
----
-
 ### v0.3.0 - Task Dependencies ✅
 **Goal**: Enable complex workflows with task chaining
 **Priority**: High - Most requested feature
@@ -417,8 +393,7 @@ tasks:
 | Version | Status | Focus |
 |---------|--------|--------|
 | v0.2.0 | ✅ **Released** | Autoscaling + Persistence |
-| v0.2.1 | ✅ **Released** | Event-driven + Git Worktree + GitHub PR |
-| v0.2.5 | 🚧 **Planning** | Worktree Safety Features |
+| v0.2.1 | ✅ **Released** | Event-driven Architecture |
 | v0.3.0 | ✅ **Released** | Task Dependencies (DAG validation) |
 | v0.3.1 | 📋 **Planned** | Task Dependencies Optimizations |
 | v0.4.0 | ✅ **Implemented** | Task Scheduling + Task Resumption |

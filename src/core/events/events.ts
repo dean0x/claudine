@@ -175,28 +175,6 @@ export interface RequeueTaskEvent extends BaseEvent {
 }
 
 /**
- * Worktree query events - for pure event-driven worktree operations
- * ARCHITECTURE: Completes event-driven refactor for worktree management
- */
-export interface WorktreeListQueryEvent extends BaseEvent {
-  type: 'WorktreeListQuery';
-  includeStale?: boolean;
-  olderThanDays?: number;
-}
-
-export interface WorktreeStatusQueryEvent extends BaseEvent {
-  type: 'WorktreeStatusQuery';
-  taskId: TaskId;
-}
-
-export interface WorktreeCleanupRequestedEvent extends BaseEvent {
-  type: 'WorktreeCleanupRequested';
-  strategy?: 'safe' | 'interactive' | 'force';
-  olderThanDays?: number;
-  taskIds?: TaskId[];
-}
-
-/**
  * Dependency events - for task dependency management
  * ARCHITECTURE: Part of DAG-based task dependency system
  * Pattern: Event-driven dependency validation and resolution tracking
@@ -361,10 +339,6 @@ export type DelegateEvent =
   // Queue query events
   | NextTaskQueryEvent
   | RequeueTaskEvent
-  // Worktree query events
-  | WorktreeListQueryEvent
-  | WorktreeStatusQueryEvent
-  | WorktreeCleanupRequestedEvent
   // Dependency events
   | TaskDependencyAddedEvent
   | TaskDependencyResolvedEvent

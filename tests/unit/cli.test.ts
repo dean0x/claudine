@@ -138,17 +138,6 @@ class MockTaskManager implements TaskManager {
     return ok(newTask);
   }
 
-  // Stub worktree methods to satisfy interface
-  async listWorktrees() {
-    return ok([]);
-  }
-  async getWorktreeStatus() {
-    return err(new DelegateError(ErrorCode.TASK_NOT_FOUND, 'Not implemented'));
-  }
-  async cleanupWorktrees() {
-    return ok({ removed: 0, kept: 0, errors: [] });
-  }
-
   reset() {
     this.delegateCalls = [];
     this.statusCalls = [];
@@ -507,57 +496,6 @@ describe('CLI - Command Parsing and Validation', () => {
 
       const call = mockTaskManager.delegateCalls[0];
       expect(call.continueFrom).toBeUndefined();
-    });
-  });
-
-  describe('Delegate Command - Worktree Options', () => {
-    it('should disable worktree by default for simplicity', async () => {
-      await simulateDelegateCommand(mockTaskManager, VALID_PROMPT);
-
-      const call = mockTaskManager.delegateCalls[0];
-      expect(call.useWorktree).toBe(false);
-    });
-
-    it('should enable worktree when explicitly requested', async () => {
-      await simulateDelegateCommand(mockTaskManager, VALID_PROMPT, {
-        useWorktree: true,
-      });
-
-      expect(mockTaskManager.delegateCalls[0].useWorktree).toBe(true);
-    });
-
-    it('should accept worktree cleanup strategy (auto, keep, delete)', async () => {
-      const strategies = ['auto', 'keep', 'delete'] as const;
-
-      for (const strategy of strategies) {
-        mockTaskManager.reset();
-        await simulateDelegateCommand(mockTaskManager, VALID_PROMPT, {
-          useWorktree: true,
-          worktreeCleanup: strategy,
-        });
-
-        expect(mockTaskManager.delegateCalls[0].worktreeCleanup).toBe(strategy);
-      }
-    });
-
-    it('should accept merge strategy (pr, auto, manual, patch)', async () => {
-      const strategies = ['pr', 'auto', 'manual', 'patch'] as const;
-
-      for (const strategy of strategies) {
-        mockTaskManager.reset();
-        await simulateDelegateCommand(mockTaskManager, VALID_PROMPT, {
-          mergeStrategy: strategy,
-        });
-
-        expect(mockTaskManager.delegateCalls[0].mergeStrategy).toBe(strategy);
-      }
-    });
-
-    it('should use PR merge strategy by default', async () => {
-      await simulateDelegateCommand(mockTaskManager, VALID_PROMPT);
-
-      const call = mockTaskManager.delegateCalls[0];
-      expect(call.mergeStrategy || 'pr').toBe('pr');
     });
   });
 
@@ -1689,11 +1627,6 @@ interface DelegateOptions {
   workingDirectory?: string;
   timeout?: number;
   maxOutputBuffer?: number;
-  useWorktree?: boolean;
-  worktreeCleanup?: string;
-  mergeStrategy?: string;
-  branchName?: string;
-  baseBranch?: string;
   dependsOn?: string[];
   continueFrom?: string;
   detach?: boolean;
@@ -1759,11 +1692,6 @@ async function simulateDelegateCommand(taskManager: MockTaskManager, prompt: str
     prompt,
     priority: options?.priority || 'P2',
     workingDirectory: options?.workingDirectory || process.cwd(),
-    useWorktree: options?.useWorktree || false,
-    worktreeCleanup: options?.worktreeCleanup,
-    mergeStrategy: options?.mergeStrategy || 'pr',
-    branchName: options?.branchName,
-    baseBranch: options?.baseBranch,
     timeout: options?.timeout || 300000,
     maxOutputBuffer: options?.maxOutputBuffer || 10485760,
     dependsOn: options?.dependsOn,

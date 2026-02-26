@@ -199,15 +199,6 @@ describe('Retry Functionality', () => {
         prompt: 'complex task with all options',
         priority: Priority.P0,
         workingDirectory: '/test/dir',
-        useWorktree: true,
-        worktreeCleanup: 'keep',
-        mergeStrategy: 'manual',
-        branchName: 'test-branch',
-        baseBranch: 'main',
-        autoCommit: false,
-        pushToRemote: false,
-        prTitle: 'Test PR',
-        prBody: 'Test PR Body',
         timeout: 60000,
         maxOutputBuffer: 1024,
       };
@@ -230,15 +221,6 @@ describe('Retry Functionality', () => {
       expect(retryTask.prompt).toBe(originalTask.prompt);
       expect(retryTask.priority).toBe(originalTask.priority);
       expect(retryTask.workingDirectory).toBe(originalTask.workingDirectory);
-      expect(retryTask.useWorktree).toBe(originalTask.useWorktree);
-      expect(retryTask.worktreeCleanup).toBe(originalTask.worktreeCleanup);
-      expect(retryTask.mergeStrategy).toBe(originalTask.mergeStrategy);
-      expect(retryTask.branchName).toBe(originalTask.branchName);
-      expect(retryTask.baseBranch).toBe(originalTask.baseBranch);
-      expect(retryTask.autoCommit).toBe(originalTask.autoCommit);
-      expect(retryTask.pushToRemote).toBe(originalTask.pushToRemote);
-      expect(retryTask.prTitle).toBe(originalTask.prTitle);
-      expect(retryTask.prBody).toBe(originalTask.prBody);
       expect(retryTask.timeout).toBe(originalTask.timeout);
       expect(retryTask.maxOutputBuffer).toBe(originalTask.maxOutputBuffer);
     });
