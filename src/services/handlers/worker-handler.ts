@@ -196,6 +196,16 @@ export class WorkerHandler extends BaseEventHandler {
         }
       }
 
+      // Emit TaskCancelled so subscribers (CLI wait, persistence) receive terminal state
+      const cancelResult = await this.eventBus.emit<TaskCancelledEvent>('TaskCancelled', {
+        taskId,
+        reason,
+      });
+
+      if (!cancelResult.ok) {
+        this.logger.error('Failed to emit TaskCancelled event', cancelResult.error, { taskId });
+      }
+
       return ok(undefined);
     });
   }

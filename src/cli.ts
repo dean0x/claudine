@@ -4,11 +4,22 @@
 process.title = 'delegate-cli';
 
 import { spawn } from 'child_process';
+import { closeSync, mkdirSync, openSync, readFileSync } from 'fs';
+import { homedir } from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { bootstrap } from './bootstrap.js';
+import type { Container } from './core/container.js';
 import type { DelegateRequest, Task } from './core/domain.js';
 import { Priority, ScheduleId, TaskId } from './core/domain.js';
+import type { EventBus } from './core/events/event-bus.js';
+import type {
+  OutputCapturedEvent,
+  TaskCancelledEvent,
+  TaskCompletedEvent,
+  TaskFailedEvent,
+  TaskTimeoutEvent,
+} from './core/events/events.js';
 import type { ScheduleService, TaskManager } from './core/interfaces.js';
 import { validateBufferSize, validatePath, validateTimeout } from './utils/validation.js';
 
@@ -68,6 +79,7 @@ MCP Server Commands:
 
 Task Commands:
   delegate <prompt> [options]  Delegate a task to Claude Code (runs in current directory by default)
+    -d, --detach               Fire-and-forget mode (exit immediately, don't wait for completion)
     -p, --priority P0|P1|P2    Task priority (P0=critical, P1=high, P2=normal)
     -w, --working-directory D  Working directory for task execution
     --depends-on TASK_IDS      Comma-separated task IDs this task depends on (blocks until complete)
@@ -79,6 +91,7 @@ Task Commands:
     -b, --branch NAME          Custom branch name
     --base BRANCH              Base branch (default: current)
     -t, --timeout MS           Task timeout in milliseconds
+    --max-output-buffer BYTES  Max output buffer size (1KB-1GB, default: 10MB)
 
 ⚠️  EXPERIMENTAL Worktree Features (advanced users only):
   worktree list              List all active worktrees with status
@@ -195,6 +208,182 @@ Learn more: https://github.com/dean0x/delegate#configuration
 `);
 }
 
+/**
+ * Subscribe to EventBus events for a specific task and wait for terminal state.
+ * Streams OutputCaptured to stdout/stderr in real-time.
+ * Returns the worker's exit code (0 = success, non-zero = failure).
+ */
+function waitForTaskCompletion(container: Container, taskId: string): Promise<number> {
+  const eventBusResult = container.get<EventBus>('eventBus');
+  if (!eventBusResult.ok) {
+    console.error('❌ Failed to get event bus:', eventBusResult.error.message);
+    return Promise.resolve(1);
+  }
+  const eventBus = eventBusResult.value;
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    const subscriptionIds: string[] = [];
+
+    const cleanup = () => {
+      for (const id of subscriptionIds) {
+        eventBus.unsubscribe(id);
+      }
+    };
+
+    const resolveOnce = (exitCode: number) => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve(exitCode);
+    };
+
+    // Stream output in real-time
+    const outputSub = eventBus.subscribe<OutputCapturedEvent>('OutputCaptured', async (event) => {
+      if (event.taskId !== taskId) return;
+      const stream = event.outputType === 'stderr' ? process.stderr : process.stdout;
+      stream.write(event.data);
+    });
+    if (outputSub.ok) subscriptionIds.push(outputSub.value);
+
+    // Terminal states
+    const completedSub = eventBus.subscribe<TaskCompletedEvent>('TaskCompleted', async (event) => {
+      if (event.taskId !== taskId) return;
+      resolveOnce(event.exitCode);
+    });
+    if (completedSub.ok) subscriptionIds.push(completedSub.value);
+
+    const failedSub = eventBus.subscribe<TaskFailedEvent>('TaskFailed', async (event) => {
+      if (event.taskId !== taskId) return;
+      resolveOnce(event.exitCode ?? 1);
+    });
+    if (failedSub.ok) subscriptionIds.push(failedSub.value);
+
+    const cancelledSub = eventBus.subscribe<TaskCancelledEvent>('TaskCancelled', async (event) => {
+      if (event.taskId !== taskId) return;
+      resolveOnce(1);
+    });
+    if (cancelledSub.ok) subscriptionIds.push(cancelledSub.value);
+
+    const timeoutSub = eventBus.subscribe<TaskTimeoutEvent>('TaskTimeout', async (event) => {
+      if (event.taskId !== taskId) return;
+      resolveOnce(1);
+    });
+    if (timeoutSub.ok) subscriptionIds.push(timeoutSub.value);
+  });
+}
+
+/**
+ * Handle --detach mode by re-spawning the CLI as a detached background process.
+ * The background process runs the full lifecycle (bootstrap, delegate, wait, dispose, exit).
+ * The foreground polls the background's log file to extract and print the task ID, then exits.
+ */
+function handleDetachMode(delegateArgs: string[]): void {
+  // Filter --detach and -d from args
+  const filteredArgs = delegateArgs.filter((arg) => arg !== '--detach' && arg !== '-d');
+
+  // Validate that at least one non-flag word exists (the prompt)
+  const hasPrompt = filteredArgs.some((arg) => !arg.startsWith('-'));
+  if (!hasPrompt) {
+    console.error('❌ Usage: delegate delegate "<prompt>" --detach [options]');
+    console.error('  --detach requires a prompt to delegate');
+    process.exit(1);
+  }
+
+  // Create log directory
+  const logDir = path.join(homedir(), '.delegate', 'detach-logs');
+  try {
+    mkdirSync(logDir, { recursive: true });
+  } catch (error) {
+    console.error('❌ Failed to create log directory:', logDir, error);
+    process.exit(1);
+  }
+
+  // Create log file with timestamp and random suffix for uniqueness
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const suffix = Math.random().toString(36).substring(2, 8);
+  const logFile = path.join(logDir, `detach-${timestamp}-${suffix}.log`);
+  let logFd: number;
+  try {
+    logFd = openSync(logFile, 'w');
+  } catch (error) {
+    console.error('❌ Failed to create log file:', logFile, error);
+    process.exit(1);
+  }
+
+  // Re-spawn CLI without --detach as a detached background process
+  const childArgs = [process.argv[1], 'delegate', ...filteredArgs];
+  try {
+    const child = spawn(process.argv[0], childArgs, {
+      detached: true,
+      stdio: ['ignore', logFd, logFd],
+      cwd: process.cwd(),
+      env: process.env,
+    });
+
+    child.unref();
+
+    if (!child.pid) {
+      closeSync(logFd);
+      console.error('❌ Failed to spawn background process');
+      process.exit(1);
+    }
+
+    console.log(`🚀 Background process started (PID: ${child.pid})`);
+    console.log(`📄 Log file: ${logFile}`);
+    closeSync(logFd);
+
+    // Poll log file for task ID (max 15s at 200ms intervals)
+    const maxAttempts = 75; // 15s / 200ms
+    let attempt = 0;
+    const taskIdPattern = /Task ID:\s+(task-\S+)/;
+    const errorPattern = /^❌/m;
+
+    const pollInterval = setInterval(() => {
+      attempt++;
+      try {
+        const content = readFileSync(logFile, 'utf-8');
+
+        // Check for error patterns first
+        if (errorPattern.test(content)) {
+          clearInterval(pollInterval);
+          const lines = content.split('\n').filter((l) => l.trim().length > 0);
+          const lastLines = lines.slice(-5);
+          console.error('\n❌ Background process encountered an error:');
+          for (const line of lastLines) {
+            console.error(`  ${line}`);
+          }
+          process.exit(1);
+        }
+
+        // Check for task ID
+        const match = content.match(taskIdPattern);
+        if (match) {
+          clearInterval(pollInterval);
+          const taskId = match[1];
+          console.log(`\n✅ Task delegated: ${taskId}`);
+          console.log(`🔍 Check status: delegate status ${taskId}`);
+          console.log(`📤 View logs:    delegate logs ${taskId}`);
+          process.exit(0);
+        }
+      } catch {
+        // Log file not yet readable, continue polling
+      }
+
+      if (attempt >= maxAttempts) {
+        clearInterval(pollInterval);
+        console.log('\n⏳ Task ID not yet available (background process still starting)');
+        console.log(`📄 Check log file: ${logFile}`);
+        process.exit(0);
+      }
+    }, 200);
+  } catch (error) {
+    closeSync(logFd);
+    console.error('❌ Failed to spawn background process:', error);
+    process.exit(1);
+  }
+}
+
 async function delegateTask(
   prompt: string,
   options?: {
@@ -213,20 +402,26 @@ async function delegateTask(
     prBody?: string;
     timeout?: number;
     maxOutputBuffer?: number;
+    detach?: boolean;
   },
 ) {
+  let container: Container | undefined;
   try {
     console.log('🚀 Bootstrapping Delegate...');
-    const containerResult = await bootstrap({ skipScheduleExecutor: true });
+    const containerResult = await bootstrap({
+      skipScheduleExecutor: true,
+      skipResourceMonitoring: true,
+    });
     if (!containerResult.ok) {
       console.error('❌ Bootstrap failed:', containerResult.error.message);
       process.exit(1);
     }
-    const container = containerResult.value;
+    container = containerResult.value;
 
     const taskManagerResult = await container.resolve<TaskManager>('taskManager');
     if (!taskManagerResult.ok) {
       console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
+      await container.dispose();
       process.exit(1);
     }
 
@@ -260,19 +455,34 @@ async function delegateTask(
     }
 
     const result = await taskManager.delegate(request);
-    if (result.ok) {
-      const task = result.value;
-      console.log('✅ Task delegated successfully!');
-      console.log('📋 Task ID:', task.id);
-      console.log('🔍 Status:', task.status);
-      console.log('⏰ Check status with: delegate status', task.id);
-      process.exit(0);
-    } else {
+    if (!result.ok) {
       console.error('❌ Failed to delegate task:', result.error.message);
+      await container.dispose();
       process.exit(1);
     }
+
+    const task = result.value;
+    console.log('✅ Task delegated successfully!');
+    console.log('📋 Task ID:', task.id);
+
+    // Wait for worker completion with real-time output streaming
+    let cancelledBySigint = false;
+    const sigintHandler = () => {
+      console.error('\n🛑 Cancelling task...');
+      cancelledBySigint = true;
+      taskManager.cancel(task.id, 'User interrupted (SIGINT)');
+    };
+    process.on('SIGINT', sigintHandler);
+
+    console.log('⏳ Waiting for task completion... (Ctrl+C to cancel)');
+    const exitCode = await waitForTaskCompletion(container, task.id);
+
+    process.removeListener('SIGINT', sigintHandler);
+    await container.dispose();
+    process.exit(cancelledBySigint ? 130 : exitCode);
   } catch (error) {
     console.error('❌ Error:', error);
+    if (container) await container.dispose();
     process.exit(1);
   }
 }
@@ -1028,205 +1238,212 @@ if (mainCommand === 'mcp') {
 } else if (mainCommand === 'delegate') {
   // Parse arguments for delegate command
   const delegateArgs = args.slice(1);
-  const options: {
-    priority?: 'P0' | 'P1' | 'P2';
-    workingDirectory?: string;
-    dependsOn?: readonly string[];
-    continueFrom?: string;
-    useWorktree?: boolean;
-    worktreeCleanup?: 'auto' | 'keep' | 'delete';
-    mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch';
-    branchName?: string;
-    baseBranch?: string;
-    autoCommit?: boolean;
-    pushToRemote?: boolean;
-    prTitle?: string;
-    prBody?: string;
-    timeout?: number;
-    maxOutputBuffer?: number;
-  } = {
-    useWorktree: true, // Default: use worktree
-    worktreeCleanup: 'auto', // Default: smart cleanup
-    mergeStrategy: 'pr', // Default: create PR
-    autoCommit: true,
-    pushToRemote: true,
-  };
+  const hasDetach = delegateArgs.includes('--detach') || delegateArgs.includes('-d');
 
-  let promptWords: string[] = [];
+  if (hasDetach) {
+    handleDetachMode(delegateArgs);
+    // handleDetachMode sets up polling that calls process.exit — no fallthrough
+  } else {
+    const options: {
+      priority?: 'P0' | 'P1' | 'P2';
+      workingDirectory?: string;
+      dependsOn?: readonly string[];
+      continueFrom?: string;
+      useWorktree?: boolean;
+      worktreeCleanup?: 'auto' | 'keep' | 'delete';
+      mergeStrategy?: 'pr' | 'auto' | 'manual' | 'patch';
+      branchName?: string;
+      baseBranch?: string;
+      autoCommit?: boolean;
+      pushToRemote?: boolean;
+      prTitle?: string;
+      prBody?: string;
+      timeout?: number;
+      maxOutputBuffer?: number;
+    } = {
+      useWorktree: false, // Default: no worktree (opt-in via --use-worktree)
+      worktreeCleanup: 'auto', // Default: smart cleanup
+      mergeStrategy: 'pr', // Default: create PR
+      autoCommit: true,
+      pushToRemote: true,
+    };
 
-  for (let i = 0; i < delegateArgs.length; i++) {
-    const arg = delegateArgs[i];
+    let promptWords: string[] = [];
 
-    if (arg === '--priority' || arg === '-p') {
-      const next = delegateArgs[i + 1];
-      if (next && ['P0', 'P1', 'P2'].includes(next)) {
-        options.priority = next as 'P0' | 'P1' | 'P2';
-        i++; // skip next arg
-      } else {
-        console.error('❌ Invalid priority. Must be P0, P1, or P2');
-        process.exit(1);
-      }
-    } else if (arg === '--working-directory' || arg === '-w') {
-      const next = delegateArgs[i + 1];
-      if (next && !next.startsWith('-')) {
-        // Validate the path to prevent traversal attacks
-        const pathResult = validatePath(next);
-        if (!pathResult.ok) {
-          console.error(`❌ Invalid working directory: ${pathResult.error.message}`);
+    for (let i = 0; i < delegateArgs.length; i++) {
+      const arg = delegateArgs[i];
+
+      if (arg === '--priority' || arg === '-p') {
+        const next = delegateArgs[i + 1];
+        if (next && ['P0', 'P1', 'P2'].includes(next)) {
+          options.priority = next as 'P0' | 'P1' | 'P2';
+          i++; // skip next arg
+        } else {
+          console.error('❌ Invalid priority. Must be P0, P1, or P2');
           process.exit(1);
         }
-        options.workingDirectory = pathResult.value;
-        i++; // skip next arg
-      } else {
-        console.error('❌ Working directory requires a path');
-        process.exit(1);
-      }
-    } else if (arg === '--depends-on') {
-      const next = delegateArgs[i + 1];
-      if (next && !next.startsWith('-')) {
-        // Parse comma-separated task IDs
-        const taskIds = next
-          .split(',')
-          .map((id) => id.trim())
-          .filter((id) => id.length > 0);
-        if (taskIds.length === 0) {
-          console.error('❌ --depends-on requires at least one task ID');
+      } else if (arg === '--working-directory' || arg === '-w') {
+        const next = delegateArgs[i + 1];
+        if (next && !next.startsWith('-')) {
+          // Validate the path to prevent traversal attacks
+          const pathResult = validatePath(next);
+          if (!pathResult.ok) {
+            console.error(`❌ Invalid working directory: ${pathResult.error.message}`);
+            process.exit(1);
+          }
+          options.workingDirectory = pathResult.value;
+          i++; // skip next arg
+        } else {
+          console.error('❌ Working directory requires a path');
           process.exit(1);
         }
-        options.dependsOn = taskIds;
+      } else if (arg === '--depends-on') {
+        const next = delegateArgs[i + 1];
+        if (next && !next.startsWith('-')) {
+          // Parse comma-separated task IDs
+          const taskIds = next
+            .split(',')
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0);
+          if (taskIds.length === 0) {
+            console.error('❌ --depends-on requires at least one task ID');
+            process.exit(1);
+          }
+          options.dependsOn = taskIds;
+          i++; // skip next arg
+        } else {
+          console.error('❌ --depends-on requires comma-separated task IDs');
+          console.error('Example: --depends-on task-abc123 or --depends-on task-1,task-2,task-3');
+          process.exit(1);
+        }
+      } else if (arg === '--continue-from') {
+        const next = delegateArgs[i + 1];
+        if (next && !next.startsWith('-')) {
+          options.continueFrom = next;
+          i++;
+        } else {
+          console.error('❌ --continue-from requires a task ID');
+          process.exit(1);
+        }
+      } else if (arg === '--use-worktree') {
+        options.useWorktree = true;
+      } else if (arg === '--keep-worktree') {
+        options.worktreeCleanup = 'keep';
+      } else if (arg === '--delete-worktree') {
+        options.worktreeCleanup = 'delete';
+      } else if (arg === '--strategy' || arg === '-s') {
+        const next = delegateArgs[i + 1];
+        if (next && ['pr', 'auto', 'manual', 'patch'].includes(next)) {
+          options.mergeStrategy = next as 'pr' | 'auto' | 'manual' | 'patch';
+          i++;
+        } else {
+          console.error('❌ Invalid strategy. Must be pr, auto, manual, or patch');
+          process.exit(1);
+        }
+      } else if (arg === '--branch' || arg === '-b') {
+        const next = delegateArgs[i + 1];
+        if (next && !next.startsWith('-')) {
+          options.branchName = next;
+          i++;
+        } else {
+          console.error('❌ Branch name required');
+          process.exit(1);
+        }
+      } else if (arg === '--base') {
+        const next = delegateArgs[i + 1];
+        if (next && !next.startsWith('-')) {
+          options.baseBranch = next;
+          i++;
+        } else {
+          console.error('❌ Base branch required');
+          process.exit(1);
+        }
+      } else if (arg === '--pr-title') {
+        const next = delegateArgs[i + 1];
+        if (next && !next.startsWith('-')) {
+          options.prTitle = next;
+          i++;
+        } else {
+          console.error('❌ PR title required');
+          process.exit(1);
+        }
+      } else if (arg === '--pr-body') {
+        const next = delegateArgs[i + 1];
+        if (next && !next.startsWith('-')) {
+          options.prBody = next;
+          i++;
+        } else {
+          console.error('❌ PR body required');
+          process.exit(1);
+        }
+      } else if (arg === '--no-commit') {
+        options.autoCommit = false;
+      } else if (arg === '--no-push') {
+        options.pushToRemote = false;
+      } else if (arg === '--timeout' || arg === '-t') {
+        const next = delegateArgs[i + 1];
+        const timeout = parseInt(next);
+        const timeoutResult = validateTimeout(timeout);
+        if (!timeoutResult.ok) {
+          console.error(`❌ ${timeoutResult.error.message}`);
+          process.exit(1);
+        }
+        options.timeout = timeoutResult.value;
         i++; // skip next arg
+      } else if (arg === '--max-output-buffer') {
+        const next = delegateArgs[i + 1];
+        const buffer = parseInt(next);
+        const bufferResult = validateBufferSize(buffer);
+        if (!bufferResult.ok) {
+          console.error(`❌ ${bufferResult.error.message}`);
+          process.exit(1);
+        }
+        options.maxOutputBuffer = bufferResult.value;
+        i++; // skip next arg
+      } else if (arg.startsWith('-')) {
+        console.error(`❌ Unknown flag: ${arg}`);
+        process.exit(1);
       } else {
-        console.error('❌ --depends-on requires comma-separated task IDs');
-        console.error('Example: --depends-on task-abc123 or --depends-on task-1,task-2,task-3');
-        process.exit(1);
+        promptWords.push(arg);
       }
-    } else if (arg === '--continue-from') {
-      const next = delegateArgs[i + 1];
-      if (next && !next.startsWith('-')) {
-        options.continueFrom = next;
-        i++;
-      } else {
-        console.error('❌ --continue-from requires a task ID');
-        process.exit(1);
-      }
-    } else if (arg === '--no-worktree') {
-      options.useWorktree = false;
-      options.mergeStrategy = undefined; // Merge strategies don't apply without worktree
-    } else if (arg === '--keep-worktree') {
-      options.worktreeCleanup = 'keep';
-    } else if (arg === '--delete-worktree') {
-      options.worktreeCleanup = 'delete';
-    } else if (arg === '--strategy' || arg === '-s') {
-      const next = delegateArgs[i + 1];
-      if (next && ['pr', 'auto', 'manual', 'patch'].includes(next)) {
-        options.mergeStrategy = next as 'pr' | 'auto' | 'manual' | 'patch';
-        i++;
-      } else {
-        console.error('❌ Invalid strategy. Must be pr, auto, manual, or patch');
-        process.exit(1);
-      }
-    } else if (arg === '--branch' || arg === '-b') {
-      const next = delegateArgs[i + 1];
-      if (next && !next.startsWith('-')) {
-        options.branchName = next;
-        i++;
-      } else {
-        console.error('❌ Branch name required');
-        process.exit(1);
-      }
-    } else if (arg === '--base') {
-      const next = delegateArgs[i + 1];
-      if (next && !next.startsWith('-')) {
-        options.baseBranch = next;
-        i++;
-      } else {
-        console.error('❌ Base branch required');
-        process.exit(1);
-      }
-    } else if (arg === '--pr-title') {
-      const next = delegateArgs[i + 1];
-      if (next && !next.startsWith('-')) {
-        options.prTitle = next;
-        i++;
-      } else {
-        console.error('❌ PR title required');
-        process.exit(1);
-      }
-    } else if (arg === '--pr-body') {
-      const next = delegateArgs[i + 1];
-      if (next && !next.startsWith('-')) {
-        options.prBody = next;
-        i++;
-      } else {
-        console.error('❌ PR body required');
-        process.exit(1);
-      }
-    } else if (arg === '--no-commit') {
-      options.autoCommit = false;
-    } else if (arg === '--no-push') {
-      options.pushToRemote = false;
-    } else if (arg === '--timeout' || arg === '-t') {
-      const next = delegateArgs[i + 1];
-      const timeout = parseInt(next);
-      const timeoutResult = validateTimeout(timeout);
-      if (!timeoutResult.ok) {
-        console.error(`❌ ${timeoutResult.error.message}`);
-        process.exit(1);
-      }
-      options.timeout = timeoutResult.value;
-      i++; // skip next arg
-    } else if (arg === '--max-output-buffer') {
-      const next = delegateArgs[i + 1];
-      const buffer = parseInt(next);
-      const bufferResult = validateBufferSize(buffer);
-      if (!bufferResult.ok) {
-        console.error(`❌ ${bufferResult.error.message}`);
-        process.exit(1);
-      }
-      options.maxOutputBuffer = bufferResult.value;
-      i++; // skip next arg
-    } else if (arg.startsWith('-')) {
-      console.error(`❌ Unknown flag: ${arg}`);
-      process.exit(1);
-    } else {
-      promptWords.push(arg);
     }
-  }
 
-  const prompt = promptWords.join(' ');
-  if (!prompt) {
-    console.error('❌ Usage: delegate "<prompt>" [options]');
-    console.error('Options:');
-    console.error('  -p, --priority P0|P1|P2      Task priority (P0=critical, P1=high, P2=normal)');
-    console.error('  -w, --working-directory DIR   Working directory for task execution');
-    console.error('');
-    console.error('Worktree Control:');
-    console.error('  --no-worktree                 Run directly without worktree isolation');
-    console.error('  --keep-worktree               Always preserve worktree after completion');
-    console.error('  --delete-worktree             Always cleanup worktree after completion');
-    console.error('');
-    console.error('Merge Strategy (requires worktree):');
-    console.error('  -s, --strategy STRATEGY       Merge strategy: pr|auto|manual|patch (default: pr)');
-    console.error('  -b, --branch NAME             Custom branch name');
-    console.error('  --base BRANCH                 Base branch (default: current)');
-    console.error("  --no-commit                   Don't auto-commit changes");
-    console.error("  --no-push                     Don't push to remote");
-    console.error('  --pr-title TITLE              PR title (for pr strategy)');
-    console.error('  --pr-body BODY                PR description');
-    console.error('');
-    console.error('Execution:');
-    console.error('  -t, --timeout MS              Task timeout in milliseconds');
-    console.error('  --max-output-buffer BYTES     Maximum output buffer size');
-    console.error('');
-    console.error('Examples:');
-    console.error('  delegate "refactor auth"                     # Default: PR with worktree');
-    console.error('  delegate "quick fix" --no-worktree           # Direct execution');
-    console.error('  delegate "feature" --strategy auto           # Auto-merge');
-    console.error('  delegate "experiment" --keep-worktree        # Preserve worktree');
-    process.exit(1);
-  }
+    const prompt = promptWords.join(' ');
+    if (!prompt) {
+      console.error('❌ Usage: delegate "<prompt>" [options]');
+      console.error('Options:');
+      console.error('  -d, --detach                  Fire-and-forget mode (run in background)');
+      console.error('  -p, --priority P0|P1|P2      Task priority (P0=critical, P1=high, P2=normal)');
+      console.error('  -w, --working-directory DIR   Working directory for task execution');
+      console.error('');
+      console.error('Worktree Control:');
+      console.error('  --use-worktree                Use git worktree for isolation (opt-in)');
+      console.error('  --keep-worktree               Always preserve worktree after completion');
+      console.error('  --delete-worktree             Always cleanup worktree after completion');
+      console.error('');
+      console.error('Merge Strategy (requires worktree):');
+      console.error('  -s, --strategy STRATEGY       Merge strategy: pr|auto|manual|patch (default: pr)');
+      console.error('  -b, --branch NAME             Custom branch name');
+      console.error('  --base BRANCH                 Base branch (default: current)');
+      console.error("  --no-commit                   Don't auto-commit changes");
+      console.error("  --no-push                     Don't push to remote");
+      console.error('  --pr-title TITLE              PR title (for pr strategy)');
+      console.error('  --pr-body BODY                PR description');
+      console.error('');
+      console.error('Execution:');
+      console.error('  -t, --timeout MS              Task timeout in milliseconds');
+      console.error('  --max-output-buffer BYTES     Maximum output buffer size');
+      console.error('');
+      console.error('Examples:');
+      console.error('  delegate "refactor auth"                     # Wait for completion (default)');
+      console.error('  delegate "quick fix" --detach                # Fire-and-forget');
+      console.error('  delegate "feature" --strategy auto           # Auto-merge');
+      console.error('  delegate "experiment" --keep-worktree        # Preserve worktree');
+      process.exit(1);
+    }
 
-  await delegateTask(prompt, Object.keys(options).length > 0 ? options : undefined);
+    await delegateTask(prompt, Object.keys(options).length > 0 ? options : undefined);
+  } // end else (non-detach)
 } else if (mainCommand === 'status') {
   // Parse status command arguments
   let taskId: string | undefined;
