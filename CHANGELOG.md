@@ -274,7 +274,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### 🛠️ Enhanced
 - **MCP Tools**: All tools now support the full feature set
-  - `DelegateTask`: Added priority, timeout, maxOutputBuffer, workingDirectory, useWorktree parameters
+  - `DelegateTask`: Added priority, timeout, maxOutputBuffer, workingDirectory parameters
   - `TaskStatus`: Shows comprehensive task information including resource usage
   - `TaskLogs`: Added tail parameter for log output control
   - `CancelTask`: Proper task cancellation with cleanup

@@ -58,7 +58,6 @@ Each test plan follows this format:
 ### P1 - High Priority
 - **007-008**: Queue management (priority, overflow)
 - **009-010**: Autoscaling (basic, resource limits)
-- **011**: Worktree isolation
 - **013**: Worker crash recovery
 
 ### P2 - Normal Priority

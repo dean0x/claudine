@@ -22,7 +22,6 @@ export {
 
 // Validation utilities
 export {
-  sanitizeBranchName,
   validateBufferSize,
   validatePath,
   validateTimeout,

@@ -36,10 +36,8 @@ export function isRetryableError(error: unknown): boolean {
     return true;
   }
 
-  // Git remote errors
+  // Connection errors
   if (
-    message.includes('could not read from remote') ||
-    message.includes('unable to access') ||
     message.includes('connection timed out') ||
     message.includes('operation timed out') ||
     message.includes('ssl') ||
@@ -48,8 +46,8 @@ export function isRetryableError(error: unknown): boolean {
     return true;
   }
 
-  // GitHub API rate limiting
-  if (message.includes('rate limit') || message.includes('api rate') || message.includes('too many requests')) {
+  // Rate limiting
+  if (message.includes('rate limit') || message.includes('too many requests')) {
     return true;
   }
 
@@ -64,7 +62,6 @@ export function isRetryableError(error: unknown): boolean {
     message.includes('permission denied') ||
     message.includes('not authorized') ||
     message.includes('invalid') ||
-    message.includes('merge conflict') ||
     message.includes('already exists')
   ) {
     return false;
