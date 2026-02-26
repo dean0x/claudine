@@ -1461,7 +1461,7 @@ describe('CLI - Task Completion Lifecycle', () => {
       expect(options.detach).toBe(true);
     });
 
-    it('should default detach to false when not specified', () => {
+    it('should default detach to undefined when not specified', () => {
       const options = parseDelegateArgs(['analyze codebase']);
       expect(options.detach).toBeUndefined();
     });
@@ -1471,6 +1471,113 @@ describe('CLI - Task Completion Lifecycle', () => {
       expect(options.detach).toBe(true);
       expect(options.priority).toBe('P0');
       expect(options.prompt).toBe('run tests');
+    });
+  });
+
+  describe('Detach mode - arg filtering', () => {
+    it('should filter --detach from args', () => {
+      const args = ['--detach', 'analyze', '--priority', 'P0'];
+      const filtered = args.filter((arg) => arg !== '--detach' && arg !== '-d');
+      expect(filtered).toEqual(['analyze', '--priority', 'P0']);
+      expect(filtered).not.toContain('--detach');
+    });
+
+    it('should filter -d from args', () => {
+      const args = ['-d', 'analyze', '--priority', 'P0'];
+      const filtered = args.filter((arg) => arg !== '--detach' && arg !== '-d');
+      expect(filtered).toEqual(['analyze', '--priority', 'P0']);
+      expect(filtered).not.toContain('-d');
+    });
+
+    it('should preserve other flags when filtering', () => {
+      const args = ['--detach', 'run tests', '-p', 'P0', '-w', '/workspace'];
+      const filtered = args.filter((arg) => arg !== '--detach' && arg !== '-d');
+      expect(filtered).toEqual(['run tests', '-p', 'P0', '-w', '/workspace']);
+      expect(filtered).toHaveLength(5);
+    });
+
+    it('should filter multiple --detach and -d occurrences', () => {
+      const args = ['--detach', '-d', 'analyze', '--detach'];
+      const filtered = args.filter((arg) => arg !== '--detach' && arg !== '-d');
+      expect(filtered).toEqual(['analyze']);
+    });
+  });
+
+  describe('Detach mode - task ID extraction', () => {
+    it('should extract task ID from typical log output', () => {
+      const logContent = [
+        '🚀 Bootstrapping Delegate...',
+        '📝 Delegating task: analyze codebase',
+        '✅ Task delegated successfully!',
+        '📋 Task ID: task-abc123def456',
+        '⏳ Waiting for task completion...',
+      ].join('\n');
+
+      const taskIdPattern = /Task ID:\s+(task-\S+)/;
+      const match = logContent.match(taskIdPattern);
+      expect(match).not.toBeNull();
+      expect(match![1]).toBe('task-abc123def456');
+    });
+
+    it('should detect bootstrap failure pattern', () => {
+      const logContent = '❌ Bootstrap failed: Database initialization error';
+      const errorPattern = /^❌/m;
+      expect(errorPattern.test(logContent)).toBe(true);
+    });
+
+    it('should not match task ID in non-matching output', () => {
+      const logContent = '🚀 Bootstrapping Delegate...\nStill loading...';
+      const taskIdPattern = /Task ID:\s+(task-\S+)/;
+      expect(logContent.match(taskIdPattern)).toBeNull();
+    });
+
+    it('should generate unique log file names', () => {
+      const names = new Set<string>();
+      for (let i = 0; i < 10; i++) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const suffix = Math.random().toString(36).substring(2, 8);
+        names.add(`detach-${timestamp}-${suffix}.log`);
+      }
+      // All names should be unique (random suffix ensures this)
+      expect(names.size).toBe(10);
+    });
+  });
+
+  describe('Detach mode - child args construction', () => {
+    it('should construct correct child args without --detach', () => {
+      const delegateArgs = ['--detach', 'analyze', '--priority', 'P0'];
+      const filteredArgs = delegateArgs.filter((arg) => arg !== '--detach' && arg !== '-d');
+      const childArgs = ['path/to/cli.js', 'delegate', ...filteredArgs];
+
+      expect(childArgs).toEqual(['path/to/cli.js', 'delegate', 'analyze', '--priority', 'P0']);
+      expect(childArgs).not.toContain('--detach');
+    });
+
+    it('should preserve all non-detach flags in child args', () => {
+      const delegateArgs = ['-d', 'run tests', '-p', 'P0', '-w', '/workspace', '-t', '60000'];
+      const filteredArgs = delegateArgs.filter((arg) => arg !== '--detach' && arg !== '-d');
+      const childArgs = ['delegate', ...filteredArgs];
+
+      expect(childArgs).toContain('-p');
+      expect(childArgs).toContain('P0');
+      expect(childArgs).toContain('-w');
+      expect(childArgs).toContain('/workspace');
+      expect(childArgs).toContain('-t');
+      expect(childArgs).toContain('60000');
+    });
+
+    it('should detect missing prompt in filtered args', () => {
+      const delegateArgs = ['--detach'];
+      const filteredArgs = delegateArgs.filter((arg) => arg !== '--detach' && arg !== '-d');
+      const hasPrompt = filteredArgs.some((arg) => !arg.startsWith('-'));
+      expect(hasPrompt).toBe(false);
+    });
+
+    it('should detect prompt present in filtered args', () => {
+      const delegateArgs = ['--detach', 'analyze code', '-p', 'P0'];
+      const filteredArgs = delegateArgs.filter((arg) => arg !== '--detach' && arg !== '-d');
+      const hasPrompt = filteredArgs.some((arg) => !arg.startsWith('-'));
+      expect(hasPrompt).toBe(true);
     });
   });
 
@@ -1902,7 +2009,7 @@ function parseDelegateArgs(args: string[]): DelegateOptions & { prompt: string }
     const next = args[i + 1];
 
     if (arg === '--detach' || arg === '-d') {
-      options.detach = true;
+      (options as DelegateOptions & { detach?: boolean }).detach = true;
     } else if ((arg === '--priority' || arg === '-p') && next) {
       options.priority = next;
       i++;
