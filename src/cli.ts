@@ -91,6 +91,7 @@ Task Commands:
     -b, --branch NAME          Custom branch name
     --base BRANCH              Base branch (default: current)
     -t, --timeout MS           Task timeout in milliseconds
+    --max-output-buffer BYTES  Max output buffer size (1KB-1GB, default: 10MB)
 
 ⚠️  EXPERIMENTAL Worktree Features (advanced users only):
   worktree list              List all active worktrees with status
@@ -1260,7 +1261,7 @@ if (mainCommand === 'mcp') {
       timeout?: number;
       maxOutputBuffer?: number;
     } = {
-      useWorktree: true, // Default: use worktree
+      useWorktree: false, // Default: no worktree (opt-in via --use-worktree)
       worktreeCleanup: 'auto', // Default: smart cleanup
       mergeStrategy: 'pr', // Default: create PR
       autoCommit: true,
@@ -1324,9 +1325,8 @@ if (mainCommand === 'mcp') {
           console.error('❌ --continue-from requires a task ID');
           process.exit(1);
         }
-      } else if (arg === '--no-worktree') {
-        options.useWorktree = false;
-        options.mergeStrategy = undefined; // Merge strategies don't apply without worktree
+      } else if (arg === '--use-worktree') {
+        options.useWorktree = true;
       } else if (arg === '--keep-worktree') {
         options.worktreeCleanup = 'keep';
       } else if (arg === '--delete-worktree') {
@@ -1417,7 +1417,7 @@ if (mainCommand === 'mcp') {
       console.error('  -w, --working-directory DIR   Working directory for task execution');
       console.error('');
       console.error('Worktree Control:');
-      console.error('  --no-worktree                 Run directly without worktree isolation');
+      console.error('  --use-worktree                Use git worktree for isolation (opt-in)');
       console.error('  --keep-worktree               Always preserve worktree after completion');
       console.error('  --delete-worktree             Always cleanup worktree after completion');
       console.error('');
