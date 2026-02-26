@@ -152,7 +152,7 @@ describe('EventDrivenWorkerPool', () => {
       expect(result.error).toBe(monitorError);
     });
 
-    it('should use task.workingDirectory when no worktree is requested', async () => {
+    it('should use task.workingDirectory when provided', async () => {
       const task = buildTask((f) => f.withWorkingDirectory('/my/project'));
 
       await pool.spawn(task);
@@ -160,7 +160,7 @@ describe('EventDrivenWorkerPool', () => {
       expect(spawner.spawn as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(task.prompt, '/my/project', task.id);
     });
 
-    it('should fall back to process.cwd() when no workingDirectory and no worktree', async () => {
+    it('should fall back to process.cwd() when no workingDirectory provided', async () => {
       const task = { ...buildTask(), workingDirectory: undefined } as Task;
 
       await pool.spawn(task);

@@ -12,7 +12,6 @@ export interface Task {
   exitCode?: number;
   cancelReason?: string;
   workingDirectory?: string;
-  worktreePath?: string;
 }
 
 export interface ToolResponse {

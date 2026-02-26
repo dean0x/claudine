@@ -51,15 +51,6 @@ describe('Database - REAL Database Operations (In-Memory)', () => {
       expect(columnNames).toContain('status');
       expect(columnNames).toContain('priority');
       expect(columnNames).toContain('working_directory');
-      expect(columnNames).toContain('use_worktree');
-      expect(columnNames).toContain('worktree_cleanup');
-      expect(columnNames).toContain('merge_strategy');
-      expect(columnNames).toContain('branch_name');
-      expect(columnNames).toContain('base_branch');
-      expect(columnNames).toContain('auto_commit');
-      expect(columnNames).toContain('push_to_remote');
-      expect(columnNames).toContain('pr_title');
-      expect(columnNames).toContain('pr_body');
       expect(columnNames).toContain('timeout');
       expect(columnNames).toContain('max_output_buffer');
       expect(columnNames).toContain('parent_task_id');

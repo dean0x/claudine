@@ -111,10 +111,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Foreign key validation preventing references to non-existent tasks
 
 ### 🛠️ Technical Improvements
-- **Event-Driven Architecture Complete**: WorktreeHandler added for full consistency
-  - All worktree operations now go through EventBus
-  - Optimized worktree cleanup with single fetch operation
-  - Fixed skipped worktree calculation semantics
+- **Event-Driven Architecture Complete**: All operations now go through EventBus
   - Documented EventBus type casting as tech debt
 - **Database Schema Migrations**: Version-based migration system
   - schema_migrations table for tracking applied migrations
@@ -179,7 +176,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### 🔗 References
 - PR #9: Task Dependencies v0.3.0 - Post-Review Fixes
-- PR #8: Complete event-driven architecture with WorktreeHandler
 - Comprehensive Review: .docs/reviews/feat-task-dependencies_2025-10-17_0933.md
 
 ## [0.2.1] - 2025-09-05
@@ -268,7 +264,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Autoscaling Manager**: Dynamic worker pool that scales based on CPU and memory
 - **Recovery Manager**: Restores QUEUED/RUNNING tasks after crashes or restarts
 - **Priority System**: P0 (Critical), P1 (High), P2 (Normal) task prioritization
-- **Git Worktree Support**: Optional task isolation in separate git worktrees
 - **Resource Monitoring**: Real-time CPU and memory usage tracking
 - **Output Management**: Buffered output capture with file overflow
 - **Configuration System**: Environment variable configuration with validation

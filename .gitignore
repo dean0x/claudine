@@ -24,7 +24,6 @@ config/mcp-config-snippet.json
 config/mcp-config-ready.json
 
 # Runtime directories
-.worktrees/
 task-outputs/
 data/
 .delegate-patches/

@@ -191,7 +191,6 @@ describe('handler-setup', () => {
       // QueueHandler: TaskDelegated, TaskUnblocked
       // WorkerHandler: TaskQueued, WorkerStarted, WorkerCompleted, etc.
       // OutputHandler: WorkerOutput, WorkerError
-      // WorktreeHandler: TaskDelegated, TaskCompleted, TaskFailed
       // DependencyHandler: TaskDelegated, TaskCompleted, TaskFailed, TaskCancelled, etc.
       expect(subscriptionCount).toBeGreaterThan(0);
     });

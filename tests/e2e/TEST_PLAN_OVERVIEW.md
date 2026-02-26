@@ -33,8 +33,6 @@ These tests cover important features and edge cases.
 | E2E-008 | Queue Overflow | Queue behavior with 50+ tasks | 90s |
 | E2E-009 | Autoscaling Basic | Scale up/down based on load | 60s |
 | E2E-010 | Autoscaling Resource Limits | CPU and memory threshold enforcement | 45s |
-| E2E-011 | Worktree Isolation | Git worktree creation and cleanup | 45s |
-| E2E-012 | Worktree Merge Strategies | PR, auto, manual, patch strategies | 60s |
 | E2E-013 | Worker Crash Recovery | Crash detection and retry logic | 60s |
 | E2E-014 | Timeout Handling | Task timeout enforcement | 40s |
 | E2E-015 | Database Corruption Recovery | Database resilience and recovery | 45s |
@@ -48,8 +46,6 @@ These tests cover additional features, integration, and edge cases.
 | E2E-017 | CLI Error Handling | Invalid arguments and error cases | 30s |
 | E2E-018 | Output Capture | stdout/stderr capture and buffering | 40s |
 | E2E-019 | Large Output Handling | 100MB+ output scenarios | 60s |
-| E2E-020 | Concurrent Worktrees | Multiple simultaneous worktrees | 50s |
-| E2E-021 | GitHub Integration | PR creation and management | 45s |
 | E2E-022 | MCP Server Integration | JSON-RPC and tool handling | 50s |
 | E2E-023 | Performance Baseline | Latency and response time benchmarks | 30s |
 | E2E-024 | Stress Test 100 Tasks | System under heavy load | 120s |
@@ -147,9 +143,6 @@ After each test run, update `/workspace/delegate/tests/e2e/RESULTS_TABLE.md`:
 
 ### Issue: Database corruption during tests
 **Solution**: Use rollback plan, remove `.delegate/delegate.db`, restart clean
-
-### Issue: Worktrees not cleaned up
-**Solution**: Run `git worktree prune` and remove `.worktrees/`
 
 ### Issue: Port conflicts with MCP server
 **Solution**: Check for running instances, use different port configuration
