@@ -73,6 +73,7 @@ const DelegateRequestSchema = z.object({
   retryCount: z.number().optional(),
   retryOf: z.string().optional(),
   dependsOn: z.array(z.string()).optional(),
+  continueFrom: z.string().optional(),
 });
 
 /**

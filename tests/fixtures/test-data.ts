@@ -1,11 +1,11 @@
 import { randomUUID } from 'crypto';
-import type { DelegateRequest, Task } from '../../src/core/domain';
+import { type DelegateRequest, Priority, type Task, TaskId, TaskStatus } from '../../src/core/domain';
 
 export const createTestTask = (overrides?: Partial<Task>): Task => ({
-  id: overrides?.id || `test-task-${randomUUID()}`,
+  id: overrides?.id || TaskId(`test-task-${randomUUID()}`),
   prompt: 'Test prompt',
-  priority: 'P1',
-  status: 'queued', // Must be valid TaskStatus: queued|running|completed|failed|cancelled
+  priority: Priority.P1,
+  status: TaskStatus.QUEUED,
   createdAt: Date.now(),
   updatedAt: Date.now(),
   workingDirectory: '/workspace',
@@ -16,7 +16,7 @@ export const createTestTask = (overrides?: Partial<Task>): Task => ({
 
 export const createTestTaskSpec = (overrides?: Partial<DelegateRequest>): DelegateRequest => ({
   prompt: 'Test task specification',
-  priority: 'P1',
+  priority: Priority.P1,
   workingDirectory: '/workspace',
   timeout: 300000,
   maxOutputBuffer: 10485760,
