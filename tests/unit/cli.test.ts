@@ -499,6 +499,36 @@ describe('CLI - Command Parsing and Validation', () => {
     });
   });
 
+  describe('Flag Aliases', () => {
+    it('should recognize --continue and -c as aliases for --continue-from', () => {
+      const longForm = parseDelegateArgs(['--continue-from', 'task-123', 'do work']);
+      const shortName = parseDelegateArgs(['--continue', 'task-123', 'do work']);
+      const shortFlag = parseDelegateArgs(['-c', 'task-123', 'do work']);
+
+      expect(longForm.continueFrom).toBe('task-123');
+      expect(shortName.continueFrom).toBe('task-123');
+      expect(shortFlag.continueFrom).toBe('task-123');
+    });
+
+    it('should recognize --deps as alias for --depends-on', () => {
+      const longForm = parseDelegateArgs(['--depends-on', 'task-1,task-2', 'do work']);
+      const shortForm = parseDelegateArgs(['--deps', 'task-1,task-2', 'do work']);
+
+      expect(longForm.dependsOn).toEqual(['task-1', 'task-2']);
+      expect(shortForm.dependsOn).toEqual(['task-1', 'task-2']);
+    });
+
+    it('should recognize -b and --buffer as aliases for --max-output-buffer', () => {
+      const longForm = parseDelegateArgs(['--max-output-buffer', '5242880', 'do work']);
+      const shortName = parseDelegateArgs(['--buffer', '5242880', 'do work']);
+      const shortFlag = parseDelegateArgs(['-b', '5242880', 'do work']);
+
+      expect(longForm.maxOutputBuffer).toBe(5242880);
+      expect(shortName.maxOutputBuffer).toBe(5242880);
+      expect(shortFlag.maxOutputBuffer).toBe(5242880);
+    });
+  });
+
   describe('Status Command - Single Task', () => {
     it('should fetch status for specific task ID', async () => {
       // First delegate a task
@@ -865,7 +895,7 @@ describe('CLI - Schedule Commands', () => {
       expect(validation.ok).toBe(false);
     });
 
-    it('should reject missing schedule type', () => {
+    it('should reject missing schedule type when no --cron or --at given', () => {
       const validation = validateScheduleCreateInput('run tests', {});
       expect(validation.ok).toBe(false);
     });
@@ -873,6 +903,29 @@ describe('CLI - Schedule Commands', () => {
     it('should reject invalid schedule type', () => {
       const validation = validateScheduleCreateInput('run tests', { type: 'weekly' });
       expect(validation.ok).toBe(false);
+    });
+
+    it('should infer type from --cron flag', async () => {
+      const result = await simulateScheduleCreate(mockScheduleService, {
+        prompt: 'run tests',
+        type: 'cron',
+        cron: '0 9 * * *',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockScheduleService.createCalls[0].scheduleType).toBe(ScheduleType.CRON);
+    });
+
+    it('should infer type from --at flag', async () => {
+      const futureDate = new Date(Date.now() + 86400000).toISOString();
+      const result = await simulateScheduleCreate(mockScheduleService, {
+        prompt: 'deploy',
+        type: 'one_time',
+        at: futureDate,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockScheduleService.createCalls[0].scheduleType).toBe(ScheduleType.ONE_TIME);
     });
   });
 
@@ -987,29 +1040,6 @@ describe('CLI - Pipeline Command', () => {
     mockScheduleService.reset();
   });
 
-  describe('parseDelay', () => {
-    it('should parse seconds correctly', () => {
-      expect(testParseDelay('30s')).toBe(30 * 1000);
-      expect(testParseDelay('1s')).toBe(1000);
-    });
-
-    it('should parse minutes correctly', () => {
-      expect(testParseDelay('5m')).toBe(5 * 60 * 1000);
-      expect(testParseDelay('1m')).toBe(60 * 1000);
-    });
-
-    it('should parse hours correctly', () => {
-      expect(testParseDelay('2h')).toBe(2 * 60 * 60 * 1000);
-    });
-
-    it('should return null for invalid format', () => {
-      expect(testParseDelay('abc')).toBeNull();
-      expect(testParseDelay('5')).toBeNull();
-      expect(testParseDelay('m5')).toBeNull();
-      expect(testParseDelay('')).toBeNull();
-    });
-  });
-
   describe('pipeline creation', () => {
     it('should create pipeline with single step', async () => {
       const result = await simulatePipeline(mockScheduleService, ['setup db']);
@@ -1021,13 +1051,7 @@ describe('CLI - Pipeline Command', () => {
     });
 
     it('should create pipeline with multiple chained steps', async () => {
-      const result = await simulatePipeline(mockScheduleService, [
-        'setup db',
-        '5m',
-        'run migrations',
-        '10m',
-        'seed data',
-      ]);
+      const result = await simulatePipeline(mockScheduleService, ['setup db', 'run migrations', 'seed data']);
 
       expect(result.ok).toBe(true);
       expect(mockScheduleService.createCalls).toHaveLength(3);
@@ -1159,7 +1183,6 @@ describe('CLI - Help Text Coverage', () => {
     const helpText = getHelpText();
 
     expect(helpText).toContain('pipeline');
-    expect(helpText).toContain('--delay');
   });
 
   it('should include resume command in help text', () => {
@@ -1169,24 +1192,43 @@ describe('CLI - Help Text Coverage', () => {
     expect(helpText).toContain('--context');
   });
 
-  it('should include --continue-from in help text', () => {
+  it('should include short flag aliases in help text', () => {
     const helpText = getHelpText();
 
-    expect(helpText).toContain('--continue-from');
+    expect(helpText).toContain('--continue');
+    expect(helpText).toContain('-c');
+    expect(helpText).toContain('--deps');
+    expect(helpText).toContain('-b');
+    expect(helpText).toContain('--buffer');
   });
 
   it('should include scheduling examples', () => {
     const helpText = getHelpText();
 
-    expect(helpText).toContain('--type cron');
     expect(helpText).toContain('--cron');
   });
 
-  it('should include --detach flag in help text', () => {
+  it('should include --foreground flag in help text', () => {
     const helpText = getHelpText();
 
-    expect(helpText).toContain('--detach');
-    expect(helpText).toContain('-d');
+    expect(helpText).toContain('--foreground');
+    expect(helpText).toContain('-f');
+  });
+
+  it('should include list/ls and retry commands', () => {
+    const helpText = getHelpText();
+
+    expect(helpText).toContain('list');
+    expect(helpText).toContain('retry');
+  });
+
+  it('should include config subcommands', () => {
+    const helpText = getHelpText();
+
+    expect(helpText).toContain('config show');
+    expect(helpText).toContain('config set');
+    expect(helpText).toContain('config reset');
+    expect(helpText).toContain('config path');
   });
 });
 
@@ -1387,56 +1429,56 @@ describe('CLI - Task Completion Lifecycle', () => {
     });
   });
 
-  describe('--detach flag', () => {
+  describe('--foreground flag', () => {
     it('should be recognized as a valid delegate option', () => {
-      const options = parseDelegateArgs(['--detach', 'analyze codebase']);
-      expect(options.detach).toBe(true);
+      const options = parseDelegateArgs(['--foreground', 'analyze codebase']);
+      expect(options.foreground).toBe(true);
       expect(options.prompt).toBe('analyze codebase');
     });
 
-    it('should support short form -d', () => {
-      const options = parseDelegateArgs(['-d', 'analyze codebase']);
-      expect(options.detach).toBe(true);
+    it('should support short form -f', () => {
+      const options = parseDelegateArgs(['-f', 'analyze codebase']);
+      expect(options.foreground).toBe(true);
     });
 
-    it('should default detach to undefined when not specified', () => {
+    it('should default foreground to undefined when not specified', () => {
       const options = parseDelegateArgs(['analyze codebase']);
-      expect(options.detach).toBeUndefined();
+      expect(options.foreground).toBeUndefined();
     });
 
     it('should combine with other flags', () => {
-      const options = parseDelegateArgs(['--detach', '--priority', 'P0', 'run tests']);
-      expect(options.detach).toBe(true);
+      const options = parseDelegateArgs(['--foreground', '--priority', 'P0', 'run tests']);
+      expect(options.foreground).toBe(true);
       expect(options.priority).toBe('P0');
       expect(options.prompt).toBe('run tests');
     });
   });
 
-  describe('Detach mode - arg filtering', () => {
-    it('should filter --detach from args', () => {
-      const args = ['--detach', 'analyze', '--priority', 'P0'];
-      const filtered = args.filter((arg) => arg !== '--detach' && arg !== '-d');
+  describe('Foreground mode - arg filtering', () => {
+    it('should filter --foreground from args', () => {
+      const args = ['--foreground', 'analyze', '--priority', 'P0'];
+      const filtered = args.filter((arg) => arg !== '--foreground' && arg !== '-f');
       expect(filtered).toEqual(['analyze', '--priority', 'P0']);
-      expect(filtered).not.toContain('--detach');
+      expect(filtered).not.toContain('--foreground');
     });
 
-    it('should filter -d from args', () => {
-      const args = ['-d', 'analyze', '--priority', 'P0'];
-      const filtered = args.filter((arg) => arg !== '--detach' && arg !== '-d');
+    it('should filter -f from args', () => {
+      const args = ['-f', 'analyze', '--priority', 'P0'];
+      const filtered = args.filter((arg) => arg !== '--foreground' && arg !== '-f');
       expect(filtered).toEqual(['analyze', '--priority', 'P0']);
-      expect(filtered).not.toContain('-d');
+      expect(filtered).not.toContain('-f');
     });
 
     it('should preserve other flags when filtering', () => {
-      const args = ['--detach', 'run tests', '-p', 'P0', '-w', '/workspace'];
-      const filtered = args.filter((arg) => arg !== '--detach' && arg !== '-d');
+      const args = ['--foreground', 'run tests', '-p', 'P0', '-w', '/workspace'];
+      const filtered = args.filter((arg) => arg !== '--foreground' && arg !== '-f');
       expect(filtered).toEqual(['run tests', '-p', 'P0', '-w', '/workspace']);
       expect(filtered).toHaveLength(5);
     });
 
-    it('should filter multiple --detach and -d occurrences', () => {
-      const args = ['--detach', '-d', 'analyze', '--detach'];
-      const filtered = args.filter((arg) => arg !== '--detach' && arg !== '-d');
+    it('should filter multiple --foreground and -f occurrences', () => {
+      const args = ['--foreground', '-f', 'analyze', '--foreground'];
+      const filtered = args.filter((arg) => arg !== '--foreground' && arg !== '-f');
       expect(filtered).toEqual(['analyze']);
     });
   });
@@ -1482,20 +1524,19 @@ describe('CLI - Task Completion Lifecycle', () => {
   });
 
   describe('Detach mode - child args construction', () => {
-    it('should construct correct child args without --detach', () => {
-      const delegateArgs = ['--detach', 'analyze', '--priority', 'P0'];
-      const filteredArgs = delegateArgs.filter((arg) => arg !== '--detach' && arg !== '-d');
-      const childArgs = ['path/to/cli.js', 'delegate', ...filteredArgs];
+    it('should construct child args with --foreground for background process', () => {
+      const delegateArgs = ['analyze', '--priority', 'P0'];
+      const childArgs = ['path/to/cli.js', 'delegate', '--foreground', ...delegateArgs];
 
-      expect(childArgs).toEqual(['path/to/cli.js', 'delegate', 'analyze', '--priority', 'P0']);
-      expect(childArgs).not.toContain('--detach');
+      expect(childArgs).toEqual(['path/to/cli.js', 'delegate', '--foreground', 'analyze', '--priority', 'P0']);
+      expect(childArgs).toContain('--foreground');
     });
 
-    it('should preserve all non-detach flags in child args', () => {
-      const delegateArgs = ['-d', 'run tests', '-p', 'P0', '-w', '/workspace', '-t', '60000'];
-      const filteredArgs = delegateArgs.filter((arg) => arg !== '--detach' && arg !== '-d');
-      const childArgs = ['delegate', ...filteredArgs];
+    it('should preserve all flags in child args', () => {
+      const delegateArgs = ['run tests', '-p', 'P0', '-w', '/workspace', '-t', '60000'];
+      const childArgs = ['delegate', '--foreground', ...delegateArgs];
 
+      expect(childArgs).toContain('--foreground');
       expect(childArgs).toContain('-p');
       expect(childArgs).toContain('P0');
       expect(childArgs).toContain('-w');
@@ -1504,17 +1545,15 @@ describe('CLI - Task Completion Lifecycle', () => {
       expect(childArgs).toContain('60000');
     });
 
-    it('should detect missing prompt in filtered args', () => {
-      const delegateArgs = ['--detach'];
-      const filteredArgs = delegateArgs.filter((arg) => arg !== '--detach' && arg !== '-d');
-      const hasPrompt = filteredArgs.some((arg) => !arg.startsWith('-'));
+    it('should detect missing prompt in args', () => {
+      const delegateArgs: string[] = [];
+      const hasPrompt = delegateArgs.some((arg) => !arg.startsWith('-'));
       expect(hasPrompt).toBe(false);
     });
 
-    it('should detect prompt present in filtered args', () => {
-      const delegateArgs = ['--detach', 'analyze code', '-p', 'P0'];
-      const filteredArgs = delegateArgs.filter((arg) => arg !== '--detach' && arg !== '-d');
-      const hasPrompt = filteredArgs.some((arg) => !arg.startsWith('-'));
+    it('should detect prompt present in args', () => {
+      const delegateArgs = ['analyze code', '-p', 'P0'];
+      const hasPrompt = delegateArgs.some((arg) => !arg.startsWith('-'));
       expect(hasPrompt).toBe(true);
     });
   });
@@ -1554,19 +1593,24 @@ MCP Server Commands:
   mcp start              Start the MCP server
 
 Task Commands:
-  delegate <prompt> [options]  Delegate a task to Claude Code
-    -d, --detach               Fire-and-forget mode (exit immediately)
+  delegate <prompt> [options]  Delegate a task (fire-and-forget by default)
+    -f, --foreground           Stream output and wait for task completion
     -p, --priority P0|P1|P2    Task priority
-    --continue-from <task-id>  Continue from a dependency's checkpoint context
+    --deps TASK_IDS            Comma-separated task IDs (alias: --depends-on)
+    -c, --continue TASK_ID     Continue from checkpoint (alias: --continue-from)
+    -b, --buffer BYTES         Max output buffer (alias: --max-output-buffer)
+  list, ls                     List all tasks
   status [task-id]             Get status of task(s)
   logs <task-id> [--tail N]    Get output logs
   cancel <task-id> [reason]    Cancel a running task
+  retry <task-id>              Retry a failed or completed task
+  resume <task-id> [--context "additional instructions"]
 
 Schedule Commands:
   schedule create <prompt> [options]   Create a scheduled task
-    --type cron|one_time               Schedule type (required)
-    --cron "0 9 * * 1-5"              Cron expression (5-field, for cron type)
-    --at "2025-03-01T09:00:00Z"       ISO 8601 datetime (for one_time type)
+    --cron "0 9 * * 1-5"              Cron expression (implies --type cron)
+    --at "2025-03-01T09:00:00Z"       ISO 8601 datetime (implies --type one_time)
+    --type cron|one_time               Explicit type (optional if --cron or --at given)
   schedule list [--status active|paused|...] [--limit N]
   schedule get <schedule-id> [--history] [--history-limit N]
   schedule cancel <schedule-id> [reason]
@@ -1574,17 +1618,22 @@ Schedule Commands:
   schedule resume <schedule-id>
 
 Pipeline Commands:
-  pipeline <prompt> [--delay Nm <prompt>]...   Create chained one-time schedules
+  pipeline <prompt> [<prompt>]...   Create chained one-time schedules
 
-Task Resumption:
-  resume <task-id> [--context "additional instructions"]
+Configuration:
+  config show                Show current configuration
+  config set <key> <value>   Set a config value
+  config reset <key>         Remove a key from config file
+  config path                Print config file location
 
 Examples:
-  delegate "analyze codebase" --priority P0
+  delegate "analyze codebase" --foreground
   delegate status abc123
-  delegate schedule create "run tests" --type cron --cron "0 9 * * 1-5"
-  delegate pipeline "setup db" --delay 5m "run migrations"
+  delegate list
+  delegate schedule create "run tests" --cron "0 9 * * 1-5"
+  delegate pipeline "setup db" "run migrations" "seed data"
   delegate resume <task-id> --context "Try a different approach"
+  delegate config set timeout 300000
 `;
 }
 
@@ -1629,7 +1678,7 @@ interface DelegateOptions {
   maxOutputBuffer?: number;
   dependsOn?: string[];
   continueFrom?: string;
-  detach?: boolean;
+  foreground?: boolean;
 }
 
 function validateDelegateInput(prompt: string, options: DelegateOptions) {
@@ -1781,26 +1830,6 @@ async function simulateScheduleCreate(
   });
 }
 
-/**
- * Test-safe parseDelay that returns null instead of process.exit
- */
-function testParseDelay(delayStr: string): number | null {
-  const match = delayStr.match(/^(\d+)(s|m|h)$/);
-  if (!match) return null;
-  const value = parseInt(match[1]);
-  const unit = match[2];
-  switch (unit) {
-    case 's':
-      return value * 1000;
-    case 'm':
-      return value * 60 * 1000;
-    case 'h':
-      return value * 60 * 60 * 1000;
-    default:
-      return value * 1000;
-  }
-}
-
 function validatePipelineInput(steps: string[]) {
   if (steps.length === 0) {
     return err(new DelegateError(ErrorCode.INVALID_INPUT, 'No pipeline steps found', { field: 'steps' }));
@@ -1809,40 +1838,16 @@ function validatePipelineInput(steps: string[]) {
 }
 
 async function simulatePipeline(service: MockScheduleService, pipelineArgs: string[]) {
-  // Parse pipeline: prompt, delay, prompt, delay, prompt...
-  const steps: Array<{ prompt: string; delayMs: number }> = [];
-  let currentPromptWords: string[] = [];
-  let cumulativeDelay = 0;
-
-  for (let i = 0; i < pipelineArgs.length; i++) {
-    const arg = pipelineArgs[i];
-    const delayMs = testParseDelay(arg);
-    if (delayMs !== null) {
-      // This is a delay value - save current prompt and add delay
-      if (currentPromptWords.length > 0) {
-        steps.push({ prompt: currentPromptWords.join(' '), delayMs: cumulativeDelay });
-        currentPromptWords = [];
-      }
-      cumulativeDelay += delayMs;
-    } else {
-      currentPromptWords.push(arg);
-    }
-  }
-
-  if (currentPromptWords.length > 0) {
-    steps.push({ prompt: currentPromptWords.join(' '), delayMs: cumulativeDelay });
-  }
-
-  const validation = validatePipelineInput(steps.map((s) => s.prompt));
+  // Each arg is a pipeline step prompt
+  const validation = validatePipelineInput(pipelineArgs);
   if (!validation.ok) return validation;
 
-  const now = Date.now();
+  const scheduledAt = new Date(Date.now() + 2000).toISOString();
   let previousScheduleId: string | undefined;
 
-  for (const step of steps) {
-    const scheduledAt = new Date(now + step.delayMs).toISOString();
+  for (const prompt of pipelineArgs) {
     const result = await service.createSchedule({
-      prompt: step.prompt,
+      prompt,
       scheduleType: ScheduleType.ONE_TIME,
       scheduledAt,
       afterScheduleId: previousScheduleId ? ScheduleId(previousScheduleId) : undefined,
@@ -1936,22 +1941,25 @@ function parseDelegateArgs(args: string[]): DelegateOptions & { prompt: string }
     const arg = args[i];
     const next = args[i + 1];
 
-    if (arg === '--detach' || arg === '-d') {
-      (options as DelegateOptions & { detach?: boolean }).detach = true;
+    if (arg === '--foreground' || arg === '-f') {
+      (options as DelegateOptions & { foreground?: boolean }).foreground = true;
     } else if ((arg === '--priority' || arg === '-p') && next) {
       options.priority = next;
       i++;
     } else if ((arg === '--working-directory' || arg === '-w') && next) {
       options.workingDirectory = next;
       i++;
-    } else if (arg === '--depends-on' && next) {
+    } else if ((arg === '--depends-on' || arg === '--deps') && next) {
       options.dependsOn = next.split(',').map((id) => id.trim());
       i++;
-    } else if (arg === '--continue-from' && next) {
+    } else if ((arg === '--continue-from' || arg === '--continue' || arg === '-c') && next) {
       options.continueFrom = next;
       i++;
     } else if ((arg === '--timeout' || arg === '-t') && next) {
       options.timeout = parseInt(next);
+      i++;
+    } else if ((arg === '--max-output-buffer' || arg === '--buffer' || arg === '-b') && next) {
+      options.maxOutputBuffer = parseInt(next);
       i++;
     } else if (!arg.startsWith('-')) {
       promptWords.push(arg);

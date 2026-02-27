@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { homedir } from 'os';
+import path from 'path';
 import { z } from 'zod';
 
 /**
@@ -130,8 +133,14 @@ export function loadConfiguration(): Configuration {
   if (process.env.RETRY_MAX_DELAY_MS) envConfig.retryMaxDelayMs = parseEnvNumber(process.env.RETRY_MAX_DELAY_MS, 0);
   if (process.env.TASK_RETENTION_DAYS) envConfig.taskRetentionDays = parseEnvNumber(process.env.TASK_RETENTION_DAYS, 0);
 
+  // Layer 2: Config file values (lower priority than env vars)
+  const fileConfig = loadConfigFile();
+
+  // Merge: env vars override config file values
+  const merged = { ...fileConfig, ...envConfig };
+
   // Parse and validate - Zod fills in defaults for missing fields
-  const parseResult = ConfigurationSchema.safeParse(envConfig);
+  const parseResult = ConfigurationSchema.safeParse(merged);
 
   if (parseResult.success) {
     return parseResult.data; // Guaranteed complete and valid
@@ -142,5 +151,76 @@ export function loadConfiguration(): Configuration {
     console.warn(`[Delegate] Configuration validation failed, using defaults:\n${errors}`);
     // If validation fails (invalid env values), use pure defaults from schema
     return ConfigurationSchema.parse({}); // Empty object gets all defaults
+  }
+}
+
+// ============================================================================
+// Config File Persistence (~/.delegate/config.json)
+// ============================================================================
+
+export const CONFIG_DIR = path.join(homedir(), '.delegate');
+export const CONFIG_FILE_PATH = path.join(CONFIG_DIR, 'config.json');
+
+export function loadConfigFile(): Record<string, unknown> {
+  try {
+    if (!existsSync(CONFIG_FILE_PATH)) return {};
+    const raw = readFileSync(CONFIG_FILE_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+    return parsed as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+export function saveConfigValue(key: string, value: unknown): { ok: true } | { ok: false; error: string } {
+  // Validate key exists in schema
+  const schemaShape = ConfigurationSchema.shape;
+  if (!(key in schemaShape)) {
+    const validKeys = Object.keys(schemaShape).join(', ');
+    return { ok: false, error: `Unknown config key: ${key}. Valid keys: ${validKeys}` };
+  }
+
+  // Validate value against the specific field
+  const fieldSchema = schemaShape[key as keyof typeof schemaShape];
+  const fieldResult = fieldSchema.safeParse(value);
+  if (!fieldResult.success) {
+    const msg = fieldResult.error.errors.map((e) => e.message).join('; ');
+    return { ok: false, error: `Invalid value for ${key}: ${msg}` };
+  }
+
+  // Load existing, merge, write
+  const existing = loadConfigFile();
+  existing[key] = fieldResult.data;
+
+  try {
+    mkdirSync(CONFIG_DIR, { recursive: true });
+    writeFileSync(CONFIG_FILE_PATH, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: `Failed to write config file: ${e}` };
+  }
+}
+
+export function resetConfigValue(key: string): { ok: true } | { ok: false; error: string } {
+  const schemaShape = ConfigurationSchema.shape;
+  if (!(key in schemaShape)) {
+    const validKeys = Object.keys(schemaShape).join(', ');
+    return { ok: false, error: `Unknown config key: ${key}. Valid keys: ${validKeys}` };
+  }
+
+  const existing = loadConfigFile();
+  if (!(key in existing)) {
+    return { ok: true }; // Already at default
+  }
+
+  delete existing[key];
+
+  try {
+    mkdirSync(CONFIG_DIR, { recursive: true });
+    writeFileSync(CONFIG_FILE_PATH, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: `Failed to write config file: ${e}` };
   }
 }

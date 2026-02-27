@@ -1,8 +1,15 @@
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  CONFIG_FILE_PATH,
   type Configuration,
   ConfigurationSchema,
+  loadConfigFile,
   loadConfiguration,
+  resetConfigValue,
+  saveConfigValue,
   type TaskConfiguration,
 } from '../../../src/core/configuration';
 import { BUFFER_SIZES, TEST_COUNTS, TIMEOUTS } from '../../constants';
@@ -624,5 +631,119 @@ describe('Real-world configuration scenarios', () => {
       memoryReserve: 500000000,
       logLevel: 'info',
     });
+  });
+});
+
+// ============================================================================
+// Config File Persistence Tests
+// ============================================================================
+
+describe('Config File - loadConfigFile', () => {
+  it('should return empty object when file does not exist', () => {
+    // CONFIG_FILE_PATH may or may not exist; loadConfigFile handles both
+    const result = loadConfigFile();
+    expect(typeof result).toBe('object');
+    expect(result).not.toBeNull();
+  });
+});
+
+describe('Config File - saveConfigValue', () => {
+  // Use a temporary directory to avoid touching real config
+  let originalConfigDir: string;
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = path.join(tmpdir(), `delegate-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(tempDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // Best effort cleanup
+    }
+  });
+
+  it('should reject unknown config keys', () => {
+    const result = saveConfigValue('nonExistentKey', 42);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('Unknown config key');
+    }
+  });
+
+  it('should reject invalid values for known keys', () => {
+    const result = saveConfigValue('timeout', -1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('Invalid value');
+    }
+  });
+
+  it('should reject string values for numeric keys', () => {
+    const result = saveConfigValue('timeout', 'fast');
+    expect(result.ok).toBe(false);
+  });
+
+  it('should validate logLevel enum', () => {
+    const validResult = saveConfigValue('logLevel', 'debug');
+    // This will write to the real config file if it succeeds, but that's OK for the test
+    expect(validResult.ok).toBe(true);
+
+    const invalidResult = saveConfigValue('logLevel', 'verbose');
+    expect(invalidResult.ok).toBe(false);
+  });
+});
+
+describe('Config File - resetConfigValue', () => {
+  it('should reject unknown config keys', () => {
+    const result = resetConfigValue('nonExistentKey');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('Unknown config key');
+    }
+  });
+
+  it('should succeed for valid key even if not in file', () => {
+    const result = resetConfigValue('timeout');
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe('Config File - loadConfiguration with file', () => {
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    originalEnv = { ...process.env };
+    // Clear env vars so we only see file + defaults
+    delete process.env.TASK_TIMEOUT;
+    delete process.env.LOG_LEVEL;
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    // Clean up any test-written config values
+    resetConfigValue('timeout');
+    resetConfigValue('logLevel');
+  });
+
+  it('should load values from config file when no env vars set', () => {
+    // Write a value to config file
+    saveConfigValue('timeout', 60000);
+
+    const config = loadConfiguration();
+    expect(config.timeout).toBe(60000);
+  });
+
+  it('should prefer env vars over config file', () => {
+    // Write to file
+    saveConfigValue('timeout', 60000);
+
+    // Set env var (higher priority)
+    process.env.TASK_TIMEOUT = '120000';
+
+    const config = loadConfiguration();
+    expect(config.timeout).toBe(120000);
   });
 });

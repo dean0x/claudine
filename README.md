@@ -89,18 +89,22 @@ Once configured, use these tools in Claude Code:
 | Command | Description |
 |---------|-------------|
 | `delegate mcp start` | Start the MCP server |
-| `delegate delegate <task>` | Submit new task |
+| `delegate delegate <task>` | Submit new task (fire-and-forget by default) |
+| `delegate delegate <task> -f` | Submit task and stream output (foreground mode) |
+| `delegate list` / `delegate ls` | List all tasks |
 | `delegate status [task-id]` | Check task status (all tasks if no ID) |
 | `delegate logs <task-id>` | View task output |
 | `delegate cancel <task-id>` | Cancel running task |
+| `delegate retry <task-id>` | Retry a failed or completed task |
+| `delegate resume <task-id>` | Resume a task from its checkpoint |
 | `delegate schedule create <prompt>` | Create a cron or one-time schedule |
 | `delegate schedule list` | List schedules with optional status filter |
 | `delegate schedule get <id>` | Get schedule details and execution history |
 | `delegate schedule pause <id>` | Pause an active schedule |
 | `delegate schedule resume <id>` | Resume a paused schedule |
 | `delegate schedule cancel <id>` | Cancel a schedule |
-| `delegate pipeline <prompt> ...` | Create chained one-time schedules with delays |
-| `delegate resume <task-id>` | Resume a task from its checkpoint |
+| `delegate pipeline <prompt> ...` | Create chained one-time schedules |
+| `delegate config show\|set\|reset\|path` | Manage configuration |
 | `delegate help` | Show help |
 
 ### Task Dependencies
@@ -108,16 +112,16 @@ Once configured, use these tools in Claude Code:
 Create workflows where tasks wait for dependencies to complete:
 
 ```bash
-# Step 1: Create build task
+# Step 1: Create build task (fire-and-forget by default)
 delegate delegate "npm run build" --priority P1
 # → task-abc123
 
 # Step 2: Create test task that waits for build
-delegate delegate "npm test" --depends-on task-abc123
+delegate delegate "npm test" --deps task-abc123
 # Task waits for build to complete before running
 
 # Step 3: Create deploy task that waits for tests
-delegate delegate "npm run deploy" --depends-on task-def456
+delegate delegate "npm run deploy" --deps task-def456
 # Execution order: build → test → deploy
 ```
 
@@ -197,7 +201,7 @@ await ResumeTask({
 });
 ```
 
-Checkpoints are captured automatically on task completion/failure, preserving git state (branch, SHA, dirty files) and the last 50 lines of output. Resumed tasks receive the full checkpoint context in their prompt and track lineage via `parentTaskId` and `retryOf` fields.
+Checkpoints are captured automatically on task completion/failure, preserving the last 50 lines of output. Resumed tasks receive the full checkpoint context in their prompt and track lineage via `parentTaskId` and `retryOf` fields.
 
 ## Architecture
 
@@ -209,14 +213,27 @@ See **[Architecture Documentation](./docs/architecture/)** for implementation de
 
 ## Configuration
 
+Configuration priority: **environment variables > config file > defaults**.
+
+### Config File
+
+Persistent configuration stored at `~/.delegate/config.json`:
+
+```bash
+delegate config show             # Show resolved configuration
+delegate config set timeout 300000  # Set a value
+delegate config reset timeout    # Revert to default
+delegate config path             # Print config file location
+```
+
 ### Environment Variables
 
 | Variable | Default | Range | Description |
 |----------|---------|-------|-------------|
-| `TASK_TIMEOUT` | 1800000 (30min) | 1000-86400000 | Task timeout in milliseconds |
+| `TASK_TIMEOUT` | 1800000 (30min) | 1000-3600000 | Task timeout in milliseconds |
 | `MAX_OUTPUT_BUFFER` | 10485760 (10MB) | 1024-1073741824 | Output buffer size in bytes |
-| `CPU_THRESHOLD` | 80 | 1-100 | CPU usage threshold percentage |
-| `MEMORY_RESERVE` | 1073741824 (1GB) | 0+ | Memory reserve in bytes |
+| `CPU_CORES_RESERVED` | 2 | 1-32 | CPU cores reserved for system |
+| `MEMORY_RESERVE` | 2684354560 (2.5GB) | 0-68719476736 | Memory reserve in bytes |
 | `LOG_LEVEL` | info | debug/info/warn/error | Logging verbosity |
 
 ### Per-Task Configuration
@@ -298,7 +315,7 @@ delegate/
 - [x] v0.3.2 - Settling workers and spawn burst protection
 - [x] v0.3.3 - Test infrastructure and memory management
 - [x] v0.4.0 - Task scheduling and task resumption
-- [ ] v0.5.0 - Distributed multi-server processing
+- [ ] v0.5.0 - CLI usability improvements and detach-by-default
 
 See **[ROADMAP.md](./docs/ROADMAP.md)** for detailed plans and timelines.
 
