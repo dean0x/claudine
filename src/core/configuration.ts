@@ -149,7 +149,9 @@ export function loadConfiguration(): Configuration {
   // Merged parse failed — likely a bad config file value.
   // Try env-only so valid env vars aren't dropped by a corrupt config file.
   const errors = parseResult.error.errors.map((e) => `  - ${e.path.join('.')}: ${e.message}`).join('\n');
-  console.warn(`[Delegate] Configuration validation failed, using defaults:\n${errors}`);
+  console.warn(
+    `[Delegate] Configuration file validation failed, falling back to environment variables and defaults:\n${errors}`,
+  );
 
   const envOnlyResult = ConfigurationSchema.safeParse(envConfig);
   if (envOnlyResult.success) {
@@ -191,6 +193,7 @@ export function loadConfigFile(): Record<string, unknown> {
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
     return parsed as Record<string, unknown>;
   } catch {
+    console.warn(`[Delegate] Failed to parse config file, ignoring: ${_configFilePath}`);
     return {};
   }
 }

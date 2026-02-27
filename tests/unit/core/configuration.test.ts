@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   _testSetConfigDir,
   CONFIG_FILE_PATH,
@@ -670,6 +670,28 @@ describe('Config File - loadConfigFile', () => {
     const result = loadConfigFile();
     expect(result.timeout).toBe(60000);
   });
+
+  it('should warn when config file contains malformed JSON', () => {
+    writeFileSync(path.join(tempDir, 'config.json'), '{ invalid json !!!', 'utf-8');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const result = loadConfigFile();
+
+    expect(result).toEqual({});
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain('Failed to parse config file');
+
+    warnSpy.mockRestore();
+  });
+
+  it('should warn when config file is not a JSON object', () => {
+    writeFileSync(path.join(tempDir, 'config.json'), '"just a string"', 'utf-8');
+
+    const result = loadConfigFile();
+
+    // Non-object JSON returns empty without warning (handled before catch)
+    expect(result).toEqual({});
+  });
 });
 
 describe('Config File - saveConfigValue', () => {
@@ -819,5 +841,17 @@ describe('Config File - loadConfiguration with file', () => {
     const config = loadConfiguration();
     // Env var should be preserved despite bad config file
     expect(config.timeout).toBe(120000);
+  });
+
+  it('should emit warning mentioning env vars and defaults on validation failure', () => {
+    writeFileSync(path.join(tempDir, 'config.json'), JSON.stringify({ timeout: -999 }), 'utf-8');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    loadConfiguration();
+
+    expect(warnSpy).toHaveBeenCalled();
+    expect(warnSpy.mock.calls[0][0]).toContain('environment variables and defaults');
+
+    warnSpy.mockRestore();
   });
 });

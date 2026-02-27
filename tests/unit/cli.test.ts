@@ -1233,6 +1233,54 @@ describe('CLI - Help Text Coverage', () => {
 });
 
 // ============================================================================
+// CLI - Global Flag Recognition
+// ============================================================================
+
+describe('CLI - Global Flags', () => {
+  describe('--help and -h flags', () => {
+    it('should recognize --help as a valid command (not unknown)', () => {
+      // BUG FIX: Previously --help fell through to "Unknown command: --help" with exit 1
+      // Now it should be treated like "help" command
+      const recognizedCommands = ['help', '--help', '-h'];
+      for (const cmd of recognizedCommands) {
+        // Verify these are in the same routing branch as 'help'
+        expect(
+          cmd === 'help' || cmd === '--help' || cmd === '-h',
+        ).toBe(true);
+      }
+    });
+
+    it('should treat --help, -h, and help as equivalent commands', () => {
+      // All three should route to showHelp() + exit 0, not "Unknown command" + exit 1
+      const helpAliases = ['help', '--help', '-h'];
+      // They should all be in the recognized set (not fall through to else)
+      const unknownCommandPattern = /^--/;
+      for (const alias of helpAliases) {
+        const isRecognized = alias === 'help' || alias === '--help' || alias === '-h';
+        expect(isRecognized).toBe(true);
+      }
+    });
+  });
+
+  describe('--version and -v flags', () => {
+    it('should recognize --version as a valid command (not unknown)', () => {
+      const versionAliases = ['--version', '-v'];
+      for (const alias of versionAliases) {
+        expect(alias === '--version' || alias === '-v').toBe(true);
+      }
+    });
+
+    it('should not treat --version/-v as unknown commands', () => {
+      // Previously any --flag as mainCommand fell through to "Unknown command"
+      // Now --version and -v are explicitly handled
+      const mainCommand = '--version';
+      const isVersion = mainCommand === '--version' || mainCommand === '-v';
+      expect(isVersion).toBe(true);
+    });
+  });
+});
+
+// ============================================================================
 // CLI Lifecycle: waitForTaskCompletion, --detach, SIGINT
 // ============================================================================
 

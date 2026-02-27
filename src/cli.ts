@@ -33,6 +33,11 @@ import { validateBufferSize, validatePath, validateTimeout } from './utils/valid
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/** Extract a safe error message from an unknown catch value. */
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 // CLI with subcommand pattern
 const args = process.argv.slice(2);
 const mainCommand = args[0];
@@ -294,7 +299,7 @@ function handleDetachMode(delegateArgs: string[]): void {
   try {
     mkdirSync(logDir, { recursive: true });
   } catch (error) {
-    console.error('❌ Failed to create log directory:', logDir, error);
+    console.error(`❌ Failed to create log directory: ${logDir}: ${errorMessage(error)}`);
     process.exit(1);
   }
 
@@ -306,7 +311,7 @@ function handleDetachMode(delegateArgs: string[]): void {
   try {
     logFd = openSync(logFile, 'w');
   } catch (error) {
-    console.error('❌ Failed to create log file:', logFile, error);
+    console.error(`❌ Failed to create log file: ${logFile}: ${errorMessage(error)}`);
     process.exit(1);
   }
 
@@ -378,7 +383,7 @@ function handleDetachMode(delegateArgs: string[]): void {
     }, 200);
   } catch (error) {
     closeSync(logFd);
-    console.error('❌ Failed to spawn background process:', error);
+    console.error('❌ Failed to spawn background process:', errorMessage(error));
     process.exit(1);
   }
 }
@@ -469,7 +474,7 @@ async function delegateTask(
     await container.dispose();
     process.exit(cancelledBySigint ? 130 : exitCode);
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Error:', errorMessage(error));
     if (container) await container.dispose();
     process.exit(1);
   }
@@ -549,7 +554,7 @@ async function getTaskStatus(taskId?: string, showDependencies?: boolean) {
     }
     process.exit(0);
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Error:', errorMessage(error));
     process.exit(1);
   }
 }
@@ -603,7 +608,7 @@ async function getTaskLogs(taskId: string, tail?: number) {
       process.exit(1);
     }
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Error:', errorMessage(error));
     process.exit(1);
   }
 }
@@ -639,7 +644,7 @@ async function cancelTask(taskId: string, reason?: string) {
       process.exit(1);
     }
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Error:', errorMessage(error));
     process.exit(1);
   }
 }
@@ -679,7 +684,7 @@ async function retryTask(taskId: string) {
       process.exit(1);
     }
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Error:', errorMessage(error));
     process.exit(1);
   }
 }
@@ -1105,7 +1110,7 @@ async function handleResumeCommand(taskId: string, additionalContext?: string) {
       process.exit(1);
     }
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Error:', errorMessage(error));
     process.exit(1);
   }
 }
@@ -1123,7 +1128,7 @@ if (mainCommand === 'mcp') {
         }
       })
       .catch((error) => {
-        console.error('Failed to start MCP server:', error);
+        console.error('Failed to start MCP server:', errorMessage(error));
         process.exit(1);
       });
   } else if (subCommand === 'test') {
@@ -1485,8 +1490,11 @@ if (mainCommand === 'mcp') {
     console.error('❌ Usage: delegate config <show|set|reset|path>');
     process.exit(1);
   }
-} else if (mainCommand === 'help' || !mainCommand) {
+} else if (mainCommand === 'help' || mainCommand === '--help' || mainCommand === '-h' || !mainCommand) {
   showHelp();
+} else if (mainCommand === '--version' || mainCommand === '-v') {
+  const pkg = JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
+  console.log(pkg.version);
 } else {
   console.error(`❌ Unknown command: ${mainCommand}`);
   showHelp();
