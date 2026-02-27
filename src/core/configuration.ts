@@ -144,27 +144,49 @@ export function loadConfiguration(): Configuration {
 
   if (parseResult.success) {
     return parseResult.data; // Guaranteed complete and valid
-  } else {
-    // SECURITY: Log warning when config validation fails (don't silently fallback)
-    // This helps users discover misconfigured environment variables
-    const errors = parseResult.error.errors.map((e) => `  - ${e.path.join('.')}: ${e.message}`).join('\n');
-    console.warn(`[Delegate] Configuration validation failed, using defaults:\n${errors}`);
-    // If validation fails (invalid env values), use pure defaults from schema
-    return ConfigurationSchema.parse({}); // Empty object gets all defaults
   }
+
+  // Merged parse failed — likely a bad config file value.
+  // Try env-only so valid env vars aren't dropped by a corrupt config file.
+  const errors = parseResult.error.errors.map((e) => `  - ${e.path.join('.')}: ${e.message}`).join('\n');
+  console.warn(`[Delegate] Configuration validation failed, using defaults:\n${errors}`);
+
+  const envOnlyResult = ConfigurationSchema.safeParse(envConfig);
+  if (envOnlyResult.success) {
+    return envOnlyResult.data;
+  }
+
+  // Both failed — pure defaults
+  return ConfigurationSchema.parse({});
 }
 
 // ============================================================================
 // Config File Persistence (~/.delegate/config.json)
 // ============================================================================
 
-export const CONFIG_DIR = path.join(homedir(), '.delegate');
-export const CONFIG_FILE_PATH = path.join(CONFIG_DIR, 'config.json');
+// Display path for CLI (always shows real home path)
+export const CONFIG_FILE_PATH = path.join(homedir(), '.delegate', 'config.json');
+
+// Internal mutable paths — overridable via _testSetConfigDir() for test isolation
+let _configDir = path.join(homedir(), '.delegate');
+let _configFilePath = CONFIG_FILE_PATH;
+
+/** Test helper: redirect config reads/writes to a temp directory. Returns restore function. */
+export function _testSetConfigDir(dir: string): () => void {
+  const prevDir = _configDir;
+  const prevPath = _configFilePath;
+  _configDir = dir;
+  _configFilePath = path.join(dir, 'config.json');
+  return () => {
+    _configDir = prevDir;
+    _configFilePath = prevPath;
+  };
+}
 
 export function loadConfigFile(): Record<string, unknown> {
   try {
-    if (!existsSync(CONFIG_FILE_PATH)) return {};
-    const raw = readFileSync(CONFIG_FILE_PATH, 'utf-8');
+    if (!existsSync(_configFilePath)) return {};
+    const raw = readFileSync(_configFilePath, 'utf-8');
     const parsed = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
     return parsed as Record<string, unknown>;
@@ -194,11 +216,11 @@ export function saveConfigValue(key: string, value: unknown): { ok: true } | { o
   existing[key] = fieldResult.data;
 
   try {
-    mkdirSync(CONFIG_DIR, { recursive: true });
-    writeFileSync(CONFIG_FILE_PATH, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
+    mkdirSync(_configDir, { recursive: true });
+    writeFileSync(_configFilePath, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
     return { ok: true };
-  } catch (e) {
-    return { ok: false, error: `Failed to write config file: ${e}` };
+  } catch {
+    return { ok: false, error: `Failed to write config file at ${_configFilePath}` };
   }
 }
 
@@ -217,10 +239,10 @@ export function resetConfigValue(key: string): { ok: true } | { ok: false; error
   delete existing[key];
 
   try {
-    mkdirSync(CONFIG_DIR, { recursive: true });
-    writeFileSync(CONFIG_FILE_PATH, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
+    mkdirSync(_configDir, { recursive: true });
+    writeFileSync(_configFilePath, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
     return { ok: true };
-  } catch (e) {
-    return { ok: false, error: `Failed to write config file: ${e}` };
+  } catch {
+    return { ok: false, error: `Failed to write config file at ${_configFilePath}` };
   }
 }

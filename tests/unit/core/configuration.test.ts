@@ -3,6 +3,7 @@ import { tmpdir } from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  _testSetConfigDir,
   CONFIG_FILE_PATH,
   type Configuration,
   ConfigurationSchema,
@@ -639,25 +640,50 @@ describe('Real-world configuration scenarios', () => {
 // ============================================================================
 
 describe('Config File - loadConfigFile', () => {
-  it('should return empty object when file does not exist', () => {
-    // CONFIG_FILE_PATH may or may not exist; loadConfigFile handles both
-    const result = loadConfigFile();
-    expect(typeof result).toBe('object');
-    expect(result).not.toBeNull();
-  });
-});
-
-describe('Config File - saveConfigValue', () => {
-  // Use a temporary directory to avoid touching real config
-  let originalConfigDir: string;
   let tempDir: string;
+  let restoreConfigDir: () => void;
 
   beforeEach(() => {
     tempDir = path.join(tmpdir(), `delegate-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(tempDir, { recursive: true });
+    restoreConfigDir = _testSetConfigDir(tempDir);
   });
 
   afterEach(() => {
+    restoreConfigDir();
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // Best effort cleanup
+    }
+  });
+
+  it('should return empty object when file does not exist', () => {
+    const result = loadConfigFile();
+    expect(typeof result).toBe('object');
+    expect(result).not.toBeNull();
+    expect(Object.keys(result)).toHaveLength(0);
+  });
+
+  it('should read config from redirected directory', () => {
+    writeFileSync(path.join(tempDir, 'config.json'), JSON.stringify({ timeout: 60000 }), 'utf-8');
+    const result = loadConfigFile();
+    expect(result.timeout).toBe(60000);
+  });
+});
+
+describe('Config File - saveConfigValue', () => {
+  let tempDir: string;
+  let restoreConfigDir: () => void;
+
+  beforeEach(() => {
+    tempDir = path.join(tmpdir(), `delegate-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(tempDir, { recursive: true });
+    restoreConfigDir = _testSetConfigDir(tempDir);
+  });
+
+  afterEach(() => {
+    restoreConfigDir();
     try {
       rmSync(tempDir, { recursive: true, force: true });
     } catch {
@@ -688,15 +714,38 @@ describe('Config File - saveConfigValue', () => {
 
   it('should validate logLevel enum', () => {
     const validResult = saveConfigValue('logLevel', 'debug');
-    // This will write to the real config file if it succeeds, but that's OK for the test
     expect(validResult.ok).toBe(true);
 
     const invalidResult = saveConfigValue('logLevel', 'verbose');
     expect(invalidResult.ok).toBe(false);
   });
+
+  it('should write to temp directory, not real home', () => {
+    saveConfigValue('timeout', 60000);
+    const written = existsSync(path.join(tempDir, 'config.json'));
+    expect(written).toBe(true);
+  });
 });
 
 describe('Config File - resetConfigValue', () => {
+  let tempDir: string;
+  let restoreConfigDir: () => void;
+
+  beforeEach(() => {
+    tempDir = path.join(tmpdir(), `delegate-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(tempDir, { recursive: true });
+    restoreConfigDir = _testSetConfigDir(tempDir);
+  });
+
+  afterEach(() => {
+    restoreConfigDir();
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // Best effort cleanup
+    }
+  });
+
   it('should reject unknown config keys', () => {
     const result = resetConfigValue('nonExistentKey');
     expect(result.ok).toBe(false);
@@ -709,27 +758,41 @@ describe('Config File - resetConfigValue', () => {
     const result = resetConfigValue('timeout');
     expect(result.ok).toBe(true);
   });
+
+  it('should remove key from config file', () => {
+    saveConfigValue('timeout', 60000);
+    resetConfigValue('timeout');
+    const file = loadConfigFile();
+    expect(file.timeout).toBeUndefined();
+  });
 });
 
 describe('Config File - loadConfiguration with file', () => {
   let originalEnv: NodeJS.ProcessEnv;
+  let tempDir: string;
+  let restoreConfigDir: () => void;
 
   beforeEach(() => {
     originalEnv = { ...process.env };
+    tempDir = path.join(tmpdir(), `delegate-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(tempDir, { recursive: true });
+    restoreConfigDir = _testSetConfigDir(tempDir);
     // Clear env vars so we only see file + defaults
     delete process.env.TASK_TIMEOUT;
     delete process.env.LOG_LEVEL;
   });
 
   afterEach(() => {
+    restoreConfigDir();
     process.env = originalEnv;
-    // Clean up any test-written config values
-    resetConfigValue('timeout');
-    resetConfigValue('logLevel');
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // Best effort cleanup
+    }
   });
 
   it('should load values from config file when no env vars set', () => {
-    // Write a value to config file
     saveConfigValue('timeout', 60000);
 
     const config = loadConfiguration();
@@ -737,13 +800,24 @@ describe('Config File - loadConfiguration with file', () => {
   });
 
   it('should prefer env vars over config file', () => {
-    // Write to file
     saveConfigValue('timeout', 60000);
 
     // Set env var (higher priority)
     process.env.TASK_TIMEOUT = '120000';
 
     const config = loadConfiguration();
+    expect(config.timeout).toBe(120000);
+  });
+
+  it('should preserve env vars when config file has invalid values', () => {
+    // Write invalid value directly to config file (bypass validation)
+    writeFileSync(path.join(tempDir, 'config.json'), JSON.stringify({ timeout: -999 }), 'utf-8');
+
+    // Set a valid env var
+    process.env.TASK_TIMEOUT = '120000';
+
+    const config = loadConfiguration();
+    // Env var should be preserved despite bad config file
     expect(config.timeout).toBe(120000);
   });
 });
