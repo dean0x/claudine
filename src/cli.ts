@@ -9,6 +9,13 @@ import { homedir } from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { bootstrap } from './bootstrap.js';
+import {
+  CONFIG_FILE_PATH,
+  ConfigurationSchema,
+  loadConfiguration,
+  resetConfigValue,
+  saveConfigValue,
+} from './core/configuration.js';
 import type { Container } from './core/container.js';
 import type { DelegateRequest, Task } from './core/domain.js';
 import { Priority, ScheduleId, TaskId } from './core/domain.js';
@@ -25,6 +32,11 @@ import { validateBufferSize, validatePath, validateTimeout } from './utils/valid
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+/** Extract a safe error message from an unknown catch value. */
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 // CLI with subcommand pattern
 const args = process.argv.slice(2);
@@ -78,20 +90,30 @@ MCP Server Commands:
   mcp config             Show MCP configuration for Claude
 
 Task Commands:
-  delegate <prompt> [options]  Delegate a task to Claude Code (runs in current directory by default)
-    -d, --detach               Fire-and-forget mode (exit immediately, don't wait for completion)
+  delegate <prompt> [options]  Delegate a task (fire-and-forget; runs in current directory)
+    -f, --foreground           Stream output and wait for task completion
     -p, --priority P0|P1|P2    Task priority (P0=critical, P1=high, P2=normal)
     -w, --working-directory D  Working directory for task execution
-    --depends-on TASK_IDS      Comma-separated task IDs this task depends on (blocks until complete)
-    --continue-from TASK_ID    Continue from a dependency's checkpoint context (must be in dependsOn)
+    --deps TASK_IDS            Comma-separated task IDs this task depends on (alias: --depends-on)
+    -c, --continue TASK_ID     Continue from a dependency's checkpoint (alias: --continue-from)
     -t, --timeout MS           Task timeout in milliseconds
-    --max-output-buffer BYTES  Max output buffer size (1KB-1GB, default: 10MB)
+    -b, --buffer BYTES         Max output buffer size (1KB-1GB, default: 10MB)
+                               (alias: --max-output-buffer)
+
+  list, ls                     List all tasks
+  status [task-id]             Get status of task(s)
+    --show-dependencies        Show dependency graph for tasks
+  logs <task-id> [--tail N]    Get output logs for a task (optionally limit to last N lines)
+  cancel <task-id> [reason]    Cancel a running task with optional reason
+  retry <task-id>              Retry a failed or completed task
+  resume <task-id> [--context "additional instructions"]
+                               Resume a failed/completed task with checkpoint context
 
 Schedule Commands:
   schedule create <prompt> [options]   Create a scheduled task
-    --type cron|one_time               Schedule type (required)
-    --cron "0 9 * * 1-5"              Cron expression (5-field, for cron type)
-    --at "2025-03-01T09:00:00Z"       ISO 8601 datetime (for one_time type)
+    --cron "0 9 * * 1-5"              Cron expression (implies --type cron)
+    --at "2025-03-01T09:00:00Z"       ISO 8601 datetime (implies --type one_time)
+    --type cron|one_time               Explicit type (optional if --cron or --at given)
     --timezone "America/New_York"      IANA timezone (default: UTC)
     --missed-run-policy skip|catchup|fail  (default: skip)
     -p, --priority P0|P1|P2           Task priority
@@ -107,40 +129,40 @@ Schedule Commands:
   schedule resume <schedule-id>
 
 Pipeline Commands:
-  pipeline <prompt> [--delay Nm <prompt>]...   Create chained one-time schedules
-    Example: pipeline "set up db" --delay 5m "run migrations" --delay 10m "seed data"
-
-Task Resumption:
-  resume <task-id> [--context "additional instructions"]
-    Resume a failed/completed task with context from its checkpoint
+  pipeline <prompt> [<prompt>]...   Create chained one-time schedules
+    Example: pipeline "set up db" "run migrations" "seed data"
 
 Configuration:
-  config show                Show current configuration
-  config set <key> <value>   Update configuration
-  status [task-id]             Get status of task(s)
-    --show-dependencies        Show dependency graph for tasks
-  logs <task-id> [--tail N]    Get output logs for a task (optionally limit to last N lines)
-  cancel <task-id> [reason]    Cancel a running task with optional reason
-  retry-task <task-id>         Retry a failed or completed task
-  help                         Show this help message
+  config show                Show current configuration (resolved values)
+  config set <key> <value>   Set a config value (persisted to ~/.delegate/config.json)
+  config reset <key>         Remove a key from config file (revert to default)
+  config path                Print config file location
+
+  help                       Show this help message
 
 Examples:
   delegate mcp start                                    # Start MCP server
-  delegate delegate "analyze this codebase"            # Delegate task
-  delegate delegate "fix the bug" --priority P0        # High priority task
-  delegate delegate "run tests" --depends-on task-abc123  # Wait for dependency
+  delegate delegate "analyze this codebase"            # Fire-and-forget (default)
+  delegate delegate "fix the bug" --foreground         # Stream output, wait
+  delegate delegate "run tests" --deps task-abc123     # Wait for dependency
+  delegate list                                        # List all tasks
 
   # Scheduling
-  delegate schedule create "run tests" --type cron --cron "0 9 * * 1-5"
-  delegate schedule create "deploy" --type one_time --at "2025-03-01T09:00:00Z"
+  delegate schedule create "run tests" --cron "0 9 * * 1-5"
+  delegate schedule create "deploy" --at "2025-03-01T09:00:00Z"
   delegate schedule list --status active
   delegate schedule pause <id>
 
-  # Pipeline (sequential tasks with delays)
-  delegate pipeline "setup db" --delay 5m "run migrations" --delay 10m "seed data"
+  # Pipeline (sequential chained tasks)
+  delegate pipeline "setup db" "run migrations" "seed data"
 
   # Resume failed task with context
   delegate resume <task-id> --context "Try a different approach"
+
+  # Configuration
+  delegate config show
+  delegate config set timeout 300000
+  delegate config reset timeout
 
 Repository: https://github.com/dean0x/delegate
 `);
@@ -258,19 +280,17 @@ function waitForTaskCompletion(container: Container, taskId: string): Promise<nu
 }
 
 /**
- * Handle --detach mode by re-spawning the CLI as a detached background process.
- * The background process runs the full lifecycle (bootstrap, delegate, wait, dispose, exit).
+ * Default detach mode: re-spawn the CLI as a detached background process.
+ * The background process runs the full lifecycle (bootstrap, delegate, wait, dispose, exit)
+ * with --foreground so it doesn't recurse back into detach mode.
  * The foreground polls the background's log file to extract and print the task ID, then exits.
  */
 function handleDetachMode(delegateArgs: string[]): void {
-  // Filter --detach and -d from args
-  const filteredArgs = delegateArgs.filter((arg) => arg !== '--detach' && arg !== '-d');
-
   // Validate that at least one non-flag word exists (the prompt)
-  const hasPrompt = filteredArgs.some((arg) => !arg.startsWith('-'));
+  const hasPrompt = delegateArgs.some((arg) => !arg.startsWith('-'));
   if (!hasPrompt) {
-    console.error('❌ Usage: delegate delegate "<prompt>" --detach [options]');
-    console.error('  --detach requires a prompt to delegate');
+    console.error('❌ Usage: delegate delegate "<prompt>" [options]');
+    console.error('  A prompt is required to delegate a task');
     process.exit(1);
   }
 
@@ -279,7 +299,7 @@ function handleDetachMode(delegateArgs: string[]): void {
   try {
     mkdirSync(logDir, { recursive: true });
   } catch (error) {
-    console.error('❌ Failed to create log directory:', logDir, error);
+    console.error(`❌ Failed to create log directory: ${logDir}: ${errorMessage(error)}`);
     process.exit(1);
   }
 
@@ -291,12 +311,12 @@ function handleDetachMode(delegateArgs: string[]): void {
   try {
     logFd = openSync(logFile, 'w');
   } catch (error) {
-    console.error('❌ Failed to create log file:', logFile, error);
+    console.error(`❌ Failed to create log file: ${logFile}: ${errorMessage(error)}`);
     process.exit(1);
   }
 
-  // Re-spawn CLI without --detach as a detached background process
-  const childArgs = [process.argv[1], 'delegate', ...filteredArgs];
+  // Re-spawn CLI with --foreground as a detached background process
+  const childArgs = [process.argv[1], 'delegate', '--foreground', ...delegateArgs];
   try {
     const child = spawn(process.argv[0], childArgs, {
       detached: true,
@@ -363,7 +383,7 @@ function handleDetachMode(delegateArgs: string[]): void {
     }, 200);
   } catch (error) {
     closeSync(logFd);
-    console.error('❌ Failed to spawn background process:', error);
+    console.error('❌ Failed to spawn background process:', errorMessage(error));
     process.exit(1);
   }
 }
@@ -377,7 +397,6 @@ async function delegateTask(
     continueFrom?: string;
     timeout?: number;
     maxOutputBuffer?: number;
-    detach?: boolean;
   },
 ) {
   let container: Container | undefined;
@@ -455,7 +474,7 @@ async function delegateTask(
     await container.dispose();
     process.exit(cancelledBySigint ? 130 : exitCode);
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Error:', errorMessage(error));
     if (container) await container.dispose();
     process.exit(1);
   }
@@ -535,7 +554,7 @@ async function getTaskStatus(taskId?: string, showDependencies?: boolean) {
     }
     process.exit(0);
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Error:', errorMessage(error));
     process.exit(1);
   }
 }
@@ -589,7 +608,7 @@ async function getTaskLogs(taskId: string, tail?: number) {
       process.exit(1);
     }
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Error:', errorMessage(error));
     process.exit(1);
   }
 }
@@ -625,7 +644,7 @@ async function cancelTask(taskId: string, reason?: string) {
       process.exit(1);
     }
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Error:', errorMessage(error));
     process.exit(1);
   }
 }
@@ -665,7 +684,7 @@ async function retryTask(taskId: string) {
       process.exit(1);
     }
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Error:', errorMessage(error));
     process.exit(1);
   }
 }
@@ -787,11 +806,23 @@ async function scheduleCreate(service: ScheduleService, scheduleArgs: string[]) 
 
   const prompt = promptWords.join(' ');
   if (!prompt) {
-    console.error('❌ Usage: delegate schedule create <prompt> --type cron|one_time [options]');
+    console.error('❌ Usage: delegate schedule create <prompt> --cron "..." | --at "..." [options]');
     process.exit(1);
   }
+
+  // Infer type from --cron / --at flags
+  if (cronExpression && scheduledAt) {
+    console.error('❌ Cannot specify both --cron and --at');
+    process.exit(1);
+  }
+  const inferredType = cronExpression ? 'cron' : scheduledAt ? 'one_time' : undefined;
+  if (scheduleType && inferredType && scheduleType !== inferredType) {
+    console.error(`❌ --type ${scheduleType} conflicts with ${cronExpression ? '--cron' : '--at'}`);
+    process.exit(1);
+  }
+  scheduleType = scheduleType ?? inferredType;
   if (!scheduleType) {
-    console.error('❌ --type is required (cron or one_time)');
+    console.error('❌ Provide --cron, --at, or --type');
     process.exit(1);
   }
 
@@ -990,64 +1021,15 @@ async function scheduleResume(service: ScheduleService, scheduleArgs: string[]) 
 // PIPELINE COMMAND
 // ============================================================================
 
-/**
- * Parse delay string like "5m", "30s", "2h" to milliseconds
- */
-function parseDelay(delayStr: string): number {
-  const match = delayStr.match(/^(\d+)(s|m|h)$/);
-  if (!match) {
-    console.error(`❌ Invalid delay format: ${delayStr}. Use format: Ns, Nm, or Nh (e.g., 5m, 30s, 2h)`);
-    process.exit(1);
-  }
-  const value = parseInt(match[1]);
-  const unit = match[2];
-  switch (unit) {
-    case 's':
-      return value * 1000;
-    case 'm':
-      return value * 60 * 1000;
-    case 'h':
-      return value * 60 * 60 * 1000;
-    default:
-      return value * 1000;
-  }
-}
-
 async function handlePipelineCommand(pipelineArgs: string[]) {
   if (pipelineArgs.length === 0) {
-    console.error('❌ Usage: delegate pipeline <prompt> [--delay Nm <prompt>]...');
-    console.error('Example: delegate pipeline "setup db" --delay 5m "run migrations" --delay 10m "seed data"');
+    console.error('❌ Usage: delegate pipeline <prompt> [<prompt>]...');
+    console.error('Example: delegate pipeline "setup db" "run migrations" "seed data"');
     process.exit(1);
   }
 
-  // Parse pipeline steps: first prompt, then pairs of --delay + prompt
-  const steps: Array<{ prompt: string; delayMs: number }> = [];
-  let currentPrompt: string[] = [];
-  let cumulativeDelay = 0;
-
-  for (let i = 0; i < pipelineArgs.length; i++) {
-    if (pipelineArgs[i] === '--delay') {
-      // Save current prompt as a step
-      if (currentPrompt.length > 0) {
-        steps.push({ prompt: currentPrompt.join(' '), delayMs: cumulativeDelay });
-        currentPrompt = [];
-      }
-      // Parse delay
-      if (!pipelineArgs[i + 1]) {
-        console.error('❌ --delay requires a value (e.g., 5m, 30s, 2h)');
-        process.exit(1);
-      }
-      cumulativeDelay += parseDelay(pipelineArgs[i + 1]);
-      i++; // skip delay value
-    } else {
-      currentPrompt.push(pipelineArgs[i]);
-    }
-  }
-
-  // Add final step
-  if (currentPrompt.length > 0) {
-    steps.push({ prompt: currentPrompt.join(' '), delayMs: cumulativeDelay });
-  }
+  // Each positional arg is a pipeline step prompt
+  const steps = pipelineArgs.filter((arg) => !arg.startsWith('-'));
 
   if (steps.length === 0) {
     console.error('❌ No pipeline steps found');
@@ -1057,18 +1039,17 @@ async function handlePipelineCommand(pipelineArgs: string[]) {
   const { scheduleService } = await withServices();
   const { ScheduleType } = await import('./core/domain.js');
   // Add 2-second buffer so "now" doesn't become "past" during validation
-  const now = Date.now() + 2000;
-  const createdSchedules: Array<{ id: string; prompt: string; runsAt: string }> = [];
+  const scheduledAt = new Date(Date.now() + 2000).toISOString();
+  const createdSchedules: Array<{ id: string; prompt: string }> = [];
   let previousScheduleId: string | undefined;
 
   console.log(`📋 Creating pipeline with ${steps.length} step(s)...\n`);
 
   for (let i = 0; i < steps.length; i++) {
-    const step = steps[i];
-    const scheduledAt = new Date(now + step.delayMs).toISOString();
+    const prompt = steps[i];
 
     const result = await scheduleService.createSchedule({
-      prompt: step.prompt,
+      prompt,
       scheduleType: ScheduleType.ONE_TIME,
       scheduledAt,
       afterScheduleId: previousScheduleId ? ScheduleId(previousScheduleId) : undefined,
@@ -1082,8 +1063,7 @@ async function handlePipelineCommand(pipelineArgs: string[]) {
     previousScheduleId = result.value.id;
     createdSchedules.push({
       id: result.value.id,
-      prompt: step.prompt.substring(0, 50) + (step.prompt.length > 50 ? '...' : ''),
-      runsAt: scheduledAt,
+      prompt: prompt.substring(0, 50) + (prompt.length > 50 ? '...' : ''),
     });
   }
 
@@ -1093,7 +1073,7 @@ async function handlePipelineCommand(pipelineArgs: string[]) {
     const s = createdSchedules[i];
     const arrow = i < createdSchedules.length - 1 ? ' →' : '';
     const afterLabel = i > 0 ? ` (after ${createdSchedules[i - 1].id})` : '';
-    console.log(`  ${i + 1}. [${s.id}] "${s.prompt}" at ${s.runsAt}${afterLabel}${arrow}`);
+    console.log(`  ${i + 1}. [${s.id}] "${s.prompt}"${afterLabel}${arrow}`);
   }
 
   process.exit(0);
@@ -1130,7 +1110,7 @@ async function handleResumeCommand(taskId: string, additionalContext?: string) {
       process.exit(1);
     }
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Error:', errorMessage(error));
     process.exit(1);
   }
 }
@@ -1148,7 +1128,7 @@ if (mainCommand === 'mcp') {
         }
       })
       .catch((error) => {
-        console.error('Failed to start MCP server:', error);
+        console.error('Failed to start MCP server:', errorMessage(error));
         process.exit(1);
       });
   } else if (subCommand === 'test') {
@@ -1212,12 +1192,15 @@ if (mainCommand === 'mcp') {
 } else if (mainCommand === 'delegate') {
   // Parse arguments for delegate command
   const delegateArgs = args.slice(1);
-  const hasDetach = delegateArgs.includes('--detach') || delegateArgs.includes('-d');
+  const hasForeground = delegateArgs.includes('--foreground') || delegateArgs.includes('-f');
 
-  if (hasDetach) {
+  if (!hasForeground) {
     handleDetachMode(delegateArgs);
     // handleDetachMode sets up polling that calls process.exit — no fallthrough
   } else {
+    // Filter --foreground/-f from args before parsing
+    const foregroundArgs = delegateArgs.filter((arg) => arg !== '--foreground' && arg !== '-f');
+
     const options: {
       priority?: 'P0' | 'P1' | 'P2';
       workingDirectory?: string;
@@ -1229,11 +1212,11 @@ if (mainCommand === 'mcp') {
 
     let promptWords: string[] = [];
 
-    for (let i = 0; i < delegateArgs.length; i++) {
-      const arg = delegateArgs[i];
+    for (let i = 0; i < foregroundArgs.length; i++) {
+      const arg = foregroundArgs[i];
 
       if (arg === '--priority' || arg === '-p') {
-        const next = delegateArgs[i + 1];
+        const next = foregroundArgs[i + 1];
         if (next && ['P0', 'P1', 'P2'].includes(next)) {
           options.priority = next as 'P0' | 'P1' | 'P2';
           i++; // skip next arg
@@ -1242,7 +1225,7 @@ if (mainCommand === 'mcp') {
           process.exit(1);
         }
       } else if (arg === '--working-directory' || arg === '-w') {
-        const next = delegateArgs[i + 1];
+        const next = foregroundArgs[i + 1];
         if (next && !next.startsWith('-')) {
           // Validate the path to prevent traversal attacks
           const pathResult = validatePath(next);
@@ -1256,8 +1239,8 @@ if (mainCommand === 'mcp') {
           console.error('❌ Working directory requires a path');
           process.exit(1);
         }
-      } else if (arg === '--depends-on') {
-        const next = delegateArgs[i + 1];
+      } else if (arg === '--depends-on' || arg === '--deps') {
+        const next = foregroundArgs[i + 1];
         if (next && !next.startsWith('-')) {
           // Parse comma-separated task IDs
           const taskIds = next
@@ -1265,27 +1248,27 @@ if (mainCommand === 'mcp') {
             .map((id) => id.trim())
             .filter((id) => id.length > 0);
           if (taskIds.length === 0) {
-            console.error('❌ --depends-on requires at least one task ID');
+            console.error('❌ --deps requires at least one task ID');
             process.exit(1);
           }
           options.dependsOn = taskIds;
           i++; // skip next arg
         } else {
-          console.error('❌ --depends-on requires comma-separated task IDs');
-          console.error('Example: --depends-on task-abc123 or --depends-on task-1,task-2,task-3');
+          console.error('❌ --deps requires comma-separated task IDs');
+          console.error('Example: --deps task-abc123 or --deps task-1,task-2,task-3');
           process.exit(1);
         }
-      } else if (arg === '--continue-from') {
-        const next = delegateArgs[i + 1];
+      } else if (arg === '--continue-from' || arg === '--continue' || arg === '-c') {
+        const next = foregroundArgs[i + 1];
         if (next && !next.startsWith('-')) {
           options.continueFrom = next;
           i++;
         } else {
-          console.error('❌ --continue-from requires a task ID');
+          console.error('❌ --continue requires a task ID');
           process.exit(1);
         }
       } else if (arg === '--timeout' || arg === '-t') {
-        const next = delegateArgs[i + 1];
+        const next = foregroundArgs[i + 1];
         const timeout = parseInt(next);
         const timeoutResult = validateTimeout(timeout);
         if (!timeoutResult.ok) {
@@ -1294,8 +1277,8 @@ if (mainCommand === 'mcp') {
         }
         options.timeout = timeoutResult.value;
         i++; // skip next arg
-      } else if (arg === '--max-output-buffer') {
-        const next = delegateArgs[i + 1];
+      } else if (arg === '--max-output-buffer' || arg === '--buffer' || arg === '-b') {
+        const next = foregroundArgs[i + 1];
         const buffer = parseInt(next);
         const bufferResult = validateBufferSize(buffer);
         if (!bufferResult.ok) {
@@ -1316,20 +1299,20 @@ if (mainCommand === 'mcp') {
     if (!prompt) {
       console.error('❌ Usage: delegate "<prompt>" [options]');
       console.error('Options:');
-      console.error('  -d, --detach                  Fire-and-forget mode (run in background)');
+      console.error('  -f, --foreground              Stream output and wait for completion');
       console.error('  -p, --priority P0|P1|P2      Task priority (P0=critical, P1=high, P2=normal)');
       console.error('  -w, --working-directory DIR   Working directory for task execution');
       console.error('  -t, --timeout MS              Task timeout in milliseconds');
       console.error('  --max-output-buffer BYTES     Maximum output buffer size');
       console.error('');
       console.error('Examples:');
-      console.error('  delegate "refactor auth"                     # Wait for completion (default)');
-      console.error('  delegate "quick fix" --detach                # Fire-and-forget');
+      console.error('  delegate "refactor auth"                     # Fire-and-forget (default)');
+      console.error('  delegate "quick fix" --foreground            # Stream output, wait');
       process.exit(1);
     }
 
     await delegateTask(prompt, Object.keys(options).length > 0 ? options : undefined);
-  } // end else (non-detach)
+  } // end else (foreground)
 } else if (mainCommand === 'status') {
   // Parse status command arguments
   let taskId: string | undefined;
@@ -1379,15 +1362,17 @@ if (mainCommand === 'mcp') {
   // Optional reason is everything after the task ID
   const reason = args.slice(2).join(' ') || undefined;
   await cancelTask(taskId, reason);
-} else if (mainCommand === 'retry-task') {
+} else if (mainCommand === 'retry') {
   const taskId = args[1];
   if (!taskId) {
-    console.error('❌ Usage: delegate retry-task <task-id>');
-    console.error('Example: delegate retry-task abc123');
+    console.error('❌ Usage: delegate retry <task-id>');
+    console.error('Example: delegate retry abc123');
     process.exit(1);
   }
 
   await retryTask(taskId);
+} else if (mainCommand === 'list' || mainCommand === 'ls') {
+  await getTaskStatus(undefined);
 } else if (mainCommand === 'schedule') {
   await handleScheduleCommand(subCommand, args.slice(2));
 } else if (mainCommand === 'pipeline') {
@@ -1408,91 +1393,108 @@ if (mainCommand === 'mcp') {
   await handleResumeCommand(taskId, additionalContext);
 } else if (mainCommand === 'config') {
   if (subCommand === 'show') {
-    // SECURITY: Sanitize sensitive configuration values for display
-    const sanitizeValue = (value: string, type: 'memory' | 'cpu' | 'timeout' | 'normal'): string => {
-      const num = parseInt(value, 10);
-      if (isNaN(num)) return '***REDACTED***';
+    const config = loadConfiguration();
 
-      switch (type) {
-        case 'memory':
-          // Show memory in ranges, not exact values (security hardening)
-          if (num < 1024 * 1024 * 1024) return '<1GB';
-          if (num < 4 * 1024 * 1024 * 1024) return '1-4GB';
-          if (num < 8 * 1024 * 1024 * 1024) return '4-8GB';
-          if (num < 16 * 1024 * 1024 * 1024) return '8-16GB';
-          return '>16GB';
-        case 'cpu':
-          // Show CPU in ranges to prevent fingerprinting
-          if (num <= 2) return '1-2 cores';
-          if (num <= 4) return '3-4 cores';
-          if (num <= 8) return '5-8 cores';
-          return '>8 cores';
-        case 'timeout':
-          // Show timeouts in minutes for readability, no exact values
-          const minutes = Math.round(num / 60000);
-          if (minutes < 5) return '<5min';
-          if (minutes < 15) return '5-15min';
-          if (minutes < 60) return '15-60min';
-          return '>1hour';
-        default:
-          return value;
-      }
+    const formatMs = (ms: number): string => {
+      if (ms < 1000) return `${ms}ms`;
+      if (ms < 60000) return `${ms}ms (${(ms / 1000).toFixed(0)}s)`;
+      return `${ms}ms (${(ms / 60000).toFixed(0)}min)`;
     };
 
-    console.log('⚙️  Current Configuration (Security Sanitized):');
+    const formatBytes = (bytes: number): string => {
+      if (bytes < 1024) return `${bytes}B`;
+      if (bytes < 1024 * 1024) return `${bytes} (${(bytes / 1024).toFixed(0)}KB)`;
+      if (bytes < 1024 * 1024 * 1024) return `${bytes} (${(bytes / (1024 * 1024)).toFixed(0)}MB)`;
+      return `${bytes} (${(bytes / (1024 * 1024 * 1024)).toFixed(1)}GB)`;
+    };
+
+    console.log('⚙️  Current Configuration (resolved: env > config file > defaults):');
     console.log('');
     console.log('🔧 Core Settings:');
-    console.log(`   Task Timeout: ${sanitizeValue(process.env.TASK_TIMEOUT || '1800000', 'timeout')}`);
-    console.log(`   Max Output Buffer: ${sanitizeValue(process.env.MAX_OUTPUT_BUFFER || '10485760', 'memory')}`);
-    console.log(`   CPU Cores Reserved: ${sanitizeValue(process.env.CPU_CORES_RESERVED || '2', 'cpu')}`);
-    console.log(`   Memory Reserve: ${sanitizeValue(process.env.MEMORY_RESERVE || '2684354560', 'memory')}`);
-    console.log(`   Log Level: ${process.env.LOG_LEVEL || 'info'}`);
+    console.log(`   timeout:              ${formatMs(config.timeout)}`);
+    console.log(`   maxOutputBuffer:      ${formatBytes(config.maxOutputBuffer)}`);
+    console.log(`   cpuCoresReserved:     ${config.cpuCoresReserved} cores`);
+    console.log(`   memoryReserve:        ${formatBytes(config.memoryReserve)}`);
+    console.log(`   logLevel:             ${config.logLevel}`);
     console.log('');
     console.log('⚡ Process Management:');
-    console.log(
-      `   Kill Grace Period: ${sanitizeValue(process.env.PROCESS_KILL_GRACE_PERIOD_MS || '5000', 'timeout')}`,
-    );
-    console.log(
-      `   Resource Monitor Interval: ${sanitizeValue(process.env.RESOURCE_MONITOR_INTERVAL_MS || '5000', 'timeout')}`,
-    );
-    console.log(`   Min Spawn Delay: ${sanitizeValue(process.env.WORKER_MIN_SPAWN_DELAY_MS || '10000', 'timeout')}`);
+    console.log(`   killGracePeriodMs:    ${formatMs(config.killGracePeriodMs)}`);
+    console.log(`   resourceMonitorIntervalMs: ${formatMs(config.resourceMonitorIntervalMs)}`);
+    console.log(`   minSpawnDelayMs:      ${formatMs(config.minSpawnDelayMs)}`);
+    console.log(`   settlingWindowMs:     ${formatMs(config.settlingWindowMs)}`);
     console.log('');
     console.log('🔗 Event System:');
-    console.log(`   Max Listeners Per Event: ${process.env.EVENTBUS_MAX_LISTENERS_PER_EVENT || '100'}`);
-    console.log(`   Max Total Subscriptions: ${process.env.EVENTBUS_MAX_TOTAL_SUBSCRIPTIONS || '1000'}`);
-    console.log(`   Request Timeout: ${sanitizeValue(process.env.EVENT_REQUEST_TIMEOUT_MS || '5000', 'timeout')}`);
-    console.log(`   Cleanup Interval: ${sanitizeValue(process.env.EVENT_CLEANUP_INTERVAL_MS || '60000', 'timeout')}`);
+    console.log(`   maxListenersPerEvent: ${config.maxListenersPerEvent}`);
+    console.log(`   maxTotalSubscriptions: ${config.maxTotalSubscriptions}`);
+    console.log(`   eventRequestTimeoutMs: ${formatMs(config.eventRequestTimeoutMs)}`);
+    console.log(`   eventCleanupIntervalMs: ${formatMs(config.eventCleanupIntervalMs)}`);
     console.log('');
-    console.log('💾 Storage Settings:');
-    console.log(
-      `   File Storage Threshold: ${sanitizeValue(process.env.FILE_STORAGE_THRESHOLD_BYTES || '102400', 'memory')}`,
-    );
+    console.log('💾 Storage:');
+    console.log(`   fileStorageThresholdBytes: ${formatBytes(config.fileStorageThresholdBytes)}`);
     console.log('');
-    console.log('🔄 Retry Behavior:');
-    console.log(`   Initial Delay: ${sanitizeValue(process.env.RETRY_INITIAL_DELAY_MS || '1000', 'timeout')}`);
-    console.log(`   Max Delay: ${sanitizeValue(process.env.RETRY_MAX_DELAY_MS || '30000', 'timeout')}`);
+    console.log('🔄 Retry:');
+    console.log(`   retryInitialDelayMs:  ${formatMs(config.retryInitialDelayMs)}`);
+    console.log(`   retryMaxDelayMs:      ${formatMs(config.retryMaxDelayMs)}`);
     console.log('');
-    console.log('🧹 Recovery Settings:');
-    console.log(`   Task Retention: ${process.env.TASK_RETENTION_DAYS || '7'} days`);
+    console.log('🧹 Recovery:');
+    console.log(`   taskRetentionDays:    ${config.taskRetentionDays} days`);
     console.log('');
-    console.log('⚠️  Note: Values are sanitized for security. Use --verbose for exact values (admin only).');
-    console.log('📝 To change settings, use environment variables:');
-    console.log('   export TASK_TIMEOUT=1800000  # Task timeout in milliseconds');
-    console.log('   export PROCESS_KILL_GRACE_PERIOD_MS=5000  # Process termination grace period');
-    console.log('   export EVENT_REQUEST_TIMEOUT_MS=5000  # Event request timeout');
-    console.log('   export FILE_STORAGE_THRESHOLD_BYTES=102400  # File storage threshold');
-    console.log('   export RETRY_INITIAL_DELAY_MS=1000  # Initial retry delay');
+    console.log(`📁 Config file: ${CONFIG_FILE_PATH}`);
   } else if (subCommand === 'set') {
-    console.log('⚙️  Configuration updates are not yet implemented.');
-    console.log('📝 Use environment variables for now:');
-    console.log('   export TASK_TIMEOUT=1800000');
-    console.log('   export LOG_LEVEL=info');
+    const key = args[2];
+    const rawValue = args[3];
+    if (!key || rawValue === undefined) {
+      console.error('❌ Usage: delegate config set <key> <value>');
+      console.error('Example: delegate config set timeout 300000');
+      console.error(`Valid keys: ${Object.keys(ConfigurationSchema.shape).join(', ')}`);
+      process.exit(1);
+    }
+
+    // Parse value: numbers stay numbers, strings stay strings
+    let value: unknown = rawValue;
+    const asNum = Number(rawValue);
+    if (!isNaN(asNum) && rawValue.trim() !== '') {
+      value = asNum;
+    }
+
+    const result = saveConfigValue(key, value);
+    if (!result.ok) {
+      console.error(`❌ ${result.error}`);
+      process.exit(1);
+    }
+
+    // Show the resolved value after saving
+    const config = loadConfiguration();
+    const resolved = config[key as keyof typeof config];
+    console.log(`✅ ${key} = ${resolved}`);
+  } else if (subCommand === 'reset') {
+    const key = args[2];
+    if (!key) {
+      console.error('❌ Usage: delegate config reset <key>');
+      console.error(`Valid keys: ${Object.keys(ConfigurationSchema.shape).join(', ')}`);
+      process.exit(1);
+    }
+
+    const result = resetConfigValue(key);
+    if (!result.ok) {
+      console.error(`❌ ${result.error}`);
+      process.exit(1);
+    }
+
+    const config = loadConfiguration();
+    const resolved = config[key as keyof typeof config];
+    console.log(`✅ ${key} reset to default: ${resolved}`);
+  } else if (subCommand === 'path') {
+    console.log(CONFIG_FILE_PATH);
   } else {
-    console.error('❌ Usage: delegate config <show|set>');
+    console.error('❌ Usage: delegate config <show|set|reset|path>');
     process.exit(1);
   }
-} else if (mainCommand === 'help' || !mainCommand) {
+} else if (mainCommand === 'help' || mainCommand === '--help' || mainCommand === '-h' || !mainCommand) {
   showHelp();
+} else if (mainCommand === '--version' || mainCommand === '-v') {
+  const pkg = JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
+  console.log(pkg.version);
 } else {
   console.error(`❌ Unknown command: ${mainCommand}`);
   showHelp();

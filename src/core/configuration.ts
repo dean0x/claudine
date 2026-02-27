@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { homedir } from 'os';
+import path from 'path';
 import { z } from 'zod';
 
 /**
@@ -130,17 +133,119 @@ export function loadConfiguration(): Configuration {
   if (process.env.RETRY_MAX_DELAY_MS) envConfig.retryMaxDelayMs = parseEnvNumber(process.env.RETRY_MAX_DELAY_MS, 0);
   if (process.env.TASK_RETENTION_DAYS) envConfig.taskRetentionDays = parseEnvNumber(process.env.TASK_RETENTION_DAYS, 0);
 
+  // Layer 2: Config file values (lower priority than env vars)
+  const fileConfig = loadConfigFile();
+
+  // Merge: env vars override config file values
+  const merged = { ...fileConfig, ...envConfig };
+
   // Parse and validate - Zod fills in defaults for missing fields
-  const parseResult = ConfigurationSchema.safeParse(envConfig);
+  const parseResult = ConfigurationSchema.safeParse(merged);
 
   if (parseResult.success) {
     return parseResult.data; // Guaranteed complete and valid
-  } else {
-    // SECURITY: Log warning when config validation fails (don't silently fallback)
-    // This helps users discover misconfigured environment variables
-    const errors = parseResult.error.errors.map((e) => `  - ${e.path.join('.')}: ${e.message}`).join('\n');
-    console.warn(`[Delegate] Configuration validation failed, using defaults:\n${errors}`);
-    // If validation fails (invalid env values), use pure defaults from schema
-    return ConfigurationSchema.parse({}); // Empty object gets all defaults
+  }
+
+  // Merged parse failed — likely a bad config file value.
+  // Try env-only so valid env vars aren't dropped by a corrupt config file.
+  const errors = parseResult.error.errors.map((e) => `  - ${e.path.join('.')}: ${e.message}`).join('\n');
+  console.warn(
+    `[Delegate] Configuration file validation failed, falling back to environment variables and defaults:\n${errors}`,
+  );
+
+  const envOnlyResult = ConfigurationSchema.safeParse(envConfig);
+  if (envOnlyResult.success) {
+    return envOnlyResult.data;
+  }
+
+  // Both failed — pure defaults
+  return ConfigurationSchema.parse({});
+}
+
+// ============================================================================
+// Config File Persistence (~/.delegate/config.json)
+// ============================================================================
+
+// Display path for CLI (always shows real home path)
+export const CONFIG_FILE_PATH = path.join(homedir(), '.delegate', 'config.json');
+
+// Internal mutable paths — overridable via _testSetConfigDir() for test isolation
+let _configDir = path.join(homedir(), '.delegate');
+let _configFilePath = CONFIG_FILE_PATH;
+
+/** Test helper: redirect config reads/writes to a temp directory. Returns restore function. */
+export function _testSetConfigDir(dir: string): () => void {
+  const prevDir = _configDir;
+  const prevPath = _configFilePath;
+  _configDir = dir;
+  _configFilePath = path.join(dir, 'config.json');
+  return () => {
+    _configDir = prevDir;
+    _configFilePath = prevPath;
+  };
+}
+
+export function loadConfigFile(): Record<string, unknown> {
+  try {
+    if (!existsSync(_configFilePath)) return {};
+    const raw = readFileSync(_configFilePath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+    return parsed as Record<string, unknown>;
+  } catch {
+    console.warn(`[Delegate] Failed to parse config file, ignoring: ${_configFilePath}`);
+    return {};
+  }
+}
+
+export function saveConfigValue(key: string, value: unknown): { ok: true } | { ok: false; error: string } {
+  // Validate key exists in schema
+  const schemaShape = ConfigurationSchema.shape;
+  if (!(key in schemaShape)) {
+    const validKeys = Object.keys(schemaShape).join(', ');
+    return { ok: false, error: `Unknown config key: ${key}. Valid keys: ${validKeys}` };
+  }
+
+  // Validate value against the specific field
+  const fieldSchema = schemaShape[key as keyof typeof schemaShape];
+  const fieldResult = fieldSchema.safeParse(value);
+  if (!fieldResult.success) {
+    const msg = fieldResult.error.errors.map((e) => e.message).join('; ');
+    return { ok: false, error: `Invalid value for ${key}: ${msg}` };
+  }
+
+  // Load existing, merge, write
+  const existing = loadConfigFile();
+  existing[key] = fieldResult.data;
+
+  try {
+    mkdirSync(_configDir, { recursive: true });
+    writeFileSync(_configFilePath, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
+    return { ok: true };
+  } catch {
+    return { ok: false, error: `Failed to write config file at ${_configFilePath}` };
+  }
+}
+
+export function resetConfigValue(key: string): { ok: true } | { ok: false; error: string } {
+  const schemaShape = ConfigurationSchema.shape;
+  if (!(key in schemaShape)) {
+    const validKeys = Object.keys(schemaShape).join(', ');
+    return { ok: false, error: `Unknown config key: ${key}. Valid keys: ${validKeys}` };
+  }
+
+  const existing = loadConfigFile();
+  if (!(key in existing)) {
+    return { ok: true }; // Already at default
+  }
+
+  delete existing[key];
+
+  try {
+    mkdirSync(_configDir, { recursive: true });
+    writeFileSync(_configFilePath, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
+    return { ok: true };
+  } catch {
+    return { ok: false, error: `Failed to write config file at ${_configFilePath}` };
   }
 }
