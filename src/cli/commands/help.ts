@@ -1,6 +1,12 @@
 import { readFileSync } from 'fs';
 import path from 'path';
-import { bold, cyan, stdout } from '../ui.js';
+import pc from 'picocolors';
+import { stdout } from '../ui.js';
+
+// Help writes to stdout (Unix convention), so styling must check stdout TTY — not stderr
+const isStdoutTTY = process.stdout.isTTY === true;
+const bold = (s: string): string => (isStdoutTTY ? pc.bold(s) : s);
+const cyan = (s: string): string => (isStdoutTTY ? pc.cyan(s) : s);
 
 export function showHelp(dirname: string) {
   const pkg = JSON.parse(readFileSync(path.join(dirname, '..', 'package.json'), 'utf-8'));

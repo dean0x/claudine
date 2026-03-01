@@ -155,7 +155,19 @@ export function handleDetachMode(delegateArgs: string[]): void {
       try {
         const content = readFileSync(logFile, 'utf-8');
 
-        // Check for error patterns first
+        // Check for task ID first — once delegation succeeds, task output may
+        // contain ❌ which would be a false positive for the error check below.
+        const match = content.match(taskIdPattern);
+        if (match) {
+          clearInterval(pollInterval);
+          const taskId = match[1];
+          s.stop(`Task delegated: ${taskId}`);
+          ui.info(`Check status: delegate status ${taskId}`);
+          ui.info(`View logs:    delegate logs ${taskId}`);
+          process.exit(0);
+        }
+
+        // Only check for CLI errors if no task ID yet (pre-delegation phase)
         if (errorPattern.test(content)) {
           clearInterval(pollInterval);
           s.stop('Background process error');
@@ -166,17 +178,6 @@ export function handleDetachMode(delegateArgs: string[]): void {
             process.stderr.write(`  ${line}\n`);
           }
           process.exit(1);
-        }
-
-        // Check for task ID
-        const match = content.match(taskIdPattern);
-        if (match) {
-          clearInterval(pollInterval);
-          const taskId = match[1];
-          s.stop(`Task delegated: ${taskId}`);
-          ui.info(`Check status: delegate status ${taskId}`);
-          ui.info(`View logs:    delegate logs ${taskId}`);
-          process.exit(0);
         }
       } catch {
         // Log file not yet readable, continue polling
