@@ -1244,9 +1244,7 @@ describe('CLI - Global Flags', () => {
       const recognizedCommands = ['help', '--help', '-h'];
       for (const cmd of recognizedCommands) {
         // Verify these are in the same routing branch as 'help'
-        expect(
-          cmd === 'help' || cmd === '--help' || cmd === '-h',
-        ).toBe(true);
+        expect(cmd === 'help' || cmd === '--help' || cmd === '-h').toBe(true);
       }
     });
 

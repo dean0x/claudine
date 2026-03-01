@@ -84,6 +84,7 @@
   },
   "type": "module",
   "dependencies": {
+    "@clack/prompts": "^1.0.1",
     "@modelcontextprotocol/sdk": "^1.24.3",
     "better-sqlite3": "^12.4.1",
     "cron-parser": "^4.9.0",

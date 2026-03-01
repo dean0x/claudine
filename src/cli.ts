@@ -3,1202 +3,50 @@
 // Set process title for easy identification in ps/pgrep/pkill
 process.title = 'delegate-cli';
 
-import { spawn } from 'child_process';
-import { closeSync, mkdirSync, openSync, readFileSync } from 'fs';
-import { homedir } from 'os';
+import { readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { bootstrap } from './bootstrap.js';
-import {
-  CONFIG_FILE_PATH,
-  ConfigurationSchema,
-  loadConfiguration,
-  resetConfigValue,
-  saveConfigValue,
-} from './core/configuration.js';
-import type { Container } from './core/container.js';
-import type { DelegateRequest, Task } from './core/domain.js';
-import { Priority, ScheduleId, TaskId } from './core/domain.js';
-import type { EventBus } from './core/events/event-bus.js';
-import type {
-  OutputCapturedEvent,
-  TaskCancelledEvent,
-  TaskCompletedEvent,
-  TaskFailedEvent,
-  TaskTimeoutEvent,
-} from './core/events/events.js';
-import type { ScheduleService, TaskManager } from './core/interfaces.js';
+import { cancelTask } from './cli/commands/cancel.js';
+import { configPath, configReset, configSet, configShow } from './cli/commands/config.js';
+import { delegateTask, handleDetachMode } from './cli/commands/delegate.js';
+import { showHelp } from './cli/commands/help.js';
+import { getTaskLogs } from './cli/commands/logs.js';
+import { handleMcpStart, handleMcpTest, showConfig } from './cli/commands/mcp.js';
+import { handlePipelineCommand } from './cli/commands/pipeline.js';
+import { handleResumeCommand } from './cli/commands/resume.js';
+import { retryTask } from './cli/commands/retry.js';
+import { handleScheduleCommand } from './cli/commands/schedule.js';
+import { getTaskStatus } from './cli/commands/status.js';
+import * as ui from './cli/ui.js';
 import { validateBufferSize, validatePath, validateTimeout } from './utils/validation.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-/** Extract a safe error message from an unknown catch value. */
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 // CLI with subcommand pattern
 const args = process.argv.slice(2);
 const mainCommand = args[0];
 const subCommand = args[1];
 
-/**
- * Bootstrap and resolve services, eliminating repeated boilerplate
- * Returns typed services or exits on failure
- */
-async function withServices(): Promise<{
-  taskManager: TaskManager;
-  scheduleService: ScheduleService;
-}> {
-  console.log('🚀 Bootstrapping Delegate...');
-  const containerResult = await bootstrap({ skipScheduleExecutor: true });
-  if (!containerResult.ok) {
-    console.error('❌ Bootstrap failed:', containerResult.error.message);
-    process.exit(1);
-  }
-  const container = containerResult.value;
-
-  const taskManagerResult = await container.resolve<TaskManager>('taskManager');
-  if (!taskManagerResult.ok) {
-    console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
-    process.exit(1);
-  }
-
-  const scheduleServiceResult = container.get<ScheduleService>('scheduleService');
-  if (!scheduleServiceResult.ok) {
-    console.error('❌ Failed to get schedule service:', scheduleServiceResult.error.message);
-    process.exit(1);
-  }
-
-  return {
-    taskManager: taskManagerResult.value,
-    scheduleService: scheduleServiceResult.value,
-  };
-}
-
-function showHelp() {
-  console.log(`
-🤖 Delegate - MCP Server for Task Delegation
-
-Usage:
-  delegate <command> [options...]
-
-MCP Server Commands:
-  mcp start              Start the MCP server
-  mcp test               Test server startup and validation
-  mcp config             Show MCP configuration for Claude
-
-Task Commands:
-  delegate <prompt> [options]  Delegate a task (fire-and-forget; runs in current directory)
-    -f, --foreground           Stream output and wait for task completion
-    -p, --priority P0|P1|P2    Task priority (P0=critical, P1=high, P2=normal)
-    -w, --working-directory D  Working directory for task execution
-    --deps TASK_IDS            Comma-separated task IDs this task depends on (alias: --depends-on)
-    -c, --continue TASK_ID     Continue from a dependency's checkpoint (alias: --continue-from)
-    -t, --timeout MS           Task timeout in milliseconds
-    -b, --buffer BYTES         Max output buffer size (1KB-1GB, default: 10MB)
-                               (alias: --max-output-buffer)
-
-  list, ls                     List all tasks
-  status [task-id]             Get status of task(s)
-    --show-dependencies        Show dependency graph for tasks
-  logs <task-id> [--tail N]    Get output logs for a task (optionally limit to last N lines)
-  cancel <task-id> [reason]    Cancel a running task with optional reason
-  retry <task-id>              Retry a failed or completed task
-  resume <task-id> [--context "additional instructions"]
-                               Resume a failed/completed task with checkpoint context
-
-Schedule Commands:
-  schedule create <prompt> [options]   Create a scheduled task
-    --cron "0 9 * * 1-5"              Cron expression (implies --type cron)
-    --at "2025-03-01T09:00:00Z"       ISO 8601 datetime (implies --type one_time)
-    --type cron|one_time               Explicit type (optional if --cron or --at given)
-    --timezone "America/New_York"      IANA timezone (default: UTC)
-    --missed-run-policy skip|catchup|fail  (default: skip)
-    -p, --priority P0|P1|P2           Task priority
-    -w, --working-directory DIR        Working directory
-    --max-runs N                       Max executions for cron schedules
-    --expires-at "ISO8601"             Schedule expiration
-    --after <schedule-id>              Chain: wait for this schedule's task to complete
-
-  schedule list [--status active|paused|...] [--limit N]
-  schedule get <schedule-id> [--history] [--history-limit N]
-  schedule cancel <schedule-id> [reason]
-  schedule pause <schedule-id>
-  schedule resume <schedule-id>
-
-Pipeline Commands:
-  pipeline <prompt> [<prompt>]...   Create chained one-time schedules
-    Example: pipeline "set up db" "run migrations" "seed data"
-
-Configuration:
-  config show                Show current configuration (resolved values)
-  config set <key> <value>   Set a config value (persisted to ~/.delegate/config.json)
-  config reset <key>         Remove a key from config file (revert to default)
-  config path                Print config file location
-
-  help                       Show this help message
-
-Examples:
-  delegate mcp start                                    # Start MCP server
-  delegate delegate "analyze this codebase"            # Fire-and-forget (default)
-  delegate delegate "fix the bug" --foreground         # Stream output, wait
-  delegate delegate "run tests" --deps task-abc123     # Wait for dependency
-  delegate list                                        # List all tasks
-
-  # Scheduling
-  delegate schedule create "run tests" --cron "0 9 * * 1-5"
-  delegate schedule create "deploy" --at "2025-03-01T09:00:00Z"
-  delegate schedule list --status active
-  delegate schedule pause <id>
-
-  # Pipeline (sequential chained tasks)
-  delegate pipeline "setup db" "run migrations" "seed data"
-
-  # Resume failed task with context
-  delegate resume <task-id> --context "Try a different approach"
-
-  # Configuration
-  delegate config show
-  delegate config set timeout 300000
-  delegate config reset timeout
-
-Repository: https://github.com/dean0x/delegate
-`);
-}
-
-function showConfig() {
-  const config = {
-    mcpServers: {
-      delegate: {
-        command: 'npx',
-        args: ['-y', '@dean0x/delegate', 'mcp', 'start'],
-      },
-    },
-  };
-
-  console.log(`
-📋 MCP Configuration for Delegate
-
-Add this to your MCP configuration file:
-
-${JSON.stringify(config, null, 2)}
-
-Configuration file locations:
-- Claude Code: .mcp.json (in project root)
-- Claude Desktop (macOS): ~/Library/Application Support/Claude/claude_desktop_config.json
-- Claude Desktop (Windows): %APPDATA%\\Claude\\claude_desktop_config.json
-
-For local development, use:
-{
-  "mcpServers": {
-    "delegate": {
-      "command": "node",
-      "args": ["/path/to/delegate/dist/index.js"]
-    }
-  }
-}
-
-For global installation, use:
-{
-  "mcpServers": {
-    "delegate": {
-      "command": "delegate",
-      "args": ["mcp", "start"]
-    }
-  }
-}
-
-Learn more: https://github.com/dean0x/delegate#configuration
-`);
-}
-
-/**
- * Subscribe to EventBus events for a specific task and wait for terminal state.
- * Streams OutputCaptured to stdout/stderr in real-time.
- * Returns the worker's exit code (0 = success, non-zero = failure).
- */
-function waitForTaskCompletion(container: Container, taskId: string): Promise<number> {
-  const eventBusResult = container.get<EventBus>('eventBus');
-  if (!eventBusResult.ok) {
-    console.error('❌ Failed to get event bus:', eventBusResult.error.message);
-    return Promise.resolve(1);
-  }
-  const eventBus = eventBusResult.value;
-
-  return new Promise((resolve) => {
-    let resolved = false;
-    const subscriptionIds: string[] = [];
-
-    const cleanup = () => {
-      for (const id of subscriptionIds) {
-        eventBus.unsubscribe(id);
-      }
-    };
-
-    const resolveOnce = (exitCode: number) => {
-      if (resolved) return;
-      resolved = true;
-      cleanup();
-      resolve(exitCode);
-    };
-
-    // Stream output in real-time
-    const outputSub = eventBus.subscribe<OutputCapturedEvent>('OutputCaptured', async (event) => {
-      if (event.taskId !== taskId) return;
-      const stream = event.outputType === 'stderr' ? process.stderr : process.stdout;
-      stream.write(event.data);
-    });
-    if (outputSub.ok) subscriptionIds.push(outputSub.value);
-
-    // Terminal states
-    const completedSub = eventBus.subscribe<TaskCompletedEvent>('TaskCompleted', async (event) => {
-      if (event.taskId !== taskId) return;
-      resolveOnce(event.exitCode);
-    });
-    if (completedSub.ok) subscriptionIds.push(completedSub.value);
-
-    const failedSub = eventBus.subscribe<TaskFailedEvent>('TaskFailed', async (event) => {
-      if (event.taskId !== taskId) return;
-      resolveOnce(event.exitCode ?? 1);
-    });
-    if (failedSub.ok) subscriptionIds.push(failedSub.value);
-
-    const cancelledSub = eventBus.subscribe<TaskCancelledEvent>('TaskCancelled', async (event) => {
-      if (event.taskId !== taskId) return;
-      resolveOnce(1);
-    });
-    if (cancelledSub.ok) subscriptionIds.push(cancelledSub.value);
-
-    const timeoutSub = eventBus.subscribe<TaskTimeoutEvent>('TaskTimeout', async (event) => {
-      if (event.taskId !== taskId) return;
-      resolveOnce(1);
-    });
-    if (timeoutSub.ok) subscriptionIds.push(timeoutSub.value);
-  });
-}
-
-/**
- * Default detach mode: re-spawn the CLI as a detached background process.
- * The background process runs the full lifecycle (bootstrap, delegate, wait, dispose, exit)
- * with --foreground so it doesn't recurse back into detach mode.
- * The foreground polls the background's log file to extract and print the task ID, then exits.
- */
-function handleDetachMode(delegateArgs: string[]): void {
-  // Validate that at least one non-flag word exists (the prompt)
-  const hasPrompt = delegateArgs.some((arg) => !arg.startsWith('-'));
-  if (!hasPrompt) {
-    console.error('❌ Usage: delegate delegate "<prompt>" [options]');
-    console.error('  A prompt is required to delegate a task');
-    process.exit(1);
-  }
-
-  // Create log directory
-  const logDir = path.join(homedir(), '.delegate', 'detach-logs');
-  try {
-    mkdirSync(logDir, { recursive: true });
-  } catch (error) {
-    console.error(`❌ Failed to create log directory: ${logDir}: ${errorMessage(error)}`);
-    process.exit(1);
-  }
-
-  // Create log file with timestamp and random suffix for uniqueness
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const suffix = Math.random().toString(36).substring(2, 8);
-  const logFile = path.join(logDir, `detach-${timestamp}-${suffix}.log`);
-  let logFd: number;
-  try {
-    logFd = openSync(logFile, 'w');
-  } catch (error) {
-    console.error(`❌ Failed to create log file: ${logFile}: ${errorMessage(error)}`);
-    process.exit(1);
-  }
-
-  // Re-spawn CLI with --foreground as a detached background process
-  const childArgs = [process.argv[1], 'delegate', '--foreground', ...delegateArgs];
-  try {
-    const child = spawn(process.argv[0], childArgs, {
-      detached: true,
-      stdio: ['ignore', logFd, logFd],
-      cwd: process.cwd(),
-      env: process.env,
-    });
-
-    child.unref();
-
-    if (!child.pid) {
-      closeSync(logFd);
-      console.error('❌ Failed to spawn background process');
-      process.exit(1);
-    }
-
-    console.log(`🚀 Background process started (PID: ${child.pid})`);
-    console.log(`📄 Log file: ${logFile}`);
-    closeSync(logFd);
-
-    // Poll log file for task ID (max 15s at 200ms intervals)
-    const maxAttempts = 75; // 15s / 200ms
-    let attempt = 0;
-    const taskIdPattern = /Task ID:\s+(task-\S+)/;
-    const errorPattern = /^❌/m;
-
-    const pollInterval = setInterval(() => {
-      attempt++;
-      try {
-        const content = readFileSync(logFile, 'utf-8');
-
-        // Check for error patterns first
-        if (errorPattern.test(content)) {
-          clearInterval(pollInterval);
-          const lines = content.split('\n').filter((l) => l.trim().length > 0);
-          const lastLines = lines.slice(-5);
-          console.error('\n❌ Background process encountered an error:');
-          for (const line of lastLines) {
-            console.error(`  ${line}`);
-          }
-          process.exit(1);
-        }
-
-        // Check for task ID
-        const match = content.match(taskIdPattern);
-        if (match) {
-          clearInterval(pollInterval);
-          const taskId = match[1];
-          console.log(`\n✅ Task delegated: ${taskId}`);
-          console.log(`🔍 Check status: delegate status ${taskId}`);
-          console.log(`📤 View logs:    delegate logs ${taskId}`);
-          process.exit(0);
-        }
-      } catch {
-        // Log file not yet readable, continue polling
-      }
-
-      if (attempt >= maxAttempts) {
-        clearInterval(pollInterval);
-        console.log('\n⏳ Task ID not yet available (background process still starting)');
-        console.log(`📄 Check log file: ${logFile}`);
-        process.exit(0);
-      }
-    }, 200);
-  } catch (error) {
-    closeSync(logFd);
-    console.error('❌ Failed to spawn background process:', errorMessage(error));
-    process.exit(1);
-  }
-}
-
-async function delegateTask(
-  prompt: string,
-  options?: {
-    priority?: 'P0' | 'P1' | 'P2';
-    workingDirectory?: string;
-    dependsOn?: readonly string[];
-    continueFrom?: string;
-    timeout?: number;
-    maxOutputBuffer?: number;
-  },
-) {
-  let container: Container | undefined;
-  try {
-    console.log('🚀 Bootstrapping Delegate...');
-    const containerResult = await bootstrap({
-      skipScheduleExecutor: true,
-      skipResourceMonitoring: true,
-    });
-    if (!containerResult.ok) {
-      console.error('❌ Bootstrap failed:', containerResult.error.message);
-      process.exit(1);
-    }
-    container = containerResult.value;
-
-    const taskManagerResult = await container.resolve<TaskManager>('taskManager');
-    if (!taskManagerResult.ok) {
-      console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
-      await container.dispose();
-      process.exit(1);
-    }
-
-    const taskManager = taskManagerResult.value;
-    console.log('📝 Delegating task:', prompt.substring(0, 100) + (prompt.length > 100 ? '...' : ''));
-
-    const request: DelegateRequest = {
-      prompt,
-      ...options,
-      priority: options?.priority ? Priority[options.priority as keyof typeof Priority] : undefined,
-      dependsOn: options?.dependsOn?.map((id: string) => TaskId(id)),
-      continueFrom: options?.continueFrom ? TaskId(options.continueFrom) : undefined,
-    };
-
-    // Log the parameters being used
-    if (options) {
-      console.log('🔧 Task parameters:');
-      if (options.priority) console.log('  Priority:', options.priority);
-      if (options.workingDirectory) console.log('  Working Directory:', options.workingDirectory);
-      if (options.dependsOn && options.dependsOn.length > 0) {
-        console.log('  Depends On:', options.dependsOn.join(', '));
-        console.log('  Task will wait for dependencies to complete before starting');
-      }
-      if (options.continueFrom) {
-        console.log('  Continue From:', options.continueFrom);
-        console.log('  Task will receive checkpoint context from this dependency');
-      }
-      if (options.timeout) console.log('  Timeout:', options.timeout, 'ms');
-      if (options.maxOutputBuffer) console.log('  Max Output Buffer:', options.maxOutputBuffer, 'bytes');
-    }
-
-    const result = await taskManager.delegate(request);
-    if (!result.ok) {
-      console.error('❌ Failed to delegate task:', result.error.message);
-      await container.dispose();
-      process.exit(1);
-    }
-
-    const task = result.value;
-    console.log('✅ Task delegated successfully!');
-    console.log('📋 Task ID:', task.id);
-
-    // Wait for worker completion with real-time output streaming
-    let cancelledBySigint = false;
-    const sigintHandler = () => {
-      console.error('\n🛑 Cancelling task...');
-      cancelledBySigint = true;
-      taskManager.cancel(task.id, 'User interrupted (SIGINT)');
-    };
-    process.on('SIGINT', sigintHandler);
-
-    console.log('⏳ Waiting for task completion... (Ctrl+C to cancel)');
-    const exitCode = await waitForTaskCompletion(container, task.id);
-
-    process.removeListener('SIGINT', sigintHandler);
-    await container.dispose();
-    process.exit(cancelledBySigint ? 130 : exitCode);
-  } catch (error) {
-    console.error('❌ Error:', errorMessage(error));
-    if (container) await container.dispose();
-    process.exit(1);
-  }
-}
-
-async function getTaskStatus(taskId?: string, showDependencies?: boolean) {
-  try {
-    console.log('🚀 Bootstrapping Delegate...');
-    const containerResult = await bootstrap({ skipScheduleExecutor: true });
-    if (!containerResult.ok) {
-      console.error('❌ Bootstrap failed:', containerResult.error.message);
-      process.exit(1);
-    }
-    const container = containerResult.value;
-
-    const taskManagerResult = await container.resolve<TaskManager>('taskManager');
-    if (!taskManagerResult.ok) {
-      console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
-      process.exit(1);
-    }
-
-    const taskManager = taskManagerResult.value;
-
-    if (taskId) {
-      console.log('🔍 Getting status for:', taskId);
-      const result = await taskManager.getStatus(TaskId(taskId));
-      if (result.ok) {
-        const task = result.value as Task;
-        console.log('📋 Task Details:');
-        console.log('   ID:', task.id);
-        console.log('   Status:', task.status);
-        console.log('   Priority:', task.priority);
-        if (task.startedAt) console.log('   Started:', new Date(task.startedAt).toISOString());
-        if (task.completedAt) console.log('   Completed:', new Date(task.completedAt).toISOString());
-        if (task.exitCode !== undefined) console.log('   Exit Code:', task.exitCode);
-        if (task.completedAt && task.startedAt) {
-          console.log('   Duration:', task.completedAt - task.startedAt, 'ms');
-        }
-        console.log('   Prompt:', task.prompt.substring(0, 100) + (task.prompt.length > 100 ? '...' : ''));
-
-        // Show dependency information if present
-        if (task.dependsOn && task.dependsOn.length > 0) {
-          console.log('\n🔗 Dependencies:');
-          console.log('   Depends On:', task.dependsOn.join(', '));
-          if (task.dependencyState) {
-            console.log('   Dependency State:', task.dependencyState);
-            if (task.dependencyState === 'blocked') {
-              console.log('   ⏳ Task is waiting for dependencies to complete');
-            } else if (task.dependencyState === 'ready') {
-              console.log('   ✅ All dependencies satisfied');
-            }
-          }
-        }
-
-        if (task.dependents && task.dependents.length > 0) {
-          console.log('\n🔗 Dependents:');
-          console.log('   Tasks blocked by this:', task.dependents.join(', '));
-        }
-      } else {
-        console.error('❌ Failed to get task status:', result.error.message);
-        process.exit(1);
-      }
-    } else {
-      console.log('📋 Getting all tasks...');
-      const result = await taskManager.getStatus();
-      if (result.ok && Array.isArray(result.value) && result.value.length > 0) {
-        console.log(`📋 Found ${result.value.length} tasks:\n`);
-        result.value.forEach((task: Task) => {
-          console.log(`${task.id} - ${task.status} - ${task.prompt.substring(0, 50)}...`);
-        });
-      } else if (result.ok) {
-        console.log('📋 No tasks found');
-      } else {
-        console.error('❌ Failed to get tasks:', result.error.message);
-        process.exit(1);
-      }
-    }
-    process.exit(0);
-  } catch (error) {
-    console.error('❌ Error:', errorMessage(error));
-    process.exit(1);
-  }
-}
-
-async function getTaskLogs(taskId: string, tail?: number) {
-  try {
-    console.log('🚀 Bootstrapping Delegate...');
-    const containerResult = await bootstrap({ skipScheduleExecutor: true });
-    if (!containerResult.ok) {
-      console.error('❌ Bootstrap failed:', containerResult.error.message);
-      process.exit(1);
-    }
-    const container = containerResult.value;
-
-    const taskManagerResult = await container.resolve<TaskManager>('taskManager');
-    if (!taskManagerResult.ok) {
-      console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
-      process.exit(1);
-    }
-
-    const taskManager = taskManagerResult.value;
-    console.log('📤 Getting logs for:', taskId);
-
-    const result = await taskManager.getLogs(TaskId(taskId));
-    if (result.ok) {
-      const logs = result.value;
-
-      // Apply tail limit if specified
-      let stdoutLines = logs.stdout || [];
-      let stderrLines = logs.stderr || [];
-
-      if (tail && tail > 0) {
-        stdoutLines = stdoutLines.slice(-tail);
-        stderrLines = stderrLines.slice(-tail);
-      }
-
-      if (stdoutLines.length > 0) {
-        console.log('\n📤 STDOUT' + (tail ? ` (last ${tail} lines)` : '') + ':');
-        stdoutLines.forEach((line: string) => console.log('  ', line));
-      }
-      if (stderrLines.length > 0) {
-        console.log('\n📤 STDERR' + (tail ? ` (last ${tail} lines)` : '') + ':');
-        stderrLines.forEach((line: string) => console.log('  ', line));
-      }
-      if ((!logs.stdout || logs.stdout.length === 0) && (!logs.stderr || logs.stderr.length === 0)) {
-        console.log('\n📤 No output captured');
-      }
-      process.exit(0);
-    } else {
-      console.error('❌ Failed to get task logs:', result.error.message);
-      process.exit(1);
-    }
-  } catch (error) {
-    console.error('❌ Error:', errorMessage(error));
-    process.exit(1);
-  }
-}
-
-async function cancelTask(taskId: string, reason?: string) {
-  try {
-    console.log('🚀 Bootstrapping Delegate...');
-    const containerResult = await bootstrap({ skipScheduleExecutor: true });
-    if (!containerResult.ok) {
-      console.error('❌ Bootstrap failed:', containerResult.error.message);
-      process.exit(1);
-    }
-    const container = containerResult.value;
-
-    const taskManagerResult = await container.resolve<TaskManager>('taskManager');
-    if (!taskManagerResult.ok) {
-      console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
-      process.exit(1);
-    }
-
-    const taskManager = taskManagerResult.value;
-    console.log('🛑 Canceling task:', taskId);
-    if (reason) {
-      console.log('📝 Reason:', reason);
-    }
-
-    const result = await taskManager.cancel(TaskId(taskId), reason);
-    if (result.ok) {
-      console.log('✅ Task canceled successfully');
-      process.exit(0);
-    } else {
-      console.error('❌ Failed to cancel task:', result.error.message);
-      process.exit(1);
-    }
-  } catch (error) {
-    console.error('❌ Error:', errorMessage(error));
-    process.exit(1);
-  }
-}
-
-async function retryTask(taskId: string) {
-  try {
-    console.log('🚀 Bootstrapping Delegate...');
-    const containerResult = await bootstrap({ skipScheduleExecutor: true });
-    if (!containerResult.ok) {
-      console.error('❌ Bootstrap failed:', containerResult.error.message);
-      process.exit(1);
-    }
-    const container = containerResult.value;
-
-    const taskManagerResult = await container.resolve<TaskManager>('taskManager');
-    if (!taskManagerResult.ok) {
-      console.error('❌ Failed to get task manager:', taskManagerResult.error.message);
-      process.exit(1);
-    }
-
-    const taskManager = taskManagerResult.value;
-    console.log('🔄 Retrying task:', taskId);
-
-    const result = await taskManager.retry(TaskId(taskId));
-    if (result.ok) {
-      const newTask = result.value;
-      console.log('✅ Retry task created successfully');
-      console.log(`📝 New Task ID: ${newTask.id}`);
-      console.log(`📊 Status: ${newTask.status}`);
-      console.log(`🔢 Retry count: ${newTask.retryCount || 1}`);
-      if (newTask.parentTaskId) {
-        console.log(`🔗 Parent task: ${newTask.parentTaskId}`);
-      }
-      process.exit(0);
-    } else {
-      console.error('❌ Failed to retry task:', result.error.message);
-      process.exit(1);
-    }
-  } catch (error) {
-    console.error('❌ Error:', errorMessage(error));
-    process.exit(1);
-  }
-}
-
-// ============================================================================
-// SCHEDULE COMMANDS
-// ============================================================================
-
-async function handleScheduleCommand(subCmd: string | undefined, scheduleArgs: string[]) {
-  if (!subCmd) {
-    console.error('❌ Usage: delegate schedule <create|list|get|cancel|pause|resume>');
-    process.exit(1);
-  }
-
-  const { scheduleService } = await withServices();
-
-  switch (subCmd) {
-    case 'create':
-      await scheduleCreate(scheduleService, scheduleArgs);
-      break;
-    case 'list':
-      await scheduleList(scheduleService, scheduleArgs);
-      break;
-    case 'get':
-      await scheduleGet(scheduleService, scheduleArgs);
-      break;
-    case 'cancel':
-      await scheduleCancel(scheduleService, scheduleArgs);
-      break;
-    case 'pause':
-      await schedulePause(scheduleService, scheduleArgs);
-      break;
-    case 'resume':
-      await scheduleResume(scheduleService, scheduleArgs);
-      break;
-    default:
-      console.error(`❌ Unknown schedule subcommand: ${subCmd}`);
-      console.log('Valid subcommands: create, list, get, cancel, pause, resume');
-      process.exit(1);
-  }
-  process.exit(0);
-}
-
-async function scheduleCreate(service: ScheduleService, scheduleArgs: string[]) {
-  let promptWords: string[] = [];
-  let scheduleType: 'cron' | 'one_time' | undefined;
-  let cronExpression: string | undefined;
-  let scheduledAt: string | undefined;
-  let timezone: string | undefined;
-  let missedRunPolicy: 'skip' | 'catchup' | 'fail' | undefined;
-  let priority: 'P0' | 'P1' | 'P2' | undefined;
-  let workingDirectory: string | undefined;
-  let maxRuns: number | undefined;
-  let expiresAt: string | undefined;
-  let afterScheduleId: string | undefined;
-
-  for (let i = 0; i < scheduleArgs.length; i++) {
-    const arg = scheduleArgs[i];
-    const next = scheduleArgs[i + 1];
-
-    if (arg === '--type' && next) {
-      if (next !== 'cron' && next !== 'one_time') {
-        console.error('❌ --type must be "cron" or "one_time"');
-        process.exit(1);
-      }
-      scheduleType = next;
-      i++;
-    } else if (arg === '--cron' && next) {
-      cronExpression = next;
-      i++;
-    } else if (arg === '--at' && next) {
-      scheduledAt = next;
-      i++;
-    } else if (arg === '--timezone' && next) {
-      timezone = next;
-      i++;
-    } else if (arg === '--missed-run-policy' && next) {
-      if (!['skip', 'catchup', 'fail'].includes(next)) {
-        console.error('❌ --missed-run-policy must be "skip", "catchup", or "fail"');
-        process.exit(1);
-      }
-      missedRunPolicy = next as 'skip' | 'catchup' | 'fail';
-      i++;
-    } else if ((arg === '--priority' || arg === '-p') && next) {
-      if (!['P0', 'P1', 'P2'].includes(next)) {
-        console.error('❌ Priority must be P0, P1, or P2');
-        process.exit(1);
-      }
-      priority = next as 'P0' | 'P1' | 'P2';
-      i++;
-    } else if ((arg === '--working-directory' || arg === '-w') && next) {
-      const pathResult = validatePath(next);
-      if (!pathResult.ok) {
-        console.error(`❌ Invalid working directory: ${pathResult.error.message}`);
-        process.exit(1);
-      }
-      workingDirectory = pathResult.value;
-      i++;
-    } else if (arg === '--max-runs' && next) {
-      maxRuns = parseInt(next);
-      if (isNaN(maxRuns) || maxRuns < 1) {
-        console.error('❌ --max-runs must be a positive integer');
-        process.exit(1);
-      }
-      i++;
-    } else if (arg === '--expires-at' && next) {
-      expiresAt = next;
-      i++;
-    } else if (arg === '--after' && next) {
-      afterScheduleId = next;
-      i++;
-    } else if (arg.startsWith('-')) {
-      console.error(`❌ Unknown flag: ${arg}`);
-      process.exit(1);
-    } else {
-      promptWords.push(arg);
-    }
-  }
-
-  const prompt = promptWords.join(' ');
-  if (!prompt) {
-    console.error('❌ Usage: delegate schedule create <prompt> --cron "..." | --at "..." [options]');
-    process.exit(1);
-  }
-
-  // Infer type from --cron / --at flags
-  if (cronExpression && scheduledAt) {
-    console.error('❌ Cannot specify both --cron and --at');
-    process.exit(1);
-  }
-  const inferredType = cronExpression ? 'cron' : scheduledAt ? 'one_time' : undefined;
-  if (scheduleType && inferredType && scheduleType !== inferredType) {
-    console.error(`❌ --type ${scheduleType} conflicts with ${cronExpression ? '--cron' : '--at'}`);
-    process.exit(1);
-  }
-  scheduleType = scheduleType ?? inferredType;
-  if (!scheduleType) {
-    console.error('❌ Provide --cron, --at, or --type');
-    process.exit(1);
-  }
-
-  const { ScheduleType, MissedRunPolicy, Priority } = await import('./core/domain.js');
-
-  const result = await service.createSchedule({
-    prompt,
-    scheduleType: scheduleType === 'cron' ? ScheduleType.CRON : ScheduleType.ONE_TIME,
-    cronExpression,
-    scheduledAt,
-    timezone,
-    missedRunPolicy:
-      missedRunPolicy === 'catchup'
-        ? MissedRunPolicy.CATCHUP
-        : missedRunPolicy === 'fail'
-          ? MissedRunPolicy.FAIL
-          : missedRunPolicy
-            ? MissedRunPolicy.SKIP
-            : undefined,
-    priority: priority ? Priority[priority] : undefined,
-    workingDirectory,
-    maxRuns,
-    expiresAt,
-    afterScheduleId: afterScheduleId ? ScheduleId(afterScheduleId) : undefined,
-  });
-
-  if (result.ok) {
-    console.log('✅ Schedule created successfully!');
-    console.log('📋 Schedule ID:', result.value.id);
-    console.log('📅 Type:', result.value.scheduleType);
-    console.log('🔄 Status:', result.value.status);
-    if (result.value.nextRunAt) {
-      console.log('⏰ Next run:', new Date(result.value.nextRunAt).toISOString());
-    }
-    if (result.value.cronExpression) {
-      console.log('📝 Cron:', result.value.cronExpression);
-    }
-    if (result.value.afterScheduleId) {
-      console.log('🔗 After schedule:', result.value.afterScheduleId);
-    }
-    process.exit(0);
-  } else {
-    console.error('❌ Failed to create schedule:', result.error.message);
-    process.exit(1);
-  }
-}
-
-async function scheduleList(service: ScheduleService, scheduleArgs: string[]) {
-  let status: string | undefined;
-  let limit: number | undefined;
-
-  for (let i = 0; i < scheduleArgs.length; i++) {
-    const arg = scheduleArgs[i];
-    const next = scheduleArgs[i + 1];
-
-    if (arg === '--status' && next) {
-      status = next;
-      i++;
-    } else if (arg === '--limit' && next) {
-      limit = parseInt(next);
-      i++;
-    }
-  }
-
-  const { ScheduleStatus } = await import('./core/domain.js');
-  const statusEnum = status ? (status as keyof typeof ScheduleStatus) : undefined;
-
-  const result = await service.listSchedules(
-    statusEnum ? ScheduleStatus[statusEnum.toUpperCase() as keyof typeof ScheduleStatus] : undefined,
-    limit,
-  );
-
-  if (result.ok) {
-    const schedules = result.value;
-    if (schedules.length === 0) {
-      console.log('📋 No schedules found');
-    } else {
-      console.log(`📋 Found ${schedules.length} schedule(s):\n`);
-      for (const s of schedules) {
-        const nextRun = s.nextRunAt ? new Date(s.nextRunAt).toISOString() : 'none';
-        console.log(
-          `  ${s.id} | ${s.status} | ${s.scheduleType} | runs: ${s.runCount}${s.maxRuns ? '/' + s.maxRuns : ''} | next: ${nextRun}`,
-        );
-      }
-    }
-  } else {
-    console.error('❌ Failed to list schedules:', result.error.message);
-    process.exit(1);
-  }
-}
-
-async function scheduleGet(service: ScheduleService, scheduleArgs: string[]) {
-  const scheduleId = scheduleArgs[0];
-  if (!scheduleId) {
-    console.error('❌ Usage: delegate schedule get <schedule-id> [--history] [--history-limit N]');
-    process.exit(1);
-  }
-
-  const includeHistory = scheduleArgs.includes('--history');
-  let historyLimit: number | undefined;
-  const hlIdx = scheduleArgs.indexOf('--history-limit');
-  if (hlIdx !== -1 && scheduleArgs[hlIdx + 1]) {
-    historyLimit = parseInt(scheduleArgs[hlIdx + 1]);
-  }
-
-  const result = await service.getSchedule(ScheduleId(scheduleId), includeHistory, historyLimit);
-
-  if (result.ok) {
-    const { schedule, history } = result.value;
-    console.log('📋 Schedule Details:');
-    console.log('   ID:', schedule.id);
-    console.log('   Status:', schedule.status);
-    console.log('   Type:', schedule.scheduleType);
-    if (schedule.cronExpression) console.log('   Cron:', schedule.cronExpression);
-    if (schedule.scheduledAt) console.log('   Scheduled At:', new Date(schedule.scheduledAt).toISOString());
-    console.log('   Timezone:', schedule.timezone);
-    console.log('   Missed Run Policy:', schedule.missedRunPolicy);
-    console.log('   Run Count:', schedule.runCount + (schedule.maxRuns ? `/${schedule.maxRuns}` : ''));
-    if (schedule.lastRunAt) console.log('   Last Run:', new Date(schedule.lastRunAt).toISOString());
-    if (schedule.nextRunAt) console.log('   Next Run:', new Date(schedule.nextRunAt).toISOString());
-    if (schedule.expiresAt) console.log('   Expires:', new Date(schedule.expiresAt).toISOString());
-    if (schedule.afterScheduleId) console.log('   After Schedule:', schedule.afterScheduleId);
-    console.log('   Created:', new Date(schedule.createdAt).toISOString());
-    console.log(
-      '   Prompt:',
-      schedule.taskTemplate.prompt.substring(0, 100) + (schedule.taskTemplate.prompt.length > 100 ? '...' : ''),
-    );
-
-    if (history && history.length > 0) {
-      console.log(`\n📜 Execution History (${history.length} entries):`);
-      for (const h of history) {
-        const scheduled = new Date(h.scheduledFor).toISOString();
-        const executed = h.executedAt ? new Date(h.executedAt).toISOString() : 'n/a';
-        console.log(
-          `  ${h.status} | scheduled: ${scheduled} | executed: ${executed}${h.taskId ? ' | task: ' + h.taskId : ''}${h.errorMessage ? ' | error: ' + h.errorMessage : ''}`,
-        );
-      }
-    }
-  } else {
-    console.error('❌ Failed to get schedule:', result.error.message);
-    process.exit(1);
-  }
-}
-
-async function scheduleCancel(service: ScheduleService, scheduleArgs: string[]) {
-  const scheduleId = scheduleArgs[0];
-  if (!scheduleId) {
-    console.error('❌ Usage: delegate schedule cancel <schedule-id> [reason]');
-    process.exit(1);
-  }
-  const reason = scheduleArgs.slice(1).join(' ') || undefined;
-
-  const result = await service.cancelSchedule(ScheduleId(scheduleId), reason);
-  if (result.ok) {
-    console.log(`✅ Schedule ${scheduleId} cancelled`);
-    if (reason) console.log('📝 Reason:', reason);
-  } else {
-    console.error('❌ Failed to cancel schedule:', result.error.message);
-    process.exit(1);
-  }
-}
-
-async function schedulePause(service: ScheduleService, scheduleArgs: string[]) {
-  const scheduleId = scheduleArgs[0];
-  if (!scheduleId) {
-    console.error('❌ Usage: delegate schedule pause <schedule-id>');
-    process.exit(1);
-  }
-
-  const result = await service.pauseSchedule(ScheduleId(scheduleId));
-  if (result.ok) {
-    console.log(`✅ Schedule ${scheduleId} paused`);
-  } else {
-    console.error('❌ Failed to pause schedule:', result.error.message);
-    process.exit(1);
-  }
-}
-
-async function scheduleResume(service: ScheduleService, scheduleArgs: string[]) {
-  const scheduleId = scheduleArgs[0];
-  if (!scheduleId) {
-    console.error('❌ Usage: delegate schedule resume <schedule-id>');
-    process.exit(1);
-  }
-
-  const result = await service.resumeSchedule(ScheduleId(scheduleId));
-  if (result.ok) {
-    console.log(`✅ Schedule ${scheduleId} resumed`);
-  } else {
-    console.error('❌ Failed to resume schedule:', result.error.message);
-    process.exit(1);
-  }
-}
-
-// ============================================================================
-// PIPELINE COMMAND
-// ============================================================================
-
-async function handlePipelineCommand(pipelineArgs: string[]) {
-  if (pipelineArgs.length === 0) {
-    console.error('❌ Usage: delegate pipeline <prompt> [<prompt>]...');
-    console.error('Example: delegate pipeline "setup db" "run migrations" "seed data"');
-    process.exit(1);
-  }
-
-  // Each positional arg is a pipeline step prompt
-  const steps = pipelineArgs.filter((arg) => !arg.startsWith('-'));
-
-  if (steps.length === 0) {
-    console.error('❌ No pipeline steps found');
-    process.exit(1);
-  }
-
-  const { scheduleService } = await withServices();
-  const { ScheduleType } = await import('./core/domain.js');
-  // Add 2-second buffer so "now" doesn't become "past" during validation
-  const scheduledAt = new Date(Date.now() + 2000).toISOString();
-  const createdSchedules: Array<{ id: string; prompt: string }> = [];
-  let previousScheduleId: string | undefined;
-
-  console.log(`📋 Creating pipeline with ${steps.length} step(s)...\n`);
-
-  for (let i = 0; i < steps.length; i++) {
-    const prompt = steps[i];
-
-    const result = await scheduleService.createSchedule({
-      prompt,
-      scheduleType: ScheduleType.ONE_TIME,
-      scheduledAt,
-      afterScheduleId: previousScheduleId ? ScheduleId(previousScheduleId) : undefined,
-    });
-
-    if (!result.ok) {
-      console.error(`❌ Failed to create pipeline step ${i + 1}: ${result.error.message}`);
-      process.exit(1);
-    }
-
-    previousScheduleId = result.value.id;
-    createdSchedules.push({
-      id: result.value.id,
-      prompt: prompt.substring(0, 50) + (prompt.length > 50 ? '...' : ''),
-    });
-  }
-
-  console.log('✅ Pipeline created successfully!\n');
-  console.log('📋 Pipeline steps:');
-  for (let i = 0; i < createdSchedules.length; i++) {
-    const s = createdSchedules[i];
-    const arrow = i < createdSchedules.length - 1 ? ' →' : '';
-    const afterLabel = i > 0 ? ` (after ${createdSchedules[i - 1].id})` : '';
-    console.log(`  ${i + 1}. [${s.id}] "${s.prompt}"${afterLabel}${arrow}`);
-  }
-
-  process.exit(0);
-}
-
-// ============================================================================
-// RESUME COMMAND
-// ============================================================================
-
-async function handleResumeCommand(taskId: string, additionalContext?: string) {
-  try {
-    const { taskManager } = await withServices();
-
-    console.log('🔄 Resuming task:', taskId);
-    if (additionalContext) {
-      console.log('📝 Additional context:', additionalContext);
-    }
-
-    const result = await taskManager.resume({
-      taskId: TaskId(taskId),
-      additionalContext,
-    });
-
-    if (result.ok) {
-      const newTask = result.value;
-      console.log('✅ Task resumed successfully!');
-      console.log('📋 New Task ID:', newTask.id);
-      console.log('🔍 Status:', newTask.status);
-      if (newTask.retryCount) console.log('🔢 Retry count:', newTask.retryCount);
-      if (newTask.parentTaskId) console.log('🔗 Parent task:', newTask.parentTaskId);
-      process.exit(0);
-    } else {
-      console.error('❌ Failed to resume task:', result.error.message);
-      process.exit(1);
-    }
-  } catch (error) {
-    console.error('❌ Error:', errorMessage(error));
-    process.exit(1);
-  }
-}
-
 if (mainCommand === 'mcp') {
   if (subCommand === 'start') {
-    // For MCP, we must NOT print to stdout - just start the server
-    // MCP uses stdio for communication
-    const indexPath = path.join(__dirname, 'index.js');
-    import(indexPath)
-      .then((module) => {
-        // Call the main function if available
-        if (module.main) {
-          return module.main();
-        }
-      })
-      .catch((error) => {
-        console.error('Failed to start MCP server:', errorMessage(error));
-        process.exit(1);
-      });
+    handleMcpStart(__dirname);
   } else if (subCommand === 'test') {
-    console.log('🧪 Testing Delegate MCP Server...\n');
-
-    // Test real server startup and shutdown
-    const indexPath = path.join(__dirname, 'index.js');
-    const mcp = spawn('node', [indexPath], {
-      stdio: ['pipe', 'pipe', 'pipe'], // Capture output for validation
-    });
-
-    let output = '';
-    let hasError = false;
-
-    // Capture stdout/stderr
-    mcp.stdout?.on('data', (data) => {
-      output += data.toString();
-    });
-    mcp.stderr?.on('data', (data) => {
-      output += data.toString();
-    });
-
-    // Handle process events
-    mcp.on('error', (error) => {
-      console.error('❌ Failed to start server:', error.message);
-      hasError = true;
-    });
-
-    mcp.on('exit', (code) => {
-      if (hasError) {
-        process.exit(1);
-      }
-      if (code !== 0 && code !== null) {
-        console.error('❌ Server exited with non-zero code:', code);
-        console.error('Output:', output);
-        process.exit(1);
-      }
-    });
-
-    // Test server starts within reasonable time
-    setTimeout(() => {
-      if (output.includes('Starting Delegate MCP Server') && !hasError) {
-        console.log('✅ Server started successfully!');
-        console.log('✅ Bootstrap completed without errors');
-        mcp.kill();
-        process.exit(0);
-      } else {
-        console.error('❌ Server failed to start properly');
-        console.error('Output:', output);
-        mcp.kill();
-        process.exit(1);
-      }
-    }, 5000);
+    handleMcpTest(__dirname);
   } else if (subCommand === 'config') {
     showConfig();
   } else {
-    console.error(`❌ Unknown MCP subcommand: ${subCommand || '(none)'}`);
-    console.log('Valid subcommands: start, test, config');
+    ui.error(`Unknown MCP subcommand: ${subCommand || '(none)'}`);
+    process.stderr.write('Valid subcommands: start, test, config\n');
     process.exit(1);
   }
 } else if (mainCommand === 'delegate') {
-  // Parse arguments for delegate command
   const delegateArgs = args.slice(1);
   const hasForeground = delegateArgs.includes('--foreground') || delegateArgs.includes('-f');
 
   if (!hasForeground) {
     handleDetachMode(delegateArgs);
-    // handleDetachMode sets up polling that calls process.exit — no fallthrough
   } else {
-    // Filter --foreground/-f from args before parsing
     const foregroundArgs = delegateArgs.filter((arg) => arg !== '--foreground' && arg !== '-f');
 
     const options: {
@@ -1219,43 +67,40 @@ if (mainCommand === 'mcp') {
         const next = foregroundArgs[i + 1];
         if (next && ['P0', 'P1', 'P2'].includes(next)) {
           options.priority = next as 'P0' | 'P1' | 'P2';
-          i++; // skip next arg
+          i++;
         } else {
-          console.error('❌ Invalid priority. Must be P0, P1, or P2');
+          ui.error('Invalid priority. Must be P0, P1, or P2');
           process.exit(1);
         }
       } else if (arg === '--working-directory' || arg === '-w') {
         const next = foregroundArgs[i + 1];
         if (next && !next.startsWith('-')) {
-          // Validate the path to prevent traversal attacks
           const pathResult = validatePath(next);
           if (!pathResult.ok) {
-            console.error(`❌ Invalid working directory: ${pathResult.error.message}`);
+            ui.error(`Invalid working directory: ${pathResult.error.message}`);
             process.exit(1);
           }
           options.workingDirectory = pathResult.value;
-          i++; // skip next arg
+          i++;
         } else {
-          console.error('❌ Working directory requires a path');
+          ui.error('Working directory requires a path');
           process.exit(1);
         }
       } else if (arg === '--depends-on' || arg === '--deps') {
         const next = foregroundArgs[i + 1];
         if (next && !next.startsWith('-')) {
-          // Parse comma-separated task IDs
           const taskIds = next
             .split(',')
             .map((id) => id.trim())
             .filter((id) => id.length > 0);
           if (taskIds.length === 0) {
-            console.error('❌ --deps requires at least one task ID');
+            ui.error('--deps requires at least one task ID');
             process.exit(1);
           }
           options.dependsOn = taskIds;
-          i++; // skip next arg
+          i++;
         } else {
-          console.error('❌ --deps requires comma-separated task IDs');
-          console.error('Example: --deps task-abc123 or --deps task-1,task-2,task-3');
+          ui.error('--deps requires comma-separated task IDs');
           process.exit(1);
         }
       } else if (arg === '--continue-from' || arg === '--continue' || arg === '-c') {
@@ -1264,7 +109,7 @@ if (mainCommand === 'mcp') {
           options.continueFrom = next;
           i++;
         } else {
-          console.error('❌ --continue requires a task ID');
+          ui.error('--continue requires a task ID');
           process.exit(1);
         }
       } else if (arg === '--timeout' || arg === '-t') {
@@ -1272,23 +117,23 @@ if (mainCommand === 'mcp') {
         const timeout = parseInt(next);
         const timeoutResult = validateTimeout(timeout);
         if (!timeoutResult.ok) {
-          console.error(`❌ ${timeoutResult.error.message}`);
+          ui.error(timeoutResult.error.message);
           process.exit(1);
         }
         options.timeout = timeoutResult.value;
-        i++; // skip next arg
+        i++;
       } else if (arg === '--max-output-buffer' || arg === '--buffer' || arg === '-b') {
         const next = foregroundArgs[i + 1];
         const buffer = parseInt(next);
         const bufferResult = validateBufferSize(buffer);
         if (!bufferResult.ok) {
-          console.error(`❌ ${bufferResult.error.message}`);
+          ui.error(bufferResult.error.message);
           process.exit(1);
         }
         options.maxOutputBuffer = bufferResult.value;
-        i++; // skip next arg
+        i++;
       } else if (arg.startsWith('-')) {
-        console.error(`❌ Unknown flag: ${arg}`);
+        ui.error(`Unknown flag: ${arg}`);
         process.exit(1);
       } else {
         promptWords.push(arg);
@@ -1297,53 +142,52 @@ if (mainCommand === 'mcp') {
 
     const prompt = promptWords.join(' ');
     if (!prompt) {
-      console.error('❌ Usage: delegate "<prompt>" [options]');
-      console.error('Options:');
-      console.error('  -f, --foreground              Stream output and wait for completion');
-      console.error('  -p, --priority P0|P1|P2      Task priority (P0=critical, P1=high, P2=normal)');
-      console.error('  -w, --working-directory DIR   Working directory for task execution');
-      console.error('  -t, --timeout MS              Task timeout in milliseconds');
-      console.error('  --max-output-buffer BYTES     Maximum output buffer size');
-      console.error('');
-      console.error('Examples:');
-      console.error('  delegate "refactor auth"                     # Fire-and-forget (default)');
-      console.error('  delegate "quick fix" --foreground            # Stream output, wait');
+      ui.error('Usage: delegate "<prompt>" [options]');
+      process.stderr.write(
+        [
+          'Options:',
+          '  -f, --foreground              Stream output and wait for completion',
+          '  -p, --priority P0|P1|P2      Task priority (P0=critical, P1=high, P2=normal)',
+          '  -w, --working-directory DIR   Working directory for task execution',
+          '  -t, --timeout MS              Task timeout in milliseconds',
+          '  --max-output-buffer BYTES     Maximum output buffer size',
+          '',
+          'Examples:',
+          '  delegate "refactor auth"                     # Fire-and-forget (default)',
+          '  delegate "quick fix" --foreground            # Stream output, wait',
+          '',
+        ].join('\n'),
+      );
       process.exit(1);
     }
 
     await delegateTask(prompt, Object.keys(options).length > 0 ? options : undefined);
-  } // end else (foreground)
+  }
 } else if (mainCommand === 'status') {
-  // Parse status command arguments
   let taskId: string | undefined;
-  let showDependencies = false;
 
   for (let i = 1; i < args.length; i++) {
     const arg = args[i];
-    if (arg === '--show-dependencies') {
-      showDependencies = true;
-    } else if (!arg.startsWith('-')) {
+    if (!arg.startsWith('-')) {
       taskId = arg;
     }
   }
 
-  await getTaskStatus(taskId, showDependencies);
+  await getTaskStatus(taskId);
 } else if (mainCommand === 'logs') {
   const taskId = args[1];
   if (!taskId) {
-    console.error('❌ Usage: delegate logs <task-id> [--tail N]');
-    console.error('Example: delegate logs abc123');
-    console.error('         delegate logs abc123 --tail 50');
+    ui.error('Usage: delegate logs <task-id> [--tail N]');
+    process.stderr.write(['Example: delegate logs abc123', '         delegate logs abc123 --tail 50', ''].join('\n'));
     process.exit(1);
   }
 
-  // Parse optional tail parameter
   let tail: number | undefined;
   const tailIndex = args.indexOf('--tail');
   if (tailIndex !== -1 && args[tailIndex + 1]) {
     const tailValue = parseInt(args[tailIndex + 1]);
     if (isNaN(tailValue) || tailValue < 1 || tailValue > 1000) {
-      console.error('❌ Invalid tail value. Must be between 1 and 1000');
+      ui.error('Invalid tail value. Must be between 1 and 1000');
       process.exit(1);
     }
     tail = tailValue;
@@ -1353,20 +197,16 @@ if (mainCommand === 'mcp') {
 } else if (mainCommand === 'cancel') {
   const taskId = args[1];
   if (!taskId) {
-    console.error('❌ Usage: delegate cancel <task-id> [reason]');
-    console.error('Example: delegate cancel abc123');
-    console.error('         delegate cancel abc123 "Taking too long"');
+    ui.error('Usage: delegate cancel <task-id> [reason]');
     process.exit(1);
   }
 
-  // Optional reason is everything after the task ID
   const reason = args.slice(2).join(' ') || undefined;
   await cancelTask(taskId, reason);
 } else if (mainCommand === 'retry') {
   const taskId = args[1];
   if (!taskId) {
-    console.error('❌ Usage: delegate retry <task-id>');
-    console.error('Example: delegate retry abc123');
+    ui.error('Usage: delegate retry <task-id>');
     process.exit(1);
   }
 
@@ -1380,7 +220,7 @@ if (mainCommand === 'mcp') {
 } else if (mainCommand === 'resume') {
   const taskId = args[1];
   if (!taskId) {
-    console.error('❌ Usage: delegate resume <task-id> [--context "additional instructions"]');
+    ui.error('Usage: delegate resume <task-id> [--context "additional instructions"]');
     process.exit(1);
   }
 
@@ -1393,110 +233,24 @@ if (mainCommand === 'mcp') {
   await handleResumeCommand(taskId, additionalContext);
 } else if (mainCommand === 'config') {
   if (subCommand === 'show') {
-    const config = loadConfiguration();
-
-    const formatMs = (ms: number): string => {
-      if (ms < 1000) return `${ms}ms`;
-      if (ms < 60000) return `${ms}ms (${(ms / 1000).toFixed(0)}s)`;
-      return `${ms}ms (${(ms / 60000).toFixed(0)}min)`;
-    };
-
-    const formatBytes = (bytes: number): string => {
-      if (bytes < 1024) return `${bytes}B`;
-      if (bytes < 1024 * 1024) return `${bytes} (${(bytes / 1024).toFixed(0)}KB)`;
-      if (bytes < 1024 * 1024 * 1024) return `${bytes} (${(bytes / (1024 * 1024)).toFixed(0)}MB)`;
-      return `${bytes} (${(bytes / (1024 * 1024 * 1024)).toFixed(1)}GB)`;
-    };
-
-    console.log('⚙️  Current Configuration (resolved: env > config file > defaults):');
-    console.log('');
-    console.log('🔧 Core Settings:');
-    console.log(`   timeout:              ${formatMs(config.timeout)}`);
-    console.log(`   maxOutputBuffer:      ${formatBytes(config.maxOutputBuffer)}`);
-    console.log(`   cpuCoresReserved:     ${config.cpuCoresReserved} cores`);
-    console.log(`   memoryReserve:        ${formatBytes(config.memoryReserve)}`);
-    console.log(`   logLevel:             ${config.logLevel}`);
-    console.log('');
-    console.log('⚡ Process Management:');
-    console.log(`   killGracePeriodMs:    ${formatMs(config.killGracePeriodMs)}`);
-    console.log(`   resourceMonitorIntervalMs: ${formatMs(config.resourceMonitorIntervalMs)}`);
-    console.log(`   minSpawnDelayMs:      ${formatMs(config.minSpawnDelayMs)}`);
-    console.log(`   settlingWindowMs:     ${formatMs(config.settlingWindowMs)}`);
-    console.log('');
-    console.log('🔗 Event System:');
-    console.log(`   maxListenersPerEvent: ${config.maxListenersPerEvent}`);
-    console.log(`   maxTotalSubscriptions: ${config.maxTotalSubscriptions}`);
-    console.log(`   eventRequestTimeoutMs: ${formatMs(config.eventRequestTimeoutMs)}`);
-    console.log(`   eventCleanupIntervalMs: ${formatMs(config.eventCleanupIntervalMs)}`);
-    console.log('');
-    console.log('💾 Storage:');
-    console.log(`   fileStorageThresholdBytes: ${formatBytes(config.fileStorageThresholdBytes)}`);
-    console.log('');
-    console.log('🔄 Retry:');
-    console.log(`   retryInitialDelayMs:  ${formatMs(config.retryInitialDelayMs)}`);
-    console.log(`   retryMaxDelayMs:      ${formatMs(config.retryMaxDelayMs)}`);
-    console.log('');
-    console.log('🧹 Recovery:');
-    console.log(`   taskRetentionDays:    ${config.taskRetentionDays} days`);
-    console.log('');
-    console.log(`📁 Config file: ${CONFIG_FILE_PATH}`);
+    configShow();
   } else if (subCommand === 'set') {
-    const key = args[2];
-    const rawValue = args[3];
-    if (!key || rawValue === undefined) {
-      console.error('❌ Usage: delegate config set <key> <value>');
-      console.error('Example: delegate config set timeout 300000');
-      console.error(`Valid keys: ${Object.keys(ConfigurationSchema.shape).join(', ')}`);
-      process.exit(1);
-    }
-
-    // Parse value: numbers stay numbers, strings stay strings
-    let value: unknown = rawValue;
-    const asNum = Number(rawValue);
-    if (!isNaN(asNum) && rawValue.trim() !== '') {
-      value = asNum;
-    }
-
-    const result = saveConfigValue(key, value);
-    if (!result.ok) {
-      console.error(`❌ ${result.error}`);
-      process.exit(1);
-    }
-
-    // Show the resolved value after saving
-    const config = loadConfiguration();
-    const resolved = config[key as keyof typeof config];
-    console.log(`✅ ${key} = ${resolved}`);
+    configSet(args[2], args[3]);
   } else if (subCommand === 'reset') {
-    const key = args[2];
-    if (!key) {
-      console.error('❌ Usage: delegate config reset <key>');
-      console.error(`Valid keys: ${Object.keys(ConfigurationSchema.shape).join(', ')}`);
-      process.exit(1);
-    }
-
-    const result = resetConfigValue(key);
-    if (!result.ok) {
-      console.error(`❌ ${result.error}`);
-      process.exit(1);
-    }
-
-    const config = loadConfiguration();
-    const resolved = config[key as keyof typeof config];
-    console.log(`✅ ${key} reset to default: ${resolved}`);
+    configReset(args[2]);
   } else if (subCommand === 'path') {
-    console.log(CONFIG_FILE_PATH);
+    configPath();
   } else {
-    console.error('❌ Usage: delegate config <show|set|reset|path>');
+    ui.error('Usage: delegate config <show|set|reset|path>');
     process.exit(1);
   }
 } else if (mainCommand === 'help' || mainCommand === '--help' || mainCommand === '-h' || !mainCommand) {
-  showHelp();
+  showHelp(__dirname);
 } else if (mainCommand === '--version' || mainCommand === '-v') {
   const pkg = JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
-  console.log(pkg.version);
+  ui.stdout(pkg.version);
 } else {
-  console.error(`❌ Unknown command: ${mainCommand}`);
-  showHelp();
+  ui.error(`Unknown command: ${mainCommand}`);
+  showHelp(__dirname);
   process.exit(1);
 }
