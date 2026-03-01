@@ -29,7 +29,6 @@ ${bold('Task Commands:')}
 
   ${cyan('list')}, ${cyan('ls')}                     List all tasks
   ${cyan('status')} [task-id]             Get status of task(s)
-    --show-dependencies        Show dependency graph for tasks
   ${cyan('logs')} <task-id> [--tail N]    Get output logs for a task (optionally limit to last N lines)
   ${cyan('cancel')} <task-id> [reason]    Cancel a running task with optional reason
   ${cyan('retry')} <task-id>              Retry a failed or completed task

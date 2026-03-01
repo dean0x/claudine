@@ -90,19 +90,22 @@ export function note(msg: string, title?: string): void {
   }
 }
 
-// Status coloring
+// Status coloring — trims before matching so padded strings (e.g. "completed ") still get colored
 export function colorStatus(status: string): string {
   if (!isTTY) return status;
-  switch (status) {
+  switch (status.trim()) {
     case 'completed':
+    case 'active':
       return pc.green(status);
     case 'running':
       return pc.cyan(status);
     case 'failed':
       return pc.red(status);
     case 'queued':
+    case 'expired':
       return pc.dim(status);
     case 'cancelled':
+    case 'paused':
       return pc.yellow(status);
     default:
       return status;

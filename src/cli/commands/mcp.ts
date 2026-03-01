@@ -55,6 +55,8 @@ export function handleMcpStart(dirname: string) {
       if (module.main) {
         return module.main();
       }
+      ui.error('MCP server module does not export main()');
+      process.exit(1);
     })
     .catch((error) => {
       ui.error(`Failed to start MCP server: ${errorMessage(error)}`);

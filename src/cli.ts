@@ -165,18 +165,15 @@ if (mainCommand === 'mcp') {
   }
 } else if (mainCommand === 'status') {
   let taskId: string | undefined;
-  let showDependencies = false;
 
   for (let i = 1; i < args.length; i++) {
     const arg = args[i];
-    if (arg === '--show-dependencies') {
-      showDependencies = true;
-    } else if (!arg.startsWith('-')) {
+    if (!arg.startsWith('-')) {
       taskId = arg;
     }
   }
 
-  await getTaskStatus(taskId, showDependencies);
+  await getTaskStatus(taskId);
 } else if (mainCommand === 'logs') {
   const taskId = args[1];
   if (!taskId) {

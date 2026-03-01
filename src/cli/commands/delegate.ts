@@ -284,7 +284,7 @@ export async function delegateTask(
     if (exitCode === 0) {
       waitSpinner.stop(`Completed (exit ${exitCode})`);
     } else {
-      waitSpinner.stop(`Failed (exit ${exitCode})`);
+      waitSpinner.error(`Failed (exit ${exitCode})`);
     }
 
     process.removeListener('SIGINT', sigintHandler);

@@ -3,7 +3,7 @@ import { TaskId } from '../../core/domain.js';
 import { errorMessage, withServices } from '../services.js';
 import * as ui from '../ui.js';
 
-export async function getTaskStatus(taskId?: string, _showDependencies?: boolean) {
+export async function getTaskStatus(taskId?: string) {
   const s = ui.createSpinner();
   try {
     s.start(taskId ? `Fetching status for ${taskId}...` : 'Fetching tasks...');
