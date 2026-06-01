@@ -561,8 +561,24 @@ export class RecoveryManager {
           continue;
         }
         // Use the batch session set from Phase 0 — O(1) lookup instead of a per-task exec.
-        const alive =
+        let alive =
           workerRegistration.sessionName !== undefined && liveTmuxSessions.has(workerRegistration.sessionName);
+
+        // DECISION (defense-in-depth): If the session is not in the Phase 0 snapshot, it may
+        // have been spawned after Phase 0 ran (the race condition in 'run' mode). Fall back to
+        // a live isAlive() check before declaring the session dead. Conservative: treat any
+        // isAlive() error as dead so genuinely crashed tasks are still failed correctly.
+        if (!alive && workerRegistration.sessionName !== undefined && this.tmuxSessionManager) {
+          const liveCheck = this.tmuxSessionManager.isAlive(workerRegistration.sessionName);
+          if (liveCheck.ok && liveCheck.value) {
+            alive = true;
+            this.logger.info('Running task session alive via live check (not in Phase 0 snapshot)', {
+              taskId: task.id,
+              sessionName: workerRegistration.sessionName,
+            });
+          }
+        }
+
         if (alive) {
           this.logger.info('Running task has live tmux session, skipping', {
             taskId: task.id,
