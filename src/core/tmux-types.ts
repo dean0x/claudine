@@ -22,7 +22,7 @@ import type { Result } from './result.js';
 
 /**
  * Handle to a live tmux session.
- * Returned from TmuxConnectorPort.spawn(); passed back to destroy/sendKeys/isAlive.
+ * Returned from TmuxConnectorPort.spawn(); passed back to destroy/pasteContent/sendControlKeys/isAlive.
  */
 export interface TmuxHandle {
   /** Full session name (e.g. "beat-task-abc123") */
@@ -207,7 +207,7 @@ export interface TmuxConnectorPort {
    * 4. Restart the staleness timer
    *
    * Must be called AFTER setEnvironment(AUTOBEAT_TASK_ID) and the /clear settle delay,
-   * and BEFORE sendKeys(prompt) so watchers are ready before any output arrives.
+   * and BEFORE pasteContent(prompt) so watchers are ready before any output arrives.
    *
    * Returns err() if the task directory cannot be created.
    */

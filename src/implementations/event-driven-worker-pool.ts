@@ -232,7 +232,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
     const adapter = adapterResult.value;
 
     // Step 4: Build tmux config
-    // All tasks use interactive mode with the prompt delivered via sendKeys.
+    // All tasks use interactive mode with the prompt delivered via pasteContent + Enter.
     // Persistent sessions (loops) reuse the session across iterations.
     const psk = task.persistentSessionKey;
     const buildResult = adapter.buildTmuxCommand({
@@ -392,12 +392,22 @@ export class EventDrivenWorkerPool implements WorkerPool {
     }
 
     // Step 3: Send /clear to reset agent context
-    const clearResult = this.tmuxConnector.sendKeys(handle, '/clear\n');
+    const clearResult = this.tmuxConnector.sendKeys(handle, '/clear');
     if (!clearResult.ok) {
       this.logger.warn('Failed to send /clear to persistent session — destroying, will spawn fresh', {
         taskId: task.id,
         key,
         error: clearResult.error.message,
+      });
+      this.cleanupPersistentSession(key);
+      return ok(null);
+    }
+    const clearEnterResult = this.tmuxConnector.sendControlKeys(handle, 'Enter');
+    if (!clearEnterResult.ok) {
+      this.logger.warn('Failed to send Enter after /clear — destroying, will spawn fresh', {
+        taskId: task.id,
+        key,
+        error: clearEnterResult.error.message,
       });
       this.cleanupPersistentSession(key);
       return ok(null);
@@ -413,7 +423,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
     // iteration's ID. In normal operation the agent has not received its prompt yet at
     // this point, so no callback should fire — but the ordering makes the invariant
     // explicit. Then create new task directory and start new watchers via prepareForReuse().
-    // This must happen BEFORE the worker remap and BEFORE sendKeys(prompt) so that the
+    // This must happen BEFORE the worker remap and BEFORE pasteContent(prompt) so that the
     // connector's watchers are ready to receive output as soon as the agent starts.
     entry.taskIdRef.current = task.id;
     const reuseCallbacks = this.createCallbacks(entry.taskIdRef);
@@ -445,7 +455,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
    *    d. Clean up flushingInProgress for the old task ID
    *    e. Atomically update DB registration from old task ID to new task ID
    * 7. Restart flushing, heartbeat, and timeout timers
-   * 8. Send new prompt via sendKeys
+   * 8. Send new prompt via pasteContent + Enter
    * 9. Release reuse lock
    *
    * DESIGN DECISION: On any failure, fall through to fresh spawn by destroying the stale
@@ -493,18 +503,29 @@ export class EventDrivenWorkerPool implements WorkerPool {
         this.remapExistingWorkerForReuse(worker, task, workerId, entry);
       }
 
-      // Step 8: Worker state is now fully remapped. If sendKeys fails, clean up the
-      // WorkerState (clears timers and removes from maps) before destroying the session,
-      // preventing orphaned callbacks from firing against the new task ID.
+      // Step 8: Worker state is now fully remapped. If pasteContent or Enter fails, clean
+      // up the WorkerState (clears timers and removes from maps) before destroying the
+      // session, preventing orphaned callbacks from firing against the new task ID.
       // Use worker.id (not the destructured workerId) because reRegisterWorkerForReuse
       // creates a new WorkerState with a new ID and updates entry.workerId, making the
       // locally destructured workerId stale for the re-registration branch.
-      const sendResult = this.tmuxConnector.sendKeys(handle, prompt + '\n');
-      if (!sendResult.ok) {
-        this.logger.warn('Failed to send prompt to reused session — destroying, will spawn fresh', {
+      const pasteResult = this.tmuxConnector.pasteContent(handle, prompt);
+      if (!pasteResult.ok) {
+        this.logger.warn('Failed to paste prompt to reused session — destroying, will spawn fresh', {
           taskId: task.id,
           key,
-          error: sendResult.error.message,
+          error: pasteResult.error.message,
+        });
+        this.cleanupWorkerState(worker.id, task.id);
+        this.cleanupPersistentSession(key);
+        return ok(null);
+      }
+      const enterResult = this.tmuxConnector.sendControlKeys(handle, 'Enter');
+      if (!enterResult.ok) {
+        this.logger.warn('Failed to send Enter after prompt to reused session — destroying, will spawn fresh', {
+          taskId: task.id,
+          key,
+          error: enterResult.error.message,
         });
         this.cleanupWorkerState(worker.id, task.id);
         this.cleanupPersistentSession(key);
@@ -683,16 +704,30 @@ export class EventDrivenWorkerPool implements WorkerPool {
     // Step 9: Start periodic output flushing
     this.startFlushing(worker);
 
-    // Step 10: Send prompt via sendKeys. All sessions use interactive mode;
-    // prompt is always present (delivered via send-keys, not baked into args).
-    const sendResult = this.tmuxConnector.sendKeys(handle, prompt + '\n');
-    if (!sendResult.ok) {
+    // Step 10: Send prompt via pasteContent + Enter. All sessions use interactive mode;
+    // prompt is always present (delivered via load-buffer/paste-buffer, not baked into args).
+    // pasteContent loads the prompt into a tmux buffer and pastes it, ensuring the full
+    // prompt text is injected without send-keys literal-mode limitations. The subsequent
+    // sendControlKeys('Enter') submits the prompt to Claude Code's input handler.
+    const pasteResult = this.tmuxConnector.pasteContent(handle, prompt);
+    if (!pasteResult.ok) {
       this.cleanupWorkerState(worker.id, task.id);
-      this.destroySessionWithWarning(handle, 'sendKeys failure');
+      this.destroySessionWithWarning(handle, 'pasteContent failure');
       return err(
         new AutobeatError(
           ErrorCode.WORKER_SPAWN_FAILED,
-          `Failed to send prompt to tmux session: ${sendResult.error.message}`,
+          `Failed to paste prompt to tmux session: ${pasteResult.error.message}`,
+        ),
+      );
+    }
+    const enterResult = this.tmuxConnector.sendControlKeys(handle, 'Enter');
+    if (!enterResult.ok) {
+      this.cleanupWorkerState(worker.id, task.id);
+      this.destroySessionWithWarning(handle, 'sendControlKeys Enter failure');
+      return err(
+        new AutobeatError(
+          ErrorCode.WORKER_SPAWN_FAILED,
+          `Failed to submit prompt to tmux session: ${enterResult.error.message}`,
         ),
       );
     }

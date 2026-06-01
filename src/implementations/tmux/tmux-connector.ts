@@ -377,7 +377,7 @@ export class TmuxConnector implements TmuxConnectorPort {
    * 4. Restart the staleness timer
    *
    * Must be called AFTER setEnvironment(AUTOBEAT_TASK_ID) and the /clear settle
-   * delay, and BEFORE sendKeys(prompt) so watchers are ready before output arrives.
+   * delay, and BEFORE pasteContent(prompt) so watchers are ready before output arrives.
    *
    * Returns err() if the task directory cannot be created (caller falls through
    * to fresh spawn by calling cleanupPersistentSession then spawning fresh).
@@ -1033,7 +1033,7 @@ export class TmuxConnector implements TmuxConnectorPort {
     // DESIGN DECISION: Persistent sessions are "parked" rather than destroyed when a
     // sentinel fires — the tmux session stays alive between loop iterations. WorkerPool
     // calls prepareForReuse() on the next iteration to set up new watchers and task
-    // directory, then sendKeys() to deliver the next prompt.
+    // directory, then pasteContent() + sendControlKeys(Enter) to deliver the next prompt.
     if (session.persistent) {
       // Set state to 'parked' BEFORE flushPendingFiles so that any in-flight staleness
       // timer ticks that fire during the flush see state !== 'active' and return early.

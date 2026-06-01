@@ -4,7 +4,7 @@
  * Interactive mode has distinct lifecycle (tmux session + attach, no loop, SIGINT coordination).
  *
  * Phase 5: Migrated from child_process spawnInteractive() to tmux sessions.
- * Flow: buildTmuxCommand() → tmuxConnector.spawn() → tmuxConnector.sendKeys()
+ * Flow: buildTmuxCommand() → tmuxConnector.spawn() → tmuxConnector.pasteContent() + sendControlKeys('Enter')
  *   → tmux attach-session (stdio: 'inherit') → session liveness check → finalize
  */
 
@@ -188,10 +188,10 @@ interface SpawnPromptContext {
 
 /**
  * Build the tmux config (stripping AUTOBEAT_WORKER), spawn the session, and deliver
- * the initial prompt via send-keys.
+ * the initial prompt via pasteContent + Enter.
  *
  * Calls process.exit(1) on any failure (CLI pattern — null is never returned).
- * On failure after spawn (send-keys), destroys the session before exiting.
+ * On failure after spawn (pasteContent/Enter), destroys the session before exiting.
  */
 async function spawnAndDeliverPrompt(ctx: SpawnPromptContext): Promise<SpawnedSession> {
   const { tmuxConnector, adapter, orchestration, orchestrationService, container } = ctx;
@@ -261,10 +261,16 @@ async function spawnAndDeliverPrompt(ctx: SpawnPromptContext): Promise<SpawnedSe
 
   const handle = spawnResult.value;
 
-  // Deliver the initial prompt via send-keys (the session is now alive and ready).
-  const sendKeysResult = tmuxConnector.sendKeys(handle, tmuxPrompt);
-  if (!sendKeysResult.ok) {
-    return failWith(`Failed to deliver prompt to tmux session: ${sendKeysResult.error.message}`, handle);
+  // Deliver the initial prompt via pasteContent + Enter (the session is now alive and ready).
+  // pasteContent uses tmux load-buffer/paste-buffer to inject the full prompt without the
+  // send-keys literal-mode limitations that prevent trailing newlines from being submitted.
+  const pasteResult = tmuxConnector.pasteContent(handle, tmuxPrompt);
+  if (!pasteResult.ok) {
+    return failWith(`Failed to deliver prompt to tmux session: ${pasteResult.error.message}`, handle);
+  }
+  const enterResult = tmuxConnector.sendControlKeys(handle, 'Enter');
+  if (!enterResult.ok) {
+    return failWith(`Failed to submit prompt to tmux session: ${enterResult.error.message}`, handle);
   }
 
   return { handle, agentState, exitPromise };
