@@ -380,6 +380,23 @@ describe('EventDrivenWorkerPool (Phase 3: tmux)', () => {
       // Worker should not be registered
       expect(pool.getWorkerCount()).toBe(0);
     });
+
+    it('cleans up when sendControlKeys(Enter) fails after pasteContent succeeds (step 10 Enter failure)', async () => {
+      // applies ADR-004: pasteContent + sendControlKeys('Enter') is the canonical delivery
+      // mechanism. Both steps must succeed; failure of the Enter step must roll back.
+      (tmuxConnector.sendControlKeys as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+        err(new AutobeatError(ErrorCode.TMUX_SEND_KEYS_FAILED, 'Enter failed')),
+      );
+
+      const task = buildTask();
+      const result = await pool.spawn(task);
+
+      expect(result.ok).toBe(false);
+      // pasteContent succeeded, so destroy must be called to roll back the spawned session
+      expect(tmuxConnector.destroy).toHaveBeenCalled();
+      // Worker should not be registered
+      expect(pool.getWorkerCount()).toBe(0);
+    });
   });
 
   // ─── AC-7: Output routing ────────────────────────────────────────────────
@@ -1106,6 +1123,27 @@ describe('EventDrivenWorkerPool (Phase 3: tmux)', () => {
       expect(tmuxConnector.spawn).toHaveBeenCalledTimes(2);
     });
 
+    it('sendControlKeys(Enter) failure after /clear in reuse falls through to fresh spawn (prepareSessionForIteration step 3)', async () => {
+      // applies ADR-004: Enter after /clear is required to submit the clear command. If it
+      // fails, cleanupPersistentSession must run and the call falls through to a fresh spawn.
+      const task1 = buildPersistentTask('loop-clear-enter-fail', (f) => f.withPrompt('iter 1'));
+      const task2 = buildPersistentTask('loop-clear-enter-fail', (f) => f.withPrompt('iter 2'));
+
+      await pool.spawn(task1);
+
+      // sendControlKeys is called for Enter after /clear. Make that specific call fail
+      // while leaving all other mock calls (including Enter after prompt paste) at default ok().
+      (tmuxConnector.sendControlKeys as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+        err(new AutobeatError(ErrorCode.TMUX_SEND_KEYS_FAILED, 'Enter after clear failed')),
+      );
+
+      const result = await pool.spawn(task2);
+
+      // Must succeed — fall through to fresh spawn (cleanupPersistentSession + launchAndRegister)
+      expect(result.ok).toBe(true);
+      expect(tmuxConnector.spawn).toHaveBeenCalledTimes(2);
+    });
+
     // ── B1-1 regression: real-world loop lifecycle ─────────────────────────
 
     it('B1-1: reuses session after previous iteration completed (WorkerState removed by cleanupWorkerState)', async () => {
@@ -1299,6 +1337,33 @@ describe('EventDrivenWorkerPool (Phase 3: tmux)', () => {
       expect(tmuxConnector.destroy).toHaveBeenCalled();
     });
 
+    it('B1-2: sendControlKeys(Enter) failure after pasteContent succeeds on reuse cleans up WorkerState (falls through to fresh spawn)', async () => {
+      // applies ADR-004: pasteContent + sendControlKeys('Enter') are both required for prompt
+      // delivery. If Enter fails after paste succeeds in reuseSession (step 8), cleanupWorkerState
+      // and cleanupPersistentSession must both run to prevent orphaned callbacks, and the call
+      // falls through to a fresh spawn.
+      const task1 = buildPersistentTask('loop-enter-fail-reuse', (f) => f.withPrompt('iter 1'));
+      const task2 = buildPersistentTask('loop-enter-fail-reuse', (f) => f.withPrompt('iter 2'));
+
+      await pool.spawn(task1);
+
+      // sendControlKeys is called twice during reuse: once for Enter after /clear (step 3 in
+      // prepareSessionForIteration) and once for Enter after pasteContent (step 8 in reuseSession).
+      // Let the first call (after /clear) succeed and fail the second (after paste).
+      (tmuxConnector.sendControlKeys as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(ok(undefined)) // Enter after /clear succeeds
+        .mockReturnValueOnce(err(new AutobeatError(ErrorCode.TMUX_SEND_KEYS_FAILED, 'Enter after paste failed')));
+
+      const [spawnResult] = await Promise.all([pool.spawn(task2), vi.advanceTimersByTimeAsync(400)]);
+
+      // Must fall through to fresh spawn (ok result, 2 total spawns)
+      expect(spawnResult.ok).toBe(true);
+      expect(tmuxConnector.spawn).toHaveBeenCalledTimes(2);
+
+      // The persistent session must be destroyed after cleanupWorkerState
+      expect(tmuxConnector.destroy).toHaveBeenCalled();
+    });
+
     // ─── Phase B: prepareForReuse ordering ────────────────────────────────────
 
     it('Phase B: prepareForReuse called after setEnvironment and /clear settle, before pasteContent(prompt)', async () => {
@@ -1339,13 +1404,20 @@ describe('EventDrivenWorkerPool (Phase 3: tmux)', () => {
 
       const envIdx = callOrder.indexOf('setEnvironment(AUTOBEAT_TASK_ID)');
       const clearIdx = callOrder.indexOf('sendKeys(/clear)');
+      // sendControlKeys(Enter) appears twice: first after /clear, then after pasteContent(prompt).
+      const clearEnterIdx = callOrder.indexOf('sendControlKeys(Enter)');
       const prepareIdx = callOrder.indexOf('prepareForReuse');
       const promptIdx = callOrder.indexOf('pasteContent(prompt)');
+      const promptEnterIdx = callOrder.lastIndexOf('sendControlKeys(Enter)');
 
       expect(envIdx).toBeGreaterThanOrEqual(0);
       expect(clearIdx).toBeGreaterThan(envIdx);
-      expect(prepareIdx).toBeGreaterThan(clearIdx);
+      // Enter after /clear must follow /clear and precede prepareForReuse
+      expect(clearEnterIdx).toBeGreaterThan(clearIdx);
+      expect(prepareIdx).toBeGreaterThan(clearEnterIdx);
       expect(promptIdx).toBeGreaterThan(prepareIdx);
+      // Enter after prompt paste must follow pasteContent(prompt)
+      expect(promptEnterIdx).toBeGreaterThan(promptIdx);
     });
 
     it('Phase B: prepareForReuse failure falls through to fresh spawn', async () => {
