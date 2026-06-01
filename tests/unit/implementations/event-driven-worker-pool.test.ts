@@ -165,12 +165,21 @@ describe('EventDrivenWorkerPool (Phase 3: tmux)', () => {
       expect(tmuxConnector.spawn).toHaveBeenCalled();
     });
 
-    it('calls tmuxConnector.sendKeys to deliver prompt after spawn', async () => {
+    it('calls tmuxConnector.pasteContent to deliver prompt after spawn', async () => {
       const task = buildTask((f) => f.withPrompt('run tests'));
       await pool.spawn(task);
-      expect(tmuxConnector.sendKeys).toHaveBeenCalledWith(
+      expect(tmuxConnector.pasteContent).toHaveBeenCalledWith(
         expect.objectContaining({ sessionName: expect.stringContaining('beat-') }),
         expect.stringContaining('run tests'),
+      );
+    });
+
+    it('calls tmuxConnector.sendControlKeys(Enter) after pasteContent to submit prompt', async () => {
+      const task = buildTask((f) => f.withPrompt('run tests'));
+      await pool.spawn(task);
+      expect(tmuxConnector.sendControlKeys).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionName: expect.stringContaining('beat-') }),
+        'Enter',
       );
     });
   });
@@ -357,16 +366,16 @@ describe('EventDrivenWorkerPool (Phase 3: tmux)', () => {
       expect(result.ok).toBe(false);
     });
 
-    it('cleans up when sendKeys fails after spawn (step 10 failure)', async () => {
-      (tmuxConnector.sendKeys as ReturnType<typeof vi.fn>).mockReturnValueOnce(
-        err(new AutobeatError(ErrorCode.TMUX_SEND_KEYS_FAILED, 'send failed')),
+    it('cleans up when pasteContent fails after spawn (step 10 failure)', async () => {
+      (tmuxConnector.pasteContent as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+        err(new AutobeatError(ErrorCode.TMUX_SEND_KEYS_FAILED, 'paste failed')),
       );
 
       const task = buildTask();
       const result = await pool.spawn(task);
 
       expect(result.ok).toBe(false);
-      // Session should be destroyed on sendKeys failure
+      // Session should be destroyed on pasteContent failure
       expect(tmuxConnector.destroy).toHaveBeenCalled();
       // Worker should not be registered
       expect(pool.getWorkerCount()).toBe(0);
@@ -882,10 +891,14 @@ describe('EventDrivenWorkerPool (Phase 3: tmux)', () => {
         'AUTOBEAT_TASK_ID',
         task2.id,
       );
-      // sendKeys called for /clear and for the prompt
+      // sendKeys called for /clear (fixed string, not via pasteContent)
       const sendKeysCalls = (tmuxConnector.sendKeys as ReturnType<typeof vi.fn>).mock.calls;
-      expect(sendKeysCalls.some(([, keys]: [unknown, string]) => keys === '/clear\n')).toBe(true);
-      expect(sendKeysCalls.some(([, keys]: [unknown, string]) => keys.includes('iteration 2'))).toBe(true);
+      expect(sendKeysCalls.some(([, keys]: [unknown, string]) => keys === '/clear')).toBe(true);
+      // pasteContent called for the iteration prompt
+      expect(tmuxConnector.pasteContent).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionName: expect.stringContaining('beat-') }),
+        expect.stringContaining('iteration 2'),
+      );
 
       // Behavioral outcome: the worker must be reachable via the new task ID, not the old one.
       const workerForTask2 = pool.getWorkerForTask(task2.id);
@@ -938,7 +951,7 @@ describe('EventDrivenWorkerPool (Phase 3: tmux)', () => {
       expect(tmuxConnector.spawn).toHaveBeenCalledTimes(2);
       // /clear NOT sent because the session was dead and a fresh spawn happened
       const sendKeysCalls = (tmuxConnector.sendKeys as ReturnType<typeof vi.fn>).mock.calls;
-      expect(sendKeysCalls.some(([, keys]: [unknown, string]) => keys === '/clear\n')).toBe(false);
+      expect(sendKeysCalls.some(([, keys]: [unknown, string]) => keys === '/clear')).toBe(false);
     });
 
     it('cleanupPersistentSession destroys the session and removes it from the map', async () => {
@@ -1262,8 +1275,8 @@ describe('EventDrivenWorkerPool (Phase 3: tmux)', () => {
       expect(workerRepository.updateTaskId).toHaveBeenCalledWith(expect.objectContaining({ taskId: task2.id }));
     });
 
-    it('B1-2: sendKeys failure on reuse cleans up WorkerState (falls through to fresh spawn)', async () => {
-      // B1-2: if sendKeys fails after worker state is remapped, cleanupWorkerState must be
+    it('B1-2: pasteContent failure on reuse cleans up WorkerState (falls through to fresh spawn)', async () => {
+      // B1-2: if pasteContent fails after worker state is remapped, cleanupWorkerState must be
       // called to clear timers and remove the worker from maps — preventing orphaned callbacks.
       // The call falls through to a fresh spawn.
       const task1 = buildPersistentTask('loop-sendkeys-fail', (f) => f.withPrompt('iter 1'));
@@ -1271,14 +1284,10 @@ describe('EventDrivenWorkerPool (Phase 3: tmux)', () => {
 
       await pool.spawn(task1);
 
-      // Make sendKeys fail on the prompt send inside reuseSession.
-      // The mock is installed AFTER task1's spawn, so call counts restart from 0.
-      // sendKeys call order from this point: (1) /clear in reuseSession,
-      // (2) task2 prompt in reuseSession — fail on call 2.
-      // Subsequent calls (fresh spawn prompt) must succeed so the fallback completes.
-      (tmuxConnector.sendKeys as ReturnType<typeof vi.fn>)
-        .mockReturnValueOnce(ok(undefined)) // call 1: /clear succeeds
-        .mockReturnValueOnce(err(new Error('pipe broken'))); // call 2: prompt fails → fallthrough
+      // Make pasteContent fail on the prompt delivery inside reuseSession.
+      // sendKeys is still used for /clear (which succeeds via default mock).
+      // pasteContent failure on task2's prompt triggers fallthrough.
+      (tmuxConnector.pasteContent as ReturnType<typeof vi.fn>).mockReturnValueOnce(err(new Error('pipe broken')));
 
       const [spawnResult] = await Promise.all([pool.spawn(task2), vi.advanceTimersByTimeAsync(400)]);
 
@@ -1292,10 +1301,10 @@ describe('EventDrivenWorkerPool (Phase 3: tmux)', () => {
 
     // ─── Phase B: prepareForReuse ordering ────────────────────────────────────
 
-    it('Phase B: prepareForReuse called after setEnvironment and /clear settle, before sendKeys(prompt)', async () => {
-      // Verify the call ordering: setEnvironment → sendKeys(/clear) → [settle] →
-      // prepareForReuse → sendKeys(prompt). The connector must have watchers ready
-      // before the agent starts processing the new prompt.
+    it('Phase B: prepareForReuse called after setEnvironment and /clear settle, before pasteContent(prompt)', async () => {
+      // Verify the call ordering: setEnvironment → sendKeys(/clear) → sendControlKeys(Enter) →
+      // [settle] → prepareForReuse → pasteContent(prompt) → sendControlKeys(Enter).
+      // The connector must have watchers ready before the agent starts processing the new prompt.
       const task1 = buildPersistentTask('loop-ordering', (f) => f.withPrompt('iter 1'));
       const task2 = buildPersistentTask('loop-ordering', (f) => f.withPrompt('iter 2'));
 
@@ -1308,7 +1317,17 @@ describe('EventDrivenWorkerPool (Phase 3: tmux)', () => {
       });
       vi.mocked(tmuxConnector.sendKeys).mockImplementation((...args) => {
         const keys = args[1] as string;
-        callOrder.push(keys.includes('/clear') ? 'sendKeys(/clear)' : 'sendKeys(prompt)');
+        callOrder.push(keys.includes('/clear') ? 'sendKeys(/clear)' : `sendKeys(${keys})`);
+        return ok(undefined);
+      });
+      vi.mocked(tmuxConnector.sendControlKeys).mockImplementation((...args) => {
+        const keys = args[1] as string;
+        callOrder.push(`sendControlKeys(${keys})`);
+        return ok(undefined);
+      });
+      vi.mocked(tmuxConnector.pasteContent).mockImplementation((...args) => {
+        const content = args[1] as string;
+        callOrder.push(content.includes('iter 2') ? 'pasteContent(prompt)' : `pasteContent(${content})`);
         return ok(undefined);
       });
       vi.mocked(tmuxConnector.prepareForReuse).mockImplementation(() => {
@@ -1321,7 +1340,7 @@ describe('EventDrivenWorkerPool (Phase 3: tmux)', () => {
       const envIdx = callOrder.indexOf('setEnvironment(AUTOBEAT_TASK_ID)');
       const clearIdx = callOrder.indexOf('sendKeys(/clear)');
       const prepareIdx = callOrder.indexOf('prepareForReuse');
-      const promptIdx = callOrder.indexOf('sendKeys(prompt)');
+      const promptIdx = callOrder.indexOf('pasteContent(prompt)');
 
       expect(envIdx).toBeGreaterThanOrEqual(0);
       expect(clearIdx).toBeGreaterThan(envIdx);

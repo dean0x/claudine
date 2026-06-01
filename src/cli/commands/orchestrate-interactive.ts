@@ -261,10 +261,16 @@ async function spawnAndDeliverPrompt(ctx: SpawnPromptContext): Promise<SpawnedSe
 
   const handle = spawnResult.value;
 
-  // Deliver the initial prompt via send-keys (the session is now alive and ready).
-  const sendKeysResult = tmuxConnector.sendKeys(handle, tmuxPrompt);
-  if (!sendKeysResult.ok) {
-    return failWith(`Failed to deliver prompt to tmux session: ${sendKeysResult.error.message}`, handle);
+  // Deliver the initial prompt via pasteContent + Enter (the session is now alive and ready).
+  // pasteContent uses tmux load-buffer/paste-buffer to inject the full prompt without the
+  // send-keys literal-mode limitations that prevent trailing newlines from being submitted.
+  const pasteResult = tmuxConnector.pasteContent(handle, tmuxPrompt);
+  if (!pasteResult.ok) {
+    return failWith(`Failed to deliver prompt to tmux session: ${pasteResult.error.message}`, handle);
+  }
+  const enterResult = tmuxConnector.sendControlKeys(handle, 'Enter');
+  if (!enterResult.ok) {
+    return failWith(`Failed to submit prompt to tmux session: ${enterResult.error.message}`, handle);
   }
 
   return { handle, agentState, exitPromise };
