@@ -1279,8 +1279,8 @@ describe('EventDrivenWorkerPool (Phase 3: tmux)', () => {
       // B1-2: if pasteContent fails after worker state is remapped, cleanupWorkerState must be
       // called to clear timers and remove the worker from maps — preventing orphaned callbacks.
       // The call falls through to a fresh spawn.
-      const task1 = buildPersistentTask('loop-sendkeys-fail', (f) => f.withPrompt('iter 1'));
-      const task2 = buildPersistentTask('loop-sendkeys-fail', (f) => f.withPrompt('iter 2'));
+      const task1 = buildPersistentTask('loop-paste-fail', (f) => f.withPrompt('iter 1'));
+      const task2 = buildPersistentTask('loop-paste-fail', (f) => f.withPrompt('iter 2'));
 
       await pool.spawn(task1);
 

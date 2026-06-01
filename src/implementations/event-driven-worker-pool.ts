@@ -423,7 +423,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
     // iteration's ID. In normal operation the agent has not received its prompt yet at
     // this point, so no callback should fire — but the ordering makes the invariant
     // explicit. Then create new task directory and start new watchers via prepareForReuse().
-    // This must happen BEFORE the worker remap and BEFORE sendKeys(prompt) so that the
+    // This must happen BEFORE the worker remap and BEFORE pasteContent(prompt) so that the
     // connector's watchers are ready to receive output as soon as the agent starts.
     entry.taskIdRef.current = task.id;
     const reuseCallbacks = this.createCallbacks(entry.taskIdRef);

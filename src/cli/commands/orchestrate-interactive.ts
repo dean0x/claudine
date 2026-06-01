@@ -4,7 +4,7 @@
  * Interactive mode has distinct lifecycle (tmux session + attach, no loop, SIGINT coordination).
  *
  * Phase 5: Migrated from child_process spawnInteractive() to tmux sessions.
- * Flow: buildTmuxCommand() → tmuxConnector.spawn() → tmuxConnector.sendKeys()
+ * Flow: buildTmuxCommand() → tmuxConnector.spawn() → tmuxConnector.pasteContent() + sendControlKeys('Enter')
  *   → tmux attach-session (stdio: 'inherit') → session liveness check → finalize
  */
 
