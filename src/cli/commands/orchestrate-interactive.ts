@@ -188,10 +188,10 @@ interface SpawnPromptContext {
 
 /**
  * Build the tmux config (stripping AUTOBEAT_WORKER), spawn the session, and deliver
- * the initial prompt via send-keys.
+ * the initial prompt via pasteContent + Enter.
  *
  * Calls process.exit(1) on any failure (CLI pattern — null is never returned).
- * On failure after spawn (send-keys), destroys the session before exiting.
+ * On failure after spawn (pasteContent/Enter), destroys the session before exiting.
  */
 async function spawnAndDeliverPrompt(ctx: SpawnPromptContext): Promise<SpawnedSession> {
   const { tmuxConnector, adapter, orchestration, orchestrationService, container } = ctx;
