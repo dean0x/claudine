@@ -55,6 +55,7 @@ export interface ModeFlags {
   skipScheduleExecutor: boolean;
   skipRecovery: boolean;
   skipProxy: boolean;
+  awaitRecovery: boolean;
 }
 
 /**
@@ -72,6 +73,13 @@ export function deriveModeFlags(mode: BootstrapMode): ModeFlags {
     // DECISION: Proxy starts in any mode that spawns workers ('server', 'run').
     // Skipped in 'cli' mode (management commands that never spawn workers).
     skipProxy: mode === 'cli',
+    // DECISION: 'run' mode awaits recovery synchronously before spawning the task worker.
+    // Fire-and-forget recovery in 'run' mode races against freshly-spawned workers: Phase 0's
+    // session snapshot is taken before the new session exists, so Phase 3 sees the new session
+    // as dead and marks the task FAILED. Awaiting recovery ensures Phase 0 completes before
+    // any worker is started, eliminating the race. 'server' and 'cli' keep fire-and-forget
+    // (or skip recovery) because they are long-lived daemons or management commands.
+    awaitRecovery: mode === 'run',
   };
 }
 
@@ -188,7 +196,8 @@ const getFromContainerSafe = <T>(container: Container, key: string): Result<T> =
  */
 export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<Container>> {
   const mode = options.mode ?? 'server';
-  const { skipResourceMonitoring, skipScheduleExecutor, skipRecovery, skipProxy } = deriveModeFlags(mode);
+  const { skipResourceMonitoring, skipScheduleExecutor, skipRecovery, skipProxy, awaitRecovery } =
+    deriveModeFlags(mode);
 
   const container = new Container();
   const config = loadConfiguration();
@@ -765,11 +774,22 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
     const recoveryResult = container.get('recoveryManager');
     if (recoveryResult.ok) {
       const recovery = recoveryResult.value as RecoveryManager;
-      recovery.recover().then((result) => {
+      if (awaitRecovery) {
+        // DECISION: 'run' mode awaits recovery before returning the container so that
+        // the caller cannot spawn a worker until Phase 0's session snapshot is complete.
+        // This eliminates the race where Phase 3 sees a freshly-spawned session as dead.
+        const result = await recovery.recover();
         if (!result.ok) {
           logger.error('Recovery failed', result.error);
+          return result;
         }
-      });
+      } else {
+        recovery.recover().then((result) => {
+          if (!result.ok) {
+            logger.error('Recovery failed', result.error);
+          }
+        });
+      }
     }
 
     // Channel recovery — re-attach to alive member sessions, mark dead members DESTROYED

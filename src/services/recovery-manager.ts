@@ -530,6 +530,36 @@ export class RecoveryManager {
   }
 
   /**
+   * Determine whether a worker's tmux session is currently alive.
+   *
+   * Checks the Phase 0 snapshot first (O(1) set lookup). If the session is absent
+   * from the snapshot, falls back to a live isAlive() call — the session may have
+   * been spawned after Phase 0 ran (the 'run' mode race condition).
+   *
+   * DECISION (defense-in-depth): treat any isAlive() error as dead so genuinely
+   * crashed tasks are still failed correctly.
+   *
+   * Returns false when sessionName is absent (no session to check).
+   */
+  private isWorkerSessionAlive(taskId: string, sessionName: string | undefined, liveTmuxSessions: Set<string>): boolean {
+    if (sessionName === undefined) return false;
+    if (liveTmuxSessions.has(sessionName)) return true;
+
+    // Session not in Phase 0 snapshot — may have been spawned after the snapshot was taken.
+    if (!this.tmuxSessionManager) return false;
+
+    const liveCheck = this.tmuxSessionManager.isAlive(sessionName);
+    const alive = liveCheck.ok && liveCheck.value;
+    if (alive) {
+      this.logger.info('Running task session alive via live check (not in Phase 0 snapshot)', {
+        taskId,
+        sessionName,
+      });
+    }
+    return alive;
+  }
+
+  /**
    * Recover RUNNING tasks using tmux session liveness detection.
    *
    * WHY THIS EXISTS:
@@ -560,9 +590,8 @@ export class RecoveryManager {
         if (!this.tmuxSessionManager && workerRegistration.sessionName !== undefined) {
           continue;
         }
-        // Use the batch session set from Phase 0 — O(1) lookup instead of a per-task exec.
-        const alive =
-          workerRegistration.sessionName !== undefined && liveTmuxSessions.has(workerRegistration.sessionName);
+
+        const alive = this.isWorkerSessionAlive(task.id, workerRegistration.sessionName, liveTmuxSessions);
         if (alive) {
           this.logger.info('Running task has live tmux session, skipping', {
             taskId: task.id,

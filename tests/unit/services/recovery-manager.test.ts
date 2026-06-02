@@ -798,6 +798,60 @@ describe('RecoveryManager', () => {
         currentStatus: TaskStatus.COMPLETED,
       });
     });
+
+    it('should not fail RUNNING task when session is alive but not in Phase 0 snapshot', async () => {
+      // Reproduces the race condition: Phase 0 snapshot is empty (taken before session spawned),
+      // but the session exists by the time Phase 3 runs the isAlive() fallback.
+      tmuxSessionManager.listSessions.mockReturnValue(ok([])); // Phase 0: empty snapshot
+      const task = buildRunningTask('new-task');
+      setupFindByStatus([], [task]);
+      workerRepo.findByTaskId.mockReturnValue(ok(buildTmuxWorker('w-new', task.id, 'beat-task-new')));
+      // isAlive() fallback returns true — session was spawned after Phase 0
+      tmuxSessionManager.isAlive.mockReturnValue(ok(true));
+
+      const result = await manager.recover();
+
+      expect(result.ok).toBe(true);
+      expect(repo.update).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith('Running task session alive via live check (not in Phase 0 snapshot)', {
+        taskId: task.id,
+        sessionName: 'beat-task-new',
+      });
+    });
+
+    it('should fail RUNNING task when session is not in Phase 0 snapshot AND isAlive returns false', async () => {
+      // Session genuinely dead — not in Phase 0 snapshot and isAlive() confirms dead.
+      tmuxSessionManager.listSessions.mockReturnValue(ok([])); // Phase 0: empty snapshot
+      const task = buildRunningTask('dead-task');
+      setupFindByStatus([], [task]);
+      workerRepo.findByTaskId.mockReturnValue(ok(buildTmuxWorker('w-dead', task.id, 'beat-task-dead')));
+      tmuxSessionManager.isAlive.mockReturnValue(ok(false));
+
+      const result = await manager.recover();
+
+      expect(result.ok).toBe(true);
+      expect(repo.update).toHaveBeenCalledWith(
+        task.id,
+        expect.objectContaining({ status: TaskStatus.FAILED, exitCode: -1 }),
+      );
+    });
+
+    it('should fail RUNNING task when isAlive returns error (conservative: treat error as dead)', async () => {
+      // tmux command fails entirely — treat as dead to avoid leaving truly crashed tasks as RUNNING.
+      tmuxSessionManager.listSessions.mockReturnValue(ok([])); // Phase 0: empty snapshot
+      const task = buildRunningTask('error-task');
+      setupFindByStatus([], [task]);
+      workerRepo.findByTaskId.mockReturnValue(ok(buildTmuxWorker('w-err', task.id, 'beat-task-error')));
+      tmuxSessionManager.isAlive.mockReturnValue(err(new AutobeatError(ErrorCode.SYSTEM_ERROR, 'tmux exec failed')));
+
+      const result = await manager.recover();
+
+      expect(result.ok).toBe(true);
+      expect(repo.update).toHaveBeenCalledWith(
+        task.id,
+        expect.objectContaining({ status: TaskStatus.FAILED, exitCode: -1 }),
+      );
+    });
   });
 
   describe('TaskFailed event emission', () => {

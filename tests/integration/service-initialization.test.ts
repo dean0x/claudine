@@ -392,11 +392,39 @@ describe('Integration: Service initialization', () => {
 
   describe('BootstrapMode flag derivation', () => {
     it.each([
-      ['server', { skipResourceMonitoring: false, skipScheduleExecutor: false, skipRecovery: false, skipProxy: false }],
-      ['cli', { skipResourceMonitoring: false, skipScheduleExecutor: true, skipRecovery: true, skipProxy: true }],
+      [
+        'server',
+        {
+          skipResourceMonitoring: false,
+          skipScheduleExecutor: false,
+          skipRecovery: false,
+          skipProxy: false,
+          awaitRecovery: false,
+        },
+      ],
+      [
+        'cli',
+        {
+          skipResourceMonitoring: false,
+          skipScheduleExecutor: true,
+          skipRecovery: true,
+          skipProxy: true,
+          awaitRecovery: false,
+        },
+      ],
       // DECISION: Resource monitoring enabled in all modes — 'run' mode workers need resource
       // checks to prevent overload.
-      ['run', { skipResourceMonitoring: false, skipScheduleExecutor: true, skipRecovery: false, skipProxy: false }],
+      // DECISION: awaitRecovery=true for 'run' mode — prevents recovery race that kills freshly-spawned workers.
+      [
+        'run',
+        {
+          skipResourceMonitoring: false,
+          skipScheduleExecutor: true,
+          skipRecovery: false,
+          skipProxy: false,
+          awaitRecovery: true,
+        },
+      ],
     ] as const)('mode "%s" produces correct flags', (mode, expected) => {
       expect(deriveModeFlags(mode)).toEqual(expected);
     });
