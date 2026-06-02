@@ -781,6 +781,7 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
         const result = await recovery.recover();
         if (!result.ok) {
           logger.error('Recovery failed', result.error);
+          return result;
         }
       } else {
         recovery.recover().then((result) => {
