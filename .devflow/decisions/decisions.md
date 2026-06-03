@@ -1,4 +1,4 @@
-<!-- TL;DR: 6 decisions. Key: ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006 -->
+<!-- TL;DR: 8 decisions. Key: ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008 -->
 # Architecture Decision Records
 
 Explicit design choices and trade-offs made during development.
@@ -50,3 +50,19 @@ Explicit design choices and trade-offs made during development.
 - **Rationale**: Biome formatting is deterministic and can always be validated locally. A CI failure for a formatting issue burns time on a round-trip push+wait cycle that adds no value. The pattern is already established in the project (`biome check --write` or `npm run check`).
 - **Status**: Active
 - **Source**: sidecar:17a3b878
+
+## ADR-007: Run mode must await recovery synchronously before bootstrap() returns
+
+- **Context**: PR #201 — `beat run` delegates a task immediately after `bootstrap()` returns. Recovery was fire-and-forget, so Phase 0 built a stale tmux session snapshot before the new worker spawned; Phase 3 checked that snapshot, found the session missing, and marked the freshly-spawned task as FAILED.
+- **Decision**: Add `awaitRecovery: boolean` to `ModeFlags`; `deriveModeFlags` sets `awaitRecovery: mode === 'run'`; `bootstrap()` awaits `recovery.recover()` synchronously before returning the container when `awaitRecovery` is true. Server and CLI modes retain fire-and-forget.
+- **Rationale**: `beat run` is a dedicated single-task process — there is no benefit to parallelizing bootstrap and the 100–500ms recovery cost is negligible. Fire-and-forget is only safe when work arrives long after recovery has completed (server mode via MCP connections). The await eliminates the entire class of race conditions, not just the Phase 3 stale-set symptom.
+- **Status**: Active
+- **Source**: sidecar:obs_n8q3v5
+
+## ADR-008: bootstrap() returns error to caller when recovery fails in run mode — not logged-and-swallowed
+
+- **Context**: PR #201 Greptile P2 — after adding `awaitRecovery`, the original code still returned a healthy container even when `recovery.recover()` returned an error, silently proceeding on inconsistent state.
+- **Decision**: In run mode (`awaitRecovery=true`), a recovery failure is a fatal bootstrap error — `bootstrap()` returns `Err` to the caller. Server mode retains log-and-continue behavior because it is not vulnerable to the same race.
+- **Rationale**: If recovery did not complete, stale `RUNNING` tasks have not been cleaned up. Proceeding in that state could trigger the exact race the fix was designed to eliminate. Failing loudly is correct; the caller can surface the error and exit.
+- **Status**: Active
+- **Source**: sidecar:obs_k7p4m1

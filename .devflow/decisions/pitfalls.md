@@ -1,4 +1,4 @@
-<!-- TL;DR: 5 pitfalls. Key: PF-001, PF-002, PF-003, PF-004, PF-005 -->
+<!-- TL;DR: 6 pitfalls. Key: PF-001, PF-002, PF-003, PF-004, PF-005, PF-006 -->
 # Known Pitfalls
 
 Area-specific gotchas, fragile areas, and past bugs.
@@ -47,3 +47,12 @@ Area-specific gotchas, fragile areas, and past bugs.
 - **Resolution**: After each push+fix cycle, explicitly poll the PR for new Greptile comments before declaring resolution complete. Expect 2–3 rounds on active PRs. Only close out when a full push-and-check cycle yields no new findings.
 - **Status**: Active
 - **Source**: sidecar:obs_f3a9d6
+
+## PF-006: Loop handler commitAllChanges uses git add -A and sweeps all untracked files into iteration commits
+
+- **Area**: `loop-handler.ts:1564-1567` — `commitAllChanges()` is called on loop iteration completion; `git-state.ts:421` runs `git add -A`
+- **Issue**: `git add -A` stages every untracked file in the working directory, not just files the loop agent actually changed. Any leftover untracked artifacts (e.g. `.devflow/docs/reviews/` files from prior PR review sessions) get swept into the loop iteration commit, inflating the diff by dozens of unrelated files.
+- **Impact**: PR #201 branch showed 49 file changes instead of the expected 4 because two loop auto-commits swept in 45 review artifacts. Confusing to reviewers; can cause Greptile or CI tools to flag unrelated files.
+- **Resolution**: Fix `commitAllChanges` to stage only files changed since the pre-iteration commit SHA, or scope `git add` to the loop's designated workspace rather than the entire working directory. Tracked as GitHub issue #202.
+- **Status**: Active (issue #202 open, not yet fixed)
+- **Source**: sidecar:obs_j2n5w8
