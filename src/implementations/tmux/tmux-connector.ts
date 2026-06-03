@@ -424,13 +424,16 @@ export class TmuxConnector implements TmuxConnectorPort {
 
       // Check pane content — if enough characters are visible, the TUI is ready
       const contentResult = this.deps.sessionManager.capturePaneContent(handle.sessionName);
-      if (contentResult.ok && contentResult.value.trim().length >= contentThreshold) {
-        this.deps.logger.info('TUI ready', {
-          sessionName: handle.sessionName,
-          attempt: attempt + 1,
-          contentLength: contentResult.value.trim().length,
-        });
-        return ok(undefined);
+      if (contentResult.ok) {
+        const trimmedLength = contentResult.value.trim().length;
+        if (trimmedLength >= contentThreshold) {
+          this.deps.logger.info('TUI ready', {
+            sessionName: handle.sessionName,
+            attempt: attempt + 1,
+            contentLength: trimmedLength,
+          });
+          return ok(undefined);
+        }
       }
 
       // Not ready yet — wait for the poll interval before the next attempt

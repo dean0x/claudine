@@ -354,7 +354,6 @@ describe('TmuxConnector.waitForReady()', () => {
     const result = await promise;
     expect(result.ok).toBe(true); // best-effort
     // capturePaneContent should have been called at most 5 times (one per attempt)
-    const captureMock = (sessionManager as { capturePaneContent: ReturnType<typeof vi.fn> }).capturePaneContent;
-    expect(captureMock.mock.calls.length).toBeLessThanOrEqual(5);
+    expect(vi.mocked(sessionManager.capturePaneContent).mock.calls.length).toBeLessThanOrEqual(5);
   });
 });
