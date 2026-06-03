@@ -684,12 +684,12 @@ export class EventDrivenWorkerPool implements WorkerPool {
   }
 
   /**
-   * Steps 6-10 of spawn(): spawn tmux session, register worker in maps + DB, wire timers,
+   * Steps 6-12 of spawn(): spawn tmux session, register worker in maps + DB, wire timers,
    * wait for TUI readiness, and send prompt. Extracted to keep spawn() readable and
    * rollback logic co-located.
    *
    * DESIGN DECISION: waitForReady() is inserted between startFlushing (Step 9) and
-   * pasteContent (Step 10) so the prompt is not delivered until the Claude Code TUI has
+   * pasteContent (Step 12) so the prompt is not delivered until the Claude Code TUI has
    * initialised. Without this wait the prompt can be silently lost — the TUI receives
    * the bytes before its input handler is registered.
    */
@@ -712,15 +712,14 @@ export class EventDrivenWorkerPool implements WorkerPool {
     }
     const worker = registerResult.value;
 
-    // Step 8: Setup heartbeat (started before waitForReady so the session is monitored
-    // during TUI initialization). Timeout is set AFTER waitForReady (step 8b) so it
-    // measures actual work time rather than TUI initialization time.
+    // Step 8: Start heartbeat before waitForReady so the session is monitored
+    // during TUI initialization.
     this.setupHeartbeatForWorker(worker);
 
-    // Step 9: Start periodic output flushing
+    // Step 9: Start periodic output flushing.
     this.startFlushing(worker);
 
-    // Step 9b: Wait for the TUI to become ready before delivering the prompt.
+    // Step 10: Wait for the TUI to become ready before delivering the prompt.
     // Claude Code's TUI needs several seconds to initialize — firing pasteContent
     // within milliseconds of spawn causes the prompt to be silently discarded.
     const readyResult = await this.tmuxConnector.waitForReady(handle);
@@ -736,14 +735,14 @@ export class EventDrivenWorkerPool implements WorkerPool {
       );
     }
 
-    // Step 8b: Setup task timeout now that the TUI is ready. Starting the timer here
+    // Step 11: Setup task timeout now that the TUI is ready. Starting the timer here
     // ensures the configured deadline measures actual work time, not TUI initialization
     // time. waitForReady() can take up to ~11.5 s on first spawn; tasks with short
     // timeouts would otherwise lose a significant fraction of their budget before the
     // first prompt byte is delivered.
     this.setupTimeoutForWorker(worker);
 
-    // Step 10: Send prompt via pasteContent + Enter. All sessions use interactive mode;
+    // Step 12: Send prompt via pasteContent + Enter. All sessions use interactive mode;
     // prompt is always present (delivered via load-buffer/paste-buffer, not baked into args).
     // pasteContent loads the prompt into a tmux buffer and pastes it, ensuring the full
     // prompt text is injected without send-keys literal-mode limitations. The subsequent

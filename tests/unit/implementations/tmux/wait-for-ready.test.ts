@@ -100,13 +100,9 @@ function makeConnectorWithCapture(
           ? captureValues[captureCallCount]
           : captureValues[captureValues.length - 1];
       captureCallCount++;
-      if (val instanceof Error) {
-        return err(new AutobeatError(ErrorCode.TMUX_SESSION_FAILED, val.message));
-      }
-      if (typeof val !== 'string') {
-        return err(new AutobeatError(ErrorCode.TMUX_SESSION_FAILED, 'unexpected undefined capture value'));
-      }
-      return ok(val);
+      return val instanceof Error
+        ? err(new AutobeatError(ErrorCode.TMUX_SESSION_FAILED, val.message))
+        : ok(val);
     }),
   } as unknown as TmuxSessionManagerPort;
 
@@ -343,8 +339,8 @@ describe('TmuxConnector.waitForReady()', () => {
       contentThreshold: 50,
     });
 
-    // Advance past the initial delay (0ms here) to trigger the early check
-    await vi.advanceTimersByTimeAsync(10);
+    // Flush microtasks — initial delay is 0ms so the early liveness check fires immediately
+    await vi.advanceTimersByTimeAsync(0);
 
     const result = await promise;
     expect(result.ok).toBe(false);

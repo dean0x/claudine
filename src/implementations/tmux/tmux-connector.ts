@@ -407,7 +407,6 @@ export class TmuxConnector implements TmuxConnectorPort {
     const maxAttempts = options?.maxAttempts ?? DEFAULT_READY_MAX_ATTEMPTS;
     const contentThreshold = options?.contentThreshold ?? DEFAULT_READY_CONTENT_THRESHOLD;
 
-    // Wait for the initial delay before polling starts
     await new Promise<void>((resolve) => setTimeout(resolve, initialDelayMs));
 
     // Early liveness check — if the session died during the initial delay, fail fast
