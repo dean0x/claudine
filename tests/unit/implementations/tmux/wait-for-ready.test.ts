@@ -371,4 +371,83 @@ describe('TmuxConnector.waitForReady()', () => {
     // capturePaneContent should have been called at most 5 times (one per attempt)
     expect(vi.mocked(sessionManager.capturePaneContent).mock.calls.length).toBeLessThanOrEqual(5);
   });
+
+  it('returns err() immediately when isAlive itself returns err()', async () => {
+    // isAlive returns an err() result (as opposed to ok(false)) on the first in-loop call
+    const logger = makeLogger();
+    const sessionManager: TmuxSessionManagerPort = {
+      createSession: vi.fn().mockReturnValue(ok({ sessionName: 'beat-task-xxx' })),
+      destroySession: vi.fn().mockReturnValue(ok(undefined)),
+      sendKeys: vi.fn().mockReturnValue(ok(undefined)),
+      sendControlKeys: vi.fn().mockReturnValue(ok(undefined)),
+      isAlive: vi
+        .fn()
+        // first call: early liveness check passes
+        .mockReturnValueOnce(ok(true))
+        // second call: in-loop check returns err()
+        .mockReturnValueOnce(err(new AutobeatError(ErrorCode.TMUX_SESSION_FAILED, 'isAlive failed'))),
+      listSessions: vi.fn().mockReturnValue(ok([])),
+      getSessionEnvironment: vi.fn().mockReturnValue(ok(undefined)),
+      setSessionEnvironment: vi.fn().mockReturnValue(ok(undefined)),
+      pasteContent: vi.fn().mockReturnValue(ok(undefined)),
+      capturePaneContent: vi.fn().mockReturnValue(ok('short')),
+    } as unknown as TmuxSessionManagerPort;
+
+    const connector = new TmuxConnector({
+      ...makeDefaultFsDeps(),
+      sessionManager,
+      hooks: makeValidHooks(),
+      validator: makeValidValidator(),
+      logger,
+      watch: makeWatch(),
+    });
+
+    const handle = makeHandle('beat-task-xxx');
+    const promise = connector.waitForReady(handle, {
+      initialDelayMs: 0,
+      pollIntervalMs: 10,
+      maxAttempts: 5,
+      contentThreshold: 50,
+    });
+
+    // First poll: early liveness ok(true), second poll: isAlive returns err()
+    await vi.advanceTimersByTimeAsync(10);
+    await vi.advanceTimersByTimeAsync(10);
+
+    const result = await promise;
+    expect(result.ok).toBe(false);
+    expect(result.ok ? '' : result.error.message).toMatch(/died during TUI initialization/);
+  });
+});
+
+// ─── Delegation tests ─────────────────────────────────────────────────────────
+
+describe('TmuxConnector.capturePaneContent()', () => {
+  it('delegates to sessionManager.capturePaneContent with sessionName and lines', () => {
+    const { connector, sessionManager } = makeConnectorWithCapture(['some content']);
+    const handle = makeHandle();
+
+    connector.capturePaneContent(handle, 20);
+
+    expect(vi.mocked(sessionManager.capturePaneContent)).toHaveBeenCalledWith(handle.sessionName, 20);
+  });
+
+  it('delegates to sessionManager.capturePaneContent without lines when omitted', () => {
+    const { connector, sessionManager } = makeConnectorWithCapture(['some content']);
+    const handle = makeHandle();
+
+    connector.capturePaneContent(handle);
+
+    expect(vi.mocked(sessionManager.capturePaneContent)).toHaveBeenCalledWith(handle.sessionName, undefined);
+  });
+
+  it('returns the result from sessionManager.capturePaneContent unchanged', () => {
+    const { connector } = makeConnectorWithCapture(['pane text']);
+    const handle = makeHandle();
+
+    const result = connector.capturePaneContent(handle);
+
+    expect(result.ok).toBe(true);
+    expect(result.ok ? result.value : '').toBe('pane text');
+  });
 });
