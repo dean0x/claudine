@@ -274,7 +274,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
     // Set persistent=true when the task has a persistent session key so
     // TmuxConnector.spawn() uses the setup shim for interactive session initialisation.
     const spawnConfig: TmuxSpawnCoreConfig = psk ? { ...config, persistent: true } : config;
-    const result = this.launchAndRegister({
+    const result = await this.launchAndRegister({
       task,
       config: spawnConfig,
       prompt,
@@ -676,9 +676,15 @@ export class EventDrivenWorkerPool implements WorkerPool {
 
   /**
    * Steps 6-10 of spawn(): spawn tmux session, register worker in maps + DB, wire timers,
-   * and send prompt. Extracted to keep spawn() readable and rollback logic co-located.
+   * wait for TUI readiness, and send prompt. Extracted to keep spawn() readable and
+   * rollback logic co-located.
+   *
+   * DESIGN DECISION: waitForReady() is inserted between startFlushing (Step 9) and
+   * pasteContent (Step 10) so the prompt is not delivered until the Claude Code TUI has
+   * initialised. Without this wait the prompt can be silently lost — the TUI receives
+   * the bytes before its input handler is registered.
    */
-  private launchAndRegister(params: LaunchParams): Result<Worker> {
+  private async launchAndRegister(params: LaunchParams): Promise<Result<Worker>> {
     const { task, config, prompt, callbacks, taskIdRef, agentProvider, cleanupFn } = params;
 
     // Step 6: Spawn tmux session
@@ -703,6 +709,22 @@ export class EventDrivenWorkerPool implements WorkerPool {
 
     // Step 9: Start periodic output flushing
     this.startFlushing(worker);
+
+    // Step 9b: Wait for the TUI to become ready before delivering the prompt.
+    // Claude Code's TUI needs several seconds to initialize — firing pasteContent
+    // within milliseconds of spawn causes the prompt to be silently discarded.
+    const readyResult = await this.tmuxConnector.waitForReady(handle);
+    if (!readyResult.ok) {
+      // Session died during TUI initialization — clean up and surface the error.
+      this.cleanupWorkerState(worker.id, task.id);
+      this.destroySessionWithWarning(handle, 'waitForReady failure');
+      return err(
+        new AutobeatError(
+          ErrorCode.WORKER_SPAWN_FAILED,
+          `Session died during TUI initialization: ${readyResult.error.message}`,
+        ),
+      );
+    }
 
     // Step 10: Send prompt via pasteContent + Enter. All sessions use interactive mode;
     // prompt is always present (delivered via load-buffer/paste-buffer, not baked into args).

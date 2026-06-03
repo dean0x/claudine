@@ -168,6 +168,8 @@ export const createMockTmuxConnector = (opts?: { autoComplete?: boolean }): Mock
     isAlive: vi.fn().mockReturnValue(ok(true)),
     setEnvironment: vi.fn().mockReturnValue(ok(undefined)),
     pasteContent: vi.fn().mockReturnValue(ok(undefined)),
+    capturePaneContent: vi.fn().mockReturnValue(ok('')),
+    waitForReady: vi.fn().mockResolvedValue(ok(undefined)),
     prepareForReuse: vi.fn().mockReturnValue(ok(undefined)),
     getActiveHandles: vi.fn().mockReturnValue([]),
     dispose: vi.fn(),
@@ -200,4 +202,5 @@ export const createMockTmuxSessionManagerCore = (): TmuxSessionManagerCorePort =
   sendControlKeys: vi.fn().mockReturnValue(ok(undefined)),
   listSessions: vi.fn().mockReturnValue(ok([])),
   destroySession: vi.fn().mockReturnValue(ok(undefined)),
+  capturePaneContent: vi.fn().mockReturnValue(ok('')),
 });

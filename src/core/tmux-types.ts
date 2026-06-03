@@ -101,6 +101,23 @@ export interface TmuxSpawnCoreConfig {
   readonly persistent?: boolean;
 }
 
+// ─── WaitForReady options ─────────────────────────────────────────────────────
+
+/**
+ * Options for TmuxConnectorPort.waitForReady().
+ * All fields are optional — defaults are applied by the implementation.
+ */
+export interface WaitForReadyOptions {
+  /** Milliseconds to wait before the first poll (default: 1500) */
+  readonly initialDelayMs?: number;
+  /** Milliseconds between successive polls (default: 500) */
+  readonly pollIntervalMs?: number;
+  /** Maximum number of poll attempts before giving up with best-effort ok() (default: 20) */
+  readonly maxAttempts?: number;
+  /** Minimum trimmed character count required to consider the TUI ready (default: 50) */
+  readonly contentThreshold?: number;
+}
+
 // ─── Port interfaces ──────────────────────────────────────────────────────────
 
 /**
@@ -193,6 +210,35 @@ export interface TmuxConnectorPort {
    * shell metacharacters ($, `, \n, etc.) in the content.
    */
   pasteContent(handle: TmuxHandle, content: string): Result<void, AutobeatError>;
+  /**
+   * Capture the visible pane content of a tmux session.
+   * Delegates to TmuxSessionManagerCorePort.capturePaneContent(handle.sessionName, lines).
+   * Used by waitForReady() to poll the TUI for readiness.
+   *
+   * "Session not found" returns ok('') rather than an error — the session may have
+   * exited between the liveness check and this call.
+   *
+   * @param handle - Live tmux session handle
+   * @param lines - Number of lines to capture from the bottom (default: 10)
+   */
+  capturePaneContent(handle: TmuxHandle, lines?: number): Result<string, AutobeatError>;
+  /**
+   * Polls the TUI pane until it has rendered enough content to accept prompt input.
+   *
+   * DESIGN DECISION: Claude Code's TUI needs several seconds to initialize. Calling
+   * pasteContent + sendControlKeys('Enter') within milliseconds of spawn causes the
+   * prompt to land before the input handler is ready and to be silently lost.
+   * waitForReady() polls capturePaneContent until the pane contains at least
+   * `contentThreshold` non-whitespace characters, indicating the TUI is rendered.
+   *
+   * On timeout (maxAttempts exhausted), logs a warning and returns ok(undefined) —
+   * best-effort proceed rather than blocking the spawn path permanently.
+   * On session death during polling, returns err() immediately.
+   *
+   * @param handle - Live tmux session handle
+   * @param options - Polling configuration (all fields optional, sensible defaults applied)
+   */
+  waitForReady(handle: TmuxHandle, options?: WaitForReadyOptions): Promise<Result<void, AutobeatError>>;
   /**
    * Prepare a parked persistent session for reuse by the next loop iteration.
    *

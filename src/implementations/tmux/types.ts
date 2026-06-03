@@ -27,6 +27,7 @@ export type {
   TmuxHandle,
   TmuxSessionManagerCorePort,
   TmuxSpawnCoreConfig,
+  WaitForReadyOptions,
 } from '../../core/tmux-types.js';
 
 /**

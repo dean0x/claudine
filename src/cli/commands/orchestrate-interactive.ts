@@ -261,7 +261,15 @@ async function spawnAndDeliverPrompt(ctx: SpawnPromptContext): Promise<SpawnedSe
 
   const handle = spawnResult.value;
 
-  // Deliver the initial prompt via pasteContent + Enter (the session is now alive and ready).
+  // Wait for the TUI to become ready before delivering the prompt.
+  // Claude Code's TUI needs several seconds to initialize — firing pasteContent
+  // within milliseconds of spawn causes the prompt to be silently discarded.
+  const readyResult = await tmuxConnector.waitForReady(handle);
+  if (!readyResult.ok) {
+    return failWith(`Session died during TUI initialization: ${readyResult.error.message}`, handle);
+  }
+
+  // Deliver the initial prompt via pasteContent + Enter.
   // pasteContent uses tmux load-buffer/paste-buffer to inject the full prompt without the
   // send-keys literal-mode limitations that prevent trailing newlines from being submitted.
   const pasteResult = tmuxConnector.pasteContent(handle, tmuxPrompt);
