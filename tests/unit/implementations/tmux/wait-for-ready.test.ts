@@ -100,9 +100,7 @@ function makeConnectorWithCapture(
           ? captureValues[captureCallCount]
           : captureValues[captureValues.length - 1];
       captureCallCount++;
-      return val instanceof Error
-        ? err(new AutobeatError(ErrorCode.TMUX_SESSION_FAILED, val.message))
-        : ok(val);
+      return val instanceof Error ? err(new AutobeatError(ErrorCode.TMUX_SESSION_FAILED, val.message)) : ok(val);
     }),
   } as unknown as TmuxSessionManagerPort;
 
