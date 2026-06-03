@@ -509,6 +509,15 @@ export class EventDrivenWorkerPool implements WorkerPool {
       // Use worker.id (not the destructured workerId) because reRegisterWorkerForReuse
       // creates a new WorkerState with a new ID and updates entry.workerId, making the
       // locally destructured workerId stale for the re-registration branch.
+      //
+      // DESIGN DECISION: waitForReady() is NOT called here (unlike the fresh-spawn path in
+      // launchAndRegister). For session reuse the Claude Code TUI is already initialised and
+      // its input handler is already registered — the TUI never shut down between iterations.
+      // /clear resets conversation context only; it does not tear down or re-initialise the
+      // input subsystem. The 300 ms CLEAR_SETTLE_MS delay in prepareSessionForIteration is
+      // sufficient to let the clearing animation flush before the new prompt arrives.
+      // Adding waitForReady() here would add 1.5 s+ of unnecessary latency to every loop
+      // iteration with no correctness benefit. (applies ADR-004)
       const pasteResult = this.tmuxConnector.pasteContent(handle, prompt);
       if (!pasteResult.ok) {
         this.logger.warn('Failed to paste prompt to reused session — destroying, will spawn fresh', {
@@ -703,8 +712,9 @@ export class EventDrivenWorkerPool implements WorkerPool {
     }
     const worker = registerResult.value;
 
-    // Step 8: Setup timeout + heartbeat
-    this.setupTimeoutForWorker(worker);
+    // Step 8: Setup heartbeat (started before waitForReady so the session is monitored
+    // during TUI initialization). Timeout is set AFTER waitForReady (step 8b) so it
+    // measures actual work time rather than TUI initialization time.
     this.setupHeartbeatForWorker(worker);
 
     // Step 9: Start periodic output flushing
@@ -725,6 +735,13 @@ export class EventDrivenWorkerPool implements WorkerPool {
         ),
       );
     }
+
+    // Step 8b: Setup task timeout now that the TUI is ready. Starting the timer here
+    // ensures the configured deadline measures actual work time, not TUI initialization
+    // time. waitForReady() can take up to ~11.5 s on first spawn; tasks with short
+    // timeouts would otherwise lose a significant fraction of their budget before the
+    // first prompt byte is delivered.
+    this.setupTimeoutForWorker(worker);
 
     // Step 10: Send prompt via pasteContent + Enter. All sessions use interactive mode;
     // prompt is always present (delivered via load-buffer/paste-buffer, not baked into args).
