@@ -155,8 +155,10 @@ export interface TmuxSessionManagerCorePort {
    * Capture the visible pane content of a tmux session.
    * Implementation: `tmux capture-pane -t '{name}' -p -S -{lines}`
    *
-   * ARCHITECTURE (Phase 9 Dashboard): Display-only method for live pane preview
-   * in the channel detail view. No business logic depends on the captured content.
+   * Dual usage:
+   *   1. Dashboard channel detail view — live pane preview for display only.
+   *   2. TmuxConnector.waitForReady() — polls pane content as business-critical
+   *      TUI readiness signal before prompt delivery via pasteContent + sendControlKeys.
    *
    * Session validation: name must match SESSION_NAME_REGEX.
    * "Session not found" is treated as empty string (ok('')) rather than an error —
