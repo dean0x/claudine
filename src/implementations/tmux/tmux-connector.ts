@@ -410,6 +410,14 @@ export class TmuxConnector implements TmuxConnectorPort {
     // Wait for the initial delay before polling starts
     await new Promise<void>((resolve) => setTimeout(resolve, initialDelayMs));
 
+    // Early liveness check — if the session died during the initial delay, fail fast
+    const initialAliveResult = this.deps.sessionManager.isAlive(handle.sessionName);
+    if (!initialAliveResult.ok || !initialAliveResult.value) {
+      return err(
+        tmuxSessionFailed('waitForReady', `session '${handle.sessionName}' died during initial startup delay`),
+      );
+    }
+
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       // Check liveness — if the session died during TUI init, stop immediately
       const aliveResult = this.deps.sessionManager.isAlive(handle.sessionName);

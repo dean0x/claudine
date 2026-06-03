@@ -103,7 +103,10 @@ function makeConnectorWithCapture(
       if (val instanceof Error) {
         return err(new AutobeatError(ErrorCode.TMUX_SESSION_FAILED, val.message));
       }
-      return ok(val as string);
+      if (typeof val !== 'string') {
+        return err(new AutobeatError(ErrorCode.TMUX_SESSION_FAILED, 'unexpected undefined capture value'));
+      }
+      return ok(val);
     }),
   } as unknown as TmuxSessionManagerPort;
 
@@ -157,7 +160,12 @@ describe('TmuxConnector.waitForReady()', () => {
 
   it('returns ok() after N polls when content threshold is met on the Nth attempt', async () => {
     // First 3 calls return short content; 4th returns enough
-    const { connector } = makeConnectorWithCapture(['short', 'still short', 'still short', 'A'.repeat(60)]);
+    const { connector, sessionManager, logger } = makeConnectorWithCapture([
+      'short',
+      'still short',
+      'still short',
+      'A'.repeat(60),
+    ]);
     const handle = makeHandle();
 
     const promise = connector.waitForReady(handle, {
@@ -174,6 +182,13 @@ describe('TmuxConnector.waitForReady()', () => {
 
     const result = await promise;
     expect(result.ok).toBe(true);
+    // Verify exactly 4 polls were made (not fewer — guards against threshold bug)
+    expect(vi.mocked(sessionManager.capturePaneContent).mock.calls.length).toBe(4);
+    // Verify the TUI-ready log carries the correct attempt count
+    expect(logger.info).toHaveBeenCalledWith(
+      'TUI ready',
+      expect.objectContaining({ sessionName: 'beat-task-test', attempt: 4 }),
+    );
   });
 
   it('returns ok() (best-effort) when all poll attempts are exhausted without threshold being met', async () => {
@@ -316,8 +331,8 @@ describe('TmuxConnector.waitForReady()', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('session death on the very first poll returns err()', async () => {
-    // isAlive returns false on the first call
+  it('session death detected by early liveness check returns err()', async () => {
+    // isAlive returns false on the first call (the pre-loop early liveness check)
     const { connector } = makeConnectorWithCapture(['short'], [false]);
     const handle = makeHandle();
 
@@ -328,12 +343,12 @@ describe('TmuxConnector.waitForReady()', () => {
       contentThreshold: 50,
     });
 
-    // First poll
+    // Advance past the initial delay (0ms here) to trigger the early check
     await vi.advanceTimersByTimeAsync(10);
 
     const result = await promise;
     expect(result.ok).toBe(false);
-    expect(result.ok ? '' : result.error.message).toMatch(/died during TUI initialization/);
+    expect(result.ok ? '' : result.error.message).toMatch(/died during initial startup delay/);
   });
 
   it('does not make more than maxAttempts polls before timing out', async () => {
