@@ -185,7 +185,11 @@ Pages purgeable:                      10000.
 
     // 180000 pages * 16384 bytes/page = 2,949,120,000
     expect(result).toBe(180_000 * 16_384);
-    expect(mockExecFileSync).toHaveBeenCalledWith('/usr/bin/vm_stat', [], expect.objectContaining({ encoding: 'utf8' }));
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      '/usr/bin/vm_stat',
+      [],
+      expect.objectContaining({ encoding: 'utf8' }),
+    );
   });
 
   it('falls back to os.freemem() on darwin when vm_stat throws', () => {
