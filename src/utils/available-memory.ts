@@ -23,6 +23,15 @@ import * as os from 'os';
 /** vm_stat page-size header pattern — e.g. "(page size of 16384 bytes)" */
 const PAGE_SIZE_RE = /\(page size of (\d+) bytes\)/;
 
+/** Extract a named page count from vm_stat output. Returns 0 when the label is absent. */
+function extractPageCount(label: string, output: string): number {
+  const re = new RegExp(`^Pages ${label}:\\s+(\\d+)\\.`, 'm');
+  const match = re.exec(output);
+  if (!match) return 0;
+  const count = parseInt(match[1], 10);
+  return Number.isFinite(count) ? count : 0;
+}
+
 /**
  * Parse the textual output of `vm_stat` into an available-memory byte count.
  *
@@ -45,20 +54,11 @@ export function parseVmStat(output: string): number | undefined {
   const pageSize = parseInt(pageSizeMatch[1], 10);
   if (!Number.isFinite(pageSize) || pageSize <= 0) return undefined;
 
-  // Helper: extract a named page count from the output
-  function extractPages(label: string): number {
-    const re = new RegExp(`^Pages ${label}:\\s+(\\d+)\\.`, 'm');
-    const match = re.exec(output);
-    if (!match) return 0;
-    const count = parseInt(match[1], 10);
-    return Number.isFinite(count) ? count : 0;
-  }
-
   // These four categories form Apple's "available" memory (green zone)
-  const freePages = extractPages('free');
-  const inactivePages = extractPages('inactive');
-  const speculativePages = extractPages('speculative');
-  const purgeablePages = extractPages('purgeable');
+  const freePages = extractPageCount('free', output);
+  const inactivePages = extractPageCount('inactive', output);
+  const speculativePages = extractPageCount('speculative', output);
+  const purgeablePages = extractPageCount('purgeable', output);
 
   const totalPages = freePages + inactivePages + speculativePages + purgeablePages;
   if (totalPages === 0) return undefined;
