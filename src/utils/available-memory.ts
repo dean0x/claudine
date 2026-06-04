@@ -23,9 +23,6 @@ import * as os from 'os';
 /** vm_stat page-size header pattern — e.g. "(page size of 16384 bytes)" */
 const PAGE_SIZE_RE = /\(page size of (\d+) bytes\)/;
 
-/** Individual page count lines — e.g. "Pages free:                           32768." */
-const PAGE_COUNT_RE = /^Pages (\w[\w ]+?):\s+([\d]+)\./m;
-
 /**
  * Parse the textual output of `vm_stat` into an available-memory byte count.
  *
@@ -85,15 +82,10 @@ export function getAvailableMemory(): number {
   }
 
   try {
-    const output = execFileSync('vm_stat', [], { encoding: 'utf8', timeout: 5_000 });
-    const parsed = parseVmStat(output);
-    if (parsed !== undefined) {
-      return parsed;
-    }
-    // Unparseable output — fall back to os.freemem()
-    return os.freemem();
+    const output = execFileSync('/usr/bin/vm_stat', [], { encoding: 'utf8', timeout: 5_000 });
+    return parseVmStat(output) ?? os.freemem();
   } catch {
-    // vm_stat unavailable or timed out — fall back to os.freemem()
+    // vm_stat unavailable or timed out
     return os.freemem();
   }
 }

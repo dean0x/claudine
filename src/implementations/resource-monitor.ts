@@ -56,6 +56,7 @@ export class SystemResourceMonitor implements ResourceMonitor {
       async () => {
         const cpuUsage = await this.getCpuUsage();
         const totalMemory = os.totalmem();
+        // Sync call (~3ms via execFileSync on darwin) — acceptable at 5s polling interval
         const freeMemory = getAvailableMemory();
         const loadAvgArray = os.loadavg();
         const loadAverage: readonly [number, number, number] = [loadAvgArray[0], loadAvgArray[1], loadAvgArray[2]];
