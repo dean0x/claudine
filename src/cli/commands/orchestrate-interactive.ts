@@ -174,8 +174,10 @@ interface SpawnedSession {
 /**
  * Context object for spawnAndDeliverPrompt.
  * Groups the five service-level objects and per-call parameters together.
+ *
+ * @internal Exported for unit testing only.
  */
-interface SpawnPromptContext {
+export interface SpawnPromptContext {
   readonly tmuxConnector: TmuxConnectorPort;
   readonly adapter: AgentAdapter;
   readonly orchestration: Orchestration;
@@ -192,8 +194,10 @@ interface SpawnPromptContext {
  *
  * Calls process.exit(1) on any failure (CLI pattern — null is never returned).
  * On failure after spawn (pasteContent/Enter), destroys the session before exiting.
+ *
+ * @internal Exported for unit testing only.
  */
-async function spawnAndDeliverPrompt(ctx: SpawnPromptContext): Promise<SpawnedSession> {
+export async function spawnAndDeliverPrompt(ctx: SpawnPromptContext): Promise<SpawnedSession> {
   const { tmuxConnector, adapter, orchestration, orchestrationService, container } = ctx;
 
   async function failWith(msg: string, handleToDestroy?: TmuxHandle): Promise<never> {
