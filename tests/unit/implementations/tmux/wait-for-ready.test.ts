@@ -211,8 +211,9 @@ describe('TmuxConnector.waitForReady()', () => {
   });
 
   it('returns err() immediately when the session dies during polling', async () => {
-    // isAlive returns true on first call, false on second
-    const { connector } = makeConnectorWithCapture(['short', 'short'], [true, false]);
+    // isAlive[0] = true  → early liveness check (before the loop) passes
+    // isAlive[1] = false → loop attempt 0 liveness check returns err() immediately
+    const { connector, sessionManager } = makeConnectorWithCapture(['short', 'short'], [true, false]);
     const handle = makeHandle();
 
     const promise = connector.waitForReady(handle, {
@@ -222,14 +223,14 @@ describe('TmuxConnector.waitForReady()', () => {
       contentThreshold: 50,
     });
 
-    // First poll: alive=true, content short
-    await vi.advanceTimersByTimeAsync(10);
-    // Second poll: alive=false → error
+    // Resolve the initialDelayMs=0 setTimeout so the loop can start
     await vi.advanceTimersByTimeAsync(10);
 
     const result = await promise;
     expect(result.ok).toBe(false);
     expect(result.ok ? '' : result.error.message).toMatch(/died during TUI initialization/);
+    // capturePaneContent is never reached — isAlive returns false before the content check
+    expect(sessionManager.capturePaneContent).not.toHaveBeenCalled();
   });
 
   it('respects custom options for all fields', async () => {
