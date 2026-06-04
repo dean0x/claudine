@@ -18,6 +18,12 @@ import {
 import { Configuration } from '../../../src/core/configuration.js';
 import { createTestConfiguration } from '../../fixtures/factories.js';
 
+// Mock available-memory so getAvailableMemory() returns a controlled value
+// regardless of platform. Production code imports this through utils/index.js.
+vi.mock('../../../src/utils/available-memory.js', () => ({
+  getAvailableMemory: () => 8 * 1024 * 1024 * 1024, // 8 GB
+}));
+
 describe('Component-Level Configuration Validation', () => {
   // Mock system resources for consistent testing
   beforeEach(() => {
@@ -29,7 +35,6 @@ describe('Component-Level Configuration Validation', () => {
       }) as os.CpuInfo[],
     );
     vi.spyOn(os, 'totalmem').mockReturnValue(16 * 1024 * 1024 * 1024); // 16GB
-    vi.spyOn(os, 'freemem').mockReturnValue(8 * 1024 * 1024 * 1024); // 8GB free
   });
 
   describe('CPU Configuration Validation', () => {

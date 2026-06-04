@@ -1,0 +1,15 @@
+{
+  "dialogPairs": "[{\"prior\":\"Build is fresh, `beat-dev` v1.5.2 symlinked to `./dist/cli.js` — all 4 tmux PRs (#198-#203) are included.\\n\\n---\\n\\nHere are the E2E test scenarios, ordered easy → complex. All tasks use prompts that produce output to stdout only — no file generation.\\n\\n## Phase 1: Smoke Tests (basic tmux lifecycle)\\n\\n**T1 — Single task, run mode**\\n```bash\\nbeat-dev run \\\"What are the three primary colors? Answer in one sentence.\\\"\\n```\\n**Validates**: tmux session spawns → TUI readiness wait (#203) → prompt delivered via pasteContent (#200) → agent responds → stop hook captures output (#199) → task completes → tmux session cleaned up.\\n**Watch for**: prompt actually submitting (not just sitting in the text box — the bug from before #203).\\n\\n**T2 — Single task via MCP server (delegate)**\\n```bash\\nbeat-dev mcp start\\n```\\nThen from a Claude Code session connected to the MCP server:\\n```\\nDelegateTask { prompt: \\\"List the 4 seasons of the year. One sentence.\\\" }\\n```\\n**Validates**: MCP → worker spawn → tmux prompt delivery → output capture → task completion event.\\n\\n**T3 — Task status and logs**\\nAfter T1 or T2 completes, check:\\n```bash\\nbeat-dev status <task-id>\\nbeat-dev logs <task-id>\\n```\\n**Validates**: Output was capture\",\"user\":\"Okay, I ran the first command in T1, and it looks like it's in the queue, hanging, like it's not executing. Can you try to understand why?\"},{\"prior\":\"There it is — line 58-64: `availableMemory: freeMemory` where `freeMemory = os.freemem()`. This is the root cause.\\n\\nShould I plan a fix? The approach would be: on macOS, compute available memory as free + inactive (via `vm_stat` or a simpler approach), while keeping `os.freemem()` as the fallback on other platforms. This is a targeted fix to unblock all E2E testing.\",\"user\":\"Yes, go ahead and plan this fix, please. Let's implement it. Hopefully we can do it quickly enough. I see we have four file changes here on main. What are these file changes? Anything that we should put on a feature branch before we get it on main? Yes, generally let's plan this fix.\"},{\"prior\":\"Straight to feature branch + PR. Plan is complete — requesting approval.\",\"user\":\"[Request interrupted by user for tool use]\"}]",
+  "existingObservationIds": [
+    "obs_a4f7c2",
+    "obs_b8e1d6",
+    "obs_c3d9e5",
+    "obs_d1f4a8",
+    "obs_e2c7b3",
+    "obs_f3a9d6",
+    "obs_g4h2k7",
+    "obs_h5m3n9",
+    "obs_i6p4q1"
+  ],
+  "timestamp": 1780579523
+}

@@ -9,6 +9,7 @@
  */
 
 import os from 'os';
+import { getAvailableMemory } from '../utils/index.js';
 import { Configuration } from './configuration.js';
 import { Logger } from './interfaces.js';
 
@@ -38,7 +39,7 @@ interface SystemInfo {
  */
 function getSystemInfo(): SystemInfo {
   const totalMemoryBytes = os.totalmem();
-  const availableMemoryBytes = os.freemem();
+  const availableMemoryBytes = getAvailableMemory();
   const totalCpuCores = os.cpus().length;
 
   return {
