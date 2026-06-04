@@ -231,7 +231,7 @@ export interface TmuxConnectorPort {
    * pasteContent + sendControlKeys('Enter') within milliseconds of spawn causes the
    * prompt to land before the input handler is ready and to be silently lost.
    * waitForReady() polls capturePaneContent until the pane contains at least
-   * `contentThreshold` non-whitespace characters, indicating the TUI is rendered.
+   * `contentThreshold` trimmed characters (leading/trailing whitespace removed), indicating the TUI is rendered.
    *
    * On timeout (maxAttempts exhausted), logs a warning and returns ok(undefined) —
    * best-effort proceed rather than blocking the spawn path permanently.

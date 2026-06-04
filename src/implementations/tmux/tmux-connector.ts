@@ -395,7 +395,7 @@ export class TmuxConnector implements TmuxConnectorPort {
    * pasteContent + sendControlKeys('Enter') within milliseconds of spawn causes the
    * prompt to land before the input handler is ready and to be silently lost.
    * waitForReady() bridges that gap by polling capturePaneContent until the pane
-   * contains at least `contentThreshold` non-whitespace characters.
+   * contains at least `contentThreshold` trimmed characters (leading/trailing whitespace removed).
    *
    * Timeout behaviour: best-effort ok(undefined) rather than err() — the spawn path
    * must not block permanently on a slow environment.
@@ -443,15 +443,16 @@ export class TmuxConnector implements TmuxConnectorPort {
         }
       }
 
-      // Not ready yet — wait for the poll interval before the next attempt
-      await new Promise<void>((resolve) => setTimeout(resolve, pollIntervalMs));
+      if (attempt < maxAttempts - 1) {
+        await new Promise<void>((resolve) => setTimeout(resolve, pollIntervalMs));
+      }
     }
 
     // Exhausted all attempts — best-effort proceed rather than blocking spawn
     this.deps.logger.warn('waitForReady timed out — proceeding with best-effort delivery', {
       sessionName: handle.sessionName,
       maxAttempts,
-      totalWaitMs: initialDelayMs + maxAttempts * pollIntervalMs,
+      totalWaitMs: initialDelayMs + (maxAttempts - 1) * pollIntervalMs,
     });
     return ok(undefined);
   }
