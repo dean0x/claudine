@@ -397,6 +397,64 @@ describe('EventDrivenWorkerPool (Phase 3: tmux)', () => {
       // Worker should not be registered
       expect(pool.getWorkerCount()).toBe(0);
     });
+
+    it('calls waitForReady before pasteContent (step 10 before step 12)', async () => {
+      // Verifies the insertion order introduced by the async launchAndRegister change:
+      // waitForReady must resolve before pasteContent is called so the prompt is not
+      // delivered before the TUI input handler is registered.
+      const callOrder: string[] = [];
+      vi.mocked(tmuxConnector.waitForReady).mockImplementation(async () => {
+        callOrder.push('waitForReady');
+        return ok(undefined);
+      });
+      vi.mocked(tmuxConnector.pasteContent).mockImplementation(() => {
+        callOrder.push('pasteContent');
+        return ok(undefined);
+      });
+
+      const task = buildTask((f) => f.withPrompt('do stuff'));
+      await pool.spawn(task);
+
+      const readyIdx = callOrder.indexOf('waitForReady');
+      const pasteIdx = callOrder.indexOf('pasteContent');
+      expect(readyIdx).toBeGreaterThanOrEqual(0);
+      expect(pasteIdx).toBeGreaterThan(readyIdx);
+    });
+
+    it('cleans up and returns WORKER_SPAWN_FAILED when waitForReady returns err (session death during TUI init)', async () => {
+      // Verifies rollback path: when the session dies while waitForReady is in progress,
+      // cleanupWorkerState and destroySession must be called and spawn() must return an error.
+      vi.mocked(tmuxConnector.waitForReady).mockResolvedValueOnce(
+        err(new AutobeatError(ErrorCode.TMUX_SESSION_NOT_FOUND, 'session died')),
+      );
+
+      const task = buildTask();
+      const result = await pool.spawn(task);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect((result.error as AutobeatError).code).toBe(ErrorCode.WORKER_SPAWN_FAILED);
+      // Session must be destroyed on waitForReady failure
+      expect(tmuxConnector.destroy).toHaveBeenCalled();
+      // Worker must not remain registered
+      expect(pool.getWorkerCount()).toBe(0);
+      // pasteContent must not be called — prompt delivery is skipped on failure
+      expect(tmuxConnector.pasteContent).not.toHaveBeenCalled();
+    });
+
+    it('does not kill the worker before it receives its prompt (timeout starts after waitForReady)', async () => {
+      // setupTimeoutForWorker is placed after waitForReady so the task deadline measures
+      // actual work time, not TUI initialization time. A short timeout set before
+      // waitForReady would kill the worker before it ever receives its prompt.
+      vi.mocked(tmuxConnector.waitForReady).mockResolvedValue(ok(undefined));
+
+      // Very short timeout — would fire before spawn() completes if placed incorrectly.
+      const task = buildTask((f) => f.withTimeout(100));
+      await pool.spawn(task);
+
+      // Worker remains alive — timeout did not fire prematurely before prompt delivery.
+      expect(pool.getWorkerCount()).toBe(1);
+    });
   });
 
   // ─── AC-7: Output routing ────────────────────────────────────────────────

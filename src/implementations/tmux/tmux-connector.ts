@@ -22,7 +22,7 @@ import { tmuxSessionFailed } from '../../core/errors.js';
 import type { Logger } from '../../core/interfaces.js';
 import type { Result } from '../../core/result.js';
 import { err, ok } from '../../core/result.js';
-import type { SpawnCallbacks, TmuxSpawnCoreConfig } from '../../core/tmux-types.js';
+import type { SpawnCallbacks, TmuxSpawnCoreConfig, WaitForReadyOptions } from '../../core/tmux-types.js';
 import type {
   OutputMessage,
   SetupShimConfig,
@@ -37,6 +37,17 @@ import type {
   WatchFn,
 } from './types.js';
 import { DEFAULT_STALENESS_CONFIG, MAX_CONCURRENT_SESSIONS } from './types.js';
+
+// ─── waitForReady defaults ────────────────────────────────────────────────────
+
+/** Initial delay before the first readiness poll (ms) */
+const DEFAULT_READY_INITIAL_DELAY_MS = 1500;
+/** Interval between successive readiness polls (ms) */
+const DEFAULT_READY_POLL_INTERVAL_MS = 500;
+/** Maximum poll attempts before best-effort proceed */
+const DEFAULT_READY_MAX_ATTEMPTS = 20;
+/** Minimum trimmed character count to consider the TUI ready */
+const DEFAULT_READY_CONTENT_THRESHOLD = 50;
 
 /** Debounce window for suppressing fs.watch double-fires (ms) */
 const DEBOUNCE_MS = 50;
@@ -365,6 +376,85 @@ export class TmuxConnector implements TmuxConnectorPort {
    */
   pasteContent(handle: TmuxHandle, content: string): Result<void, AutobeatError> {
     return this.deps.sessionManager.pasteContent(handle.sessionName, content);
+  }
+
+  /**
+   * Captures the visible pane content of a tmux session.
+   * Delegates to TmuxSessionManagerPort.capturePaneContent(handle.sessionName, lines).
+   * Used by waitForReady() to poll the TUI for readiness.
+   */
+  capturePaneContent(handle: TmuxHandle, lines?: number): Result<string, AutobeatError> {
+    return this.deps.sessionManager.capturePaneContent(handle.sessionName, lines);
+  }
+
+  /**
+   * Polls the TUI pane until it has rendered enough content to accept prompt input,
+   * or the maximum number of poll attempts is exhausted.
+   *
+   * DESIGN DECISION: Claude Code's TUI needs several seconds to initialize. Firing
+   * pasteContent + sendControlKeys('Enter') within milliseconds of spawn causes the
+   * prompt to land before the input handler is ready and to be silently lost.
+   * waitForReady() bridges that gap by polling capturePaneContent until the pane
+   * contains at least `contentThreshold` trimmed characters (leading/trailing whitespace removed).
+   *
+   * Timeout behaviour: best-effort ok(undefined) rather than err() — the spawn path
+   * must not block permanently on a slow environment.
+   * Session death during polling: returns err() immediately.
+   */
+  async waitForReady(handle: TmuxHandle, options?: WaitForReadyOptions): Promise<Result<void, AutobeatError>> {
+    const initialDelayMs = options?.initialDelayMs ?? DEFAULT_READY_INITIAL_DELAY_MS;
+    const pollIntervalMs = options?.pollIntervalMs ?? DEFAULT_READY_POLL_INTERVAL_MS;
+    const maxAttempts = options?.maxAttempts ?? DEFAULT_READY_MAX_ATTEMPTS;
+    const contentThreshold = options?.contentThreshold ?? DEFAULT_READY_CONTENT_THRESHOLD;
+
+    await new Promise<void>((resolve) => setTimeout(resolve, initialDelayMs));
+
+    // Early liveness check — if the session died during the initial delay, fail fast
+    const initialAliveResult = this.deps.sessionManager.isAlive(handle.sessionName);
+    if (!initialAliveResult.ok || !initialAliveResult.value) {
+      return err(
+        tmuxSessionFailed('waitForReady', `session '${handle.sessionName}' died during initial startup delay`),
+      );
+    }
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      // Check liveness — if the session died during TUI init, stop immediately
+      const aliveResult = this.deps.sessionManager.isAlive(handle.sessionName);
+      if (!aliveResult.ok || !aliveResult.value) {
+        return err(
+          tmuxSessionFailed(
+            'waitForReady',
+            `session '${handle.sessionName}' died during TUI initialization (attempt ${attempt + 1})`,
+          ),
+        );
+      }
+
+      // Check pane content — if enough characters are visible, the TUI is ready
+      const contentResult = this.deps.sessionManager.capturePaneContent(handle.sessionName);
+      if (contentResult.ok) {
+        const trimmedLength = contentResult.value.trim().length;
+        if (trimmedLength >= contentThreshold) {
+          this.deps.logger.info('TUI ready', {
+            sessionName: handle.sessionName,
+            attempt: attempt + 1,
+            contentLength: trimmedLength,
+          });
+          return ok(undefined);
+        }
+      }
+
+      if (attempt < maxAttempts - 1) {
+        await new Promise<void>((resolve) => setTimeout(resolve, pollIntervalMs));
+      }
+    }
+
+    // Exhausted all attempts — best-effort proceed rather than blocking spawn
+    this.deps.logger.warn('waitForReady timed out — proceeding with best-effort delivery', {
+      sessionName: handle.sessionName,
+      maxAttempts,
+      totalWaitMs: initialDelayMs + (maxAttempts - 1) * pollIntervalMs,
+    });
+    return ok(undefined);
   }
 
   /**

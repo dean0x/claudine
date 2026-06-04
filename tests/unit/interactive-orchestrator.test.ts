@@ -6,6 +6,7 @@
 
 import { unlinkSync } from 'fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { err, ok } from '../../src/core/result.js';
 
 // ============================================================================
 // CLI Arg Parsing Tests
@@ -192,7 +193,7 @@ vi.mock('../../src/utils/git-state.js', () => ({
   validateGitRefName: vi.fn().mockReturnValue({ ok: true, value: undefined }),
 }));
 
-import { OrchestratorId, OrchestratorStatus, updateOrchestration } from '../../src/core/domain.js';
+import { OrchestratorId, OrchestratorStatus, type TaskId, updateOrchestration } from '../../src/core/domain.js';
 import { Database } from '../../src/implementations/database.js';
 import { SQLiteLoopRepository } from '../../src/implementations/loop-repository.js';
 import { SQLiteOrchestrationRepository } from '../../src/implementations/orchestration-repository.js';
@@ -978,11 +979,125 @@ describe('scaffoldCustomOrchestrator - interactive template', () => {
 });
 
 // ============================================================================
+// spawnAndDeliverPrompt — waitForReady error path
+// ============================================================================
+
+import { type SpawnPromptContext, spawnAndDeliverPrompt } from '../../src/cli/commands/orchestrate-interactive.js';
+import type { AgentAdapter } from '../../src/core/agents.js';
+import type { Container } from '../../src/core/container.js';
+import type { Orchestration } from '../../src/core/domain.js';
+import { AutobeatError, ErrorCode } from '../../src/core/errors.js';
+import type { OrchestrationService } from '../../src/core/interfaces.js';
+import type { TmuxConnectorPort, TmuxHandle } from '../../src/core/tmux-types.js';
+
+// OrchestratorId, OrchestratorStatus, TaskId already imported above.
+
+describe('spawnAndDeliverPrompt — waitForReady err() path', () => {
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    // Replace process.exit with a throw so the test can catch it and assert on
+    // side effects (destroy + finalize) that happen before the exit call.
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation((_code?: number | string) => {
+      throw new Error('process.exit called');
+    });
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+  });
+
+  it('destroys the session and finalizes the orchestration when waitForReady returns err()', async () => {
+    const handle: TmuxHandle = {
+      sessionName: 'beat-task-test-spawn',
+      taskId: 'task-spawn-test' as TaskId,
+      sessionsDir: '/tmp/sessions',
+    };
+
+    const mockOrchestration: Orchestration = {
+      id: OrchestratorId('orchestrator-spawn-test'),
+      goal: 'test goal',
+      stateFilePath: '/tmp/state-spawn-test.json',
+      workingDirectory: '/tmp',
+      maxDepth: 3,
+      maxWorkers: 2,
+      maxIterations: 10,
+      status: OrchestratorStatus.RUNNING,
+      mode: 'interactive',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    const destroy = vi.fn().mockReturnValue(ok(undefined));
+    const mockTmuxConnector = {
+      spawn: vi.fn().mockReturnValue(ok(handle)),
+      destroy,
+      waitForReady: vi
+        .fn()
+        .mockResolvedValue(err(new AutobeatError(ErrorCode.TMUX_SESSION_FAILED, 'session died during init'))),
+    } as unknown as TmuxConnectorPort;
+
+    const finalizeInteractiveOrchestration = vi.fn().mockResolvedValue(ok(undefined));
+    const mockOrchestrationService = {
+      finalizeInteractiveOrchestration,
+    } as unknown as OrchestrationService;
+
+    const mockContainer: Container = {
+      dispose: vi.fn().mockResolvedValue(undefined),
+    } as unknown as Container;
+
+    const mockAdapter = {
+      provider: 'claude' as const,
+      dispose: vi.fn(),
+      cleanup: vi.fn(),
+      buildTmuxCommand: vi.fn().mockReturnValue(
+        ok({
+          config: {
+            taskId: handle.taskId,
+            sessionsDir: '/tmp/sessions',
+            name: handle.sessionName,
+            command: 'claude',
+            agentArgs: [],
+          },
+          prompt: 'test prompt',
+        }),
+      ),
+    };
+
+    const ctx: SpawnPromptContext = {
+      tmuxConnector: mockTmuxConnector,
+      adapter: mockAdapter as unknown as AgentAdapter,
+      orchestration: mockOrchestration,
+      orchestrationService: mockOrchestrationService,
+      container: mockContainer,
+      userPrompt: 'test prompt',
+      systemPrompt: undefined,
+      sessionsDir: '/tmp/sessions',
+    };
+
+    // spawnAndDeliverPrompt calls process.exit(1) on failure;
+    // our spy throws to halt execution and let us assert below.
+    await expect(spawnAndDeliverPrompt(ctx)).rejects.toThrow('process.exit called');
+
+    // Session must be destroyed when waitForReady fails (applies ADR-004 — prompt
+    // delivery requires a live session; cleanup on failure is the counterpart).
+    expect(destroy).toHaveBeenCalledWith(handle);
+
+    // Orchestration must be finalized so the DB record does not stay in RUNNING state.
+    expect(finalizeInteractiveOrchestration).toHaveBeenCalledWith(mockOrchestration.id, {
+      exitCode: null,
+      cancelled: false,
+    });
+  });
+});
+
+// ============================================================================
 // Orchestration liveness — interactive mode
 // ============================================================================
 
-import type { Orchestration } from '../../src/core/domain.js';
 import { checkOrchestrationLiveness } from '../../src/services/orchestration-liveness.js';
+
+// Note: `Orchestration` type used below is imported in the spawnAndDeliverPrompt block above.
 
 describe('checkOrchestrationLiveness - interactive mode', () => {
   const mockDeps = {

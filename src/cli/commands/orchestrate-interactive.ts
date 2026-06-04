@@ -174,8 +174,10 @@ interface SpawnedSession {
 /**
  * Context object for spawnAndDeliverPrompt.
  * Groups the five service-level objects and per-call parameters together.
+ *
+ * @internal Exported for unit testing only.
  */
-interface SpawnPromptContext {
+export interface SpawnPromptContext {
   readonly tmuxConnector: TmuxConnectorPort;
   readonly adapter: AgentAdapter;
   readonly orchestration: Orchestration;
@@ -192,8 +194,10 @@ interface SpawnPromptContext {
  *
  * Calls process.exit(1) on any failure (CLI pattern — null is never returned).
  * On failure after spawn (pasteContent/Enter), destroys the session before exiting.
+ *
+ * @internal Exported for unit testing only.
  */
-async function spawnAndDeliverPrompt(ctx: SpawnPromptContext): Promise<SpawnedSession> {
+export async function spawnAndDeliverPrompt(ctx: SpawnPromptContext): Promise<SpawnedSession> {
   const { tmuxConnector, adapter, orchestration, orchestrationService, container } = ctx;
 
   async function failWith(msg: string, handleToDestroy?: TmuxHandle): Promise<never> {
@@ -261,7 +265,15 @@ async function spawnAndDeliverPrompt(ctx: SpawnPromptContext): Promise<SpawnedSe
 
   const handle = spawnResult.value;
 
-  // Deliver the initial prompt via pasteContent + Enter (the session is now alive and ready).
+  // Wait for the TUI to become ready before delivering the prompt.
+  // Claude Code's TUI needs several seconds to initialize — firing pasteContent
+  // within milliseconds of spawn causes the prompt to be silently discarded.
+  const readyResult = await tmuxConnector.waitForReady(handle);
+  if (!readyResult.ok) {
+    return failWith(`Session died during TUI initialization: ${readyResult.error.message}`, handle);
+  }
+
+  // Deliver the initial prompt via pasteContent + Enter.
   // pasteContent uses tmux load-buffer/paste-buffer to inject the full prompt without the
   // send-keys literal-mode limitations that prevent trailing newlines from being submitted.
   const pasteResult = tmuxConnector.pasteContent(handle, tmuxPrompt);

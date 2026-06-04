@@ -541,7 +541,11 @@ export class RecoveryManager {
    *
    * Returns false when sessionName is absent (no session to check).
    */
-  private isWorkerSessionAlive(taskId: string, sessionName: string | undefined, liveTmuxSessions: Set<string>): boolean {
+  private isWorkerSessionAlive(
+    taskId: string,
+    sessionName: string | undefined,
+    liveTmuxSessions: Set<string>,
+  ): boolean {
     if (sessionName === undefined) return false;
     if (liveTmuxSessions.has(sessionName)) return true;
 

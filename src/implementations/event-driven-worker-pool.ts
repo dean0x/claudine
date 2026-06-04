@@ -274,7 +274,7 @@ export class EventDrivenWorkerPool implements WorkerPool {
     // Set persistent=true when the task has a persistent session key so
     // TmuxConnector.spawn() uses the setup shim for interactive session initialisation.
     const spawnConfig: TmuxSpawnCoreConfig = psk ? { ...config, persistent: true } : config;
-    const result = this.launchAndRegister({
+    const result = await this.launchAndRegister({
       task,
       config: spawnConfig,
       prompt,
@@ -509,6 +509,15 @@ export class EventDrivenWorkerPool implements WorkerPool {
       // Use worker.id (not the destructured workerId) because reRegisterWorkerForReuse
       // creates a new WorkerState with a new ID and updates entry.workerId, making the
       // locally destructured workerId stale for the re-registration branch.
+      //
+      // DESIGN DECISION: waitForReady() is NOT called here (unlike the fresh-spawn path in
+      // launchAndRegister). For session reuse the Claude Code TUI is already initialised and
+      // its input handler is already registered — the TUI never shut down between iterations.
+      // /clear resets conversation context only; it does not tear down or re-initialise the
+      // input subsystem. The 300 ms CLEAR_SETTLE_MS delay in prepareSessionForIteration is
+      // sufficient to let the clearing animation flush before the new prompt arrives.
+      // Adding waitForReady() here would add 1.5 s+ of unnecessary latency to every loop
+      // iteration with no correctness benefit. (applies ADR-004)
       const pasteResult = this.tmuxConnector.pasteContent(handle, prompt);
       if (!pasteResult.ok) {
         this.logger.warn('Failed to paste prompt to reused session — destroying, will spawn fresh', {
@@ -675,10 +684,16 @@ export class EventDrivenWorkerPool implements WorkerPool {
   }
 
   /**
-   * Steps 6-10 of spawn(): spawn tmux session, register worker in maps + DB, wire timers,
-   * and send prompt. Extracted to keep spawn() readable and rollback logic co-located.
+   * Steps 6-12 of spawn(): spawn tmux session, register worker in maps + DB, wire timers,
+   * wait for TUI readiness, and send prompt. Extracted to keep spawn() readable and
+   * rollback logic co-located.
+   *
+   * DESIGN DECISION: waitForReady() is inserted between startFlushing (Step 9) and
+   * pasteContent (Step 12) so the prompt is not delivered until the Claude Code TUI has
+   * initialised. Without this wait the prompt can be silently lost — the TUI receives
+   * the bytes before its input handler is registered.
    */
-  private launchAndRegister(params: LaunchParams): Result<Worker> {
+  private async launchAndRegister(params: LaunchParams): Promise<Result<Worker>> {
     const { task, config, prompt, callbacks, taskIdRef, agentProvider, cleanupFn } = params;
 
     // Step 6: Spawn tmux session
@@ -697,14 +712,37 @@ export class EventDrivenWorkerPool implements WorkerPool {
     }
     const worker = registerResult.value;
 
-    // Step 8: Setup timeout + heartbeat
-    this.setupTimeoutForWorker(worker);
+    // Step 8: Start heartbeat before waitForReady so the session is monitored
+    // during TUI initialization.
     this.setupHeartbeatForWorker(worker);
 
-    // Step 9: Start periodic output flushing
+    // Step 9: Start periodic output flushing.
     this.startFlushing(worker);
 
-    // Step 10: Send prompt via pasteContent + Enter. All sessions use interactive mode;
+    // Step 10: Wait for the TUI to become ready before delivering the prompt.
+    // Claude Code's TUI needs several seconds to initialize — firing pasteContent
+    // within milliseconds of spawn causes the prompt to be silently discarded.
+    const readyResult = await this.tmuxConnector.waitForReady(handle);
+    if (!readyResult.ok) {
+      // Session died during TUI initialization — clean up and surface the error.
+      this.cleanupWorkerState(worker.id, task.id);
+      this.destroySessionWithWarning(handle, 'waitForReady failure');
+      return err(
+        new AutobeatError(
+          ErrorCode.WORKER_SPAWN_FAILED,
+          `Session died during TUI initialization: ${readyResult.error.message}`,
+        ),
+      );
+    }
+
+    // Step 11: Setup task timeout now that the TUI is ready. Starting the timer here
+    // ensures the configured deadline measures actual work time, not TUI initialization
+    // time. waitForReady() can take up to ~11.5 s on first spawn; tasks with short
+    // timeouts would otherwise lose a significant fraction of their budget before the
+    // first prompt byte is delivered.
+    this.setupTimeoutForWorker(worker);
+
+    // Step 12: Send prompt via pasteContent + Enter. All sessions use interactive mode;
     // prompt is always present (delivered via load-buffer/paste-buffer, not baked into args).
     // pasteContent loads the prompt into a tmux buffer and pastes it, ensuring the full
     // prompt text is injected without send-keys literal-mode limitations. The subsequent
