@@ -10,6 +10,7 @@ import { AutobeatError, ErrorCode } from '../core/errors.js';
 import { EventBus } from '../core/events/event-bus.js';
 import { Logger, ResourceMonitor, WorkerRepository } from '../core/interfaces.js';
 import { err, ok, Result, tryCatchAsync } from '../core/result.js';
+import { getAvailableMemory } from '../utils/index.js';
 
 export class SystemResourceMonitor implements ResourceMonitor {
   private readonly cpuCoresReserved: number;
@@ -55,7 +56,7 @@ export class SystemResourceMonitor implements ResourceMonitor {
       async () => {
         const cpuUsage = await this.getCpuUsage();
         const totalMemory = os.totalmem();
-        const freeMemory = os.freemem();
+        const freeMemory = getAvailableMemory();
         const loadAvgArray = os.loadavg();
         const loadAverage: readonly [number, number, number] = [loadAvgArray[0], loadAvgArray[1], loadAvgArray[2]];
 

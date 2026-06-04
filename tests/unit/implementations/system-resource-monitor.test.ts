@@ -26,6 +26,12 @@ vi.mock('os', () => ({
   cpus: () => mockCpus(),
 }));
 
+// Mock available-memory utility so existing mockFreemem controls the value
+// flowing through getAvailableMemory() in the resource monitor under test
+vi.mock('../../../src/utils/available-memory.js', () => ({
+  getAvailableMemory: () => mockFreemem(),
+}));
+
 describe('SystemResourceMonitor', () => {
   let monitor: SystemResourceMonitor;
   let eventBus: InMemoryEventBus;

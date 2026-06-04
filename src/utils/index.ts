@@ -2,6 +2,8 @@
  * Utility module exports
  */
 
+// Available memory detection (platform-aware, macOS-safe)
+export { getAvailableMemory } from './available-memory.js';
 // Cron utilities for task scheduling
 export {
   getNextRunTime,
