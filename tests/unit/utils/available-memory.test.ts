@@ -7,7 +7,7 @@
 
 import { execFileSync } from 'child_process';
 import * as os from 'os';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAvailableMemory, parseVmStat } from '../../../src/utils/available-memory.js';
 
 // ---------------------------------------------------------------------------
@@ -166,11 +166,6 @@ Pages purgeable:                      10000.
     vi.clearAllMocks();
     mockFreemem.mockReturnValue(FREEMEM_BYTES);
     mockPlatform.mockReturnValue('linux');
-    mockExecFileSync.mockReturnValue(VALID_VMSTAT);
-  });
-
-  afterEach(() => {
-    vi.clearAllMocks();
   });
 
   it('returns os.freemem() directly on non-darwin platforms', () => {
@@ -190,7 +185,7 @@ Pages purgeable:                      10000.
 
     // 180000 pages * 16384 bytes/page = 2,949,120,000
     expect(result).toBe(180_000 * 16_384);
-    expect(mockExecFileSync).toHaveBeenCalledWith('vm_stat', [], expect.objectContaining({ encoding: 'utf8' }));
+    expect(mockExecFileSync).toHaveBeenCalledWith('/usr/bin/vm_stat', [], expect.objectContaining({ encoding: 'utf8' }));
   });
 
   it('falls back to os.freemem() on darwin when vm_stat throws', () => {
@@ -213,25 +208,8 @@ Pages purgeable:                      10000.
     expect(result).toBe(FREEMEM_BYTES);
   });
 
-  it('always returns a number, never undefined, never throws', () => {
-    // Test all three paths: non-darwin, darwin success, darwin failure
-
-    // Non-darwin
-    mockPlatform.mockReturnValue('win32');
-    expect(typeof getAvailableMemory()).toBe('number');
-
-    // Darwin success
+  it('falls back to os.freemem() on darwin when vm_stat reports zero available pages', () => {
     mockPlatform.mockReturnValue('darwin');
-    mockExecFileSync.mockReturnValue(VALID_VMSTAT);
-    expect(typeof getAvailableMemory()).toBe('number');
-
-    // Darwin failure
-    mockExecFileSync.mockImplementation(() => {
-      throw new Error('fail');
-    });
-    expect(typeof getAvailableMemory()).toBe('number');
-
-    // Darwin with zero result falls back to freemem
     mockExecFileSync.mockReturnValue(
       `
 Mach Virtual Memory Statistics: (page size of 16384 bytes)
@@ -241,9 +219,9 @@ Pages speculative:                        0.
 Pages purgeable:                          0.
 `.trim(),
     );
-    const zeroResult = getAvailableMemory();
-    expect(typeof zeroResult).toBe('number');
-    // Zero vm_stat result → fallback to freemem
-    expect(zeroResult).toBe(FREEMEM_BYTES);
+
+    const result = getAvailableMemory();
+
+    expect(result).toBe(FREEMEM_BYTES);
   });
 });
