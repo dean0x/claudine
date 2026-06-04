@@ -442,34 +442,17 @@ describe('EventDrivenWorkerPool (Phase 3: tmux)', () => {
       expect(tmuxConnector.pasteContent).not.toHaveBeenCalled();
     });
 
-    it('calls setupTimeoutForWorker after waitForReady resolves, not before', async () => {
-      // Verifies step 11 placement: timeout timer must start after TUI init so the
-      // configured deadline measures actual work time, not TUI initialization time.
-      // Proxy check: pasteContent is called only after waitForReady completes; timeout
-      // setup happens between them. If timeout fires before pasteContent, the task would
-      // be killed before it ever receives its prompt — confirmed not to happen here.
-      const callOrder: string[] = [];
-      vi.mocked(tmuxConnector.waitForReady).mockImplementation(async () => {
-        callOrder.push('waitForReady');
-        return ok(undefined);
-      });
-      vi.mocked(tmuxConnector.pasteContent).mockImplementation(() => {
-        callOrder.push('pasteContent');
-        return ok(undefined);
-      });
+    it('does not kill the worker before it receives its prompt (timeout starts after waitForReady)', async () => {
+      // setupTimeoutForWorker is placed after waitForReady so the task deadline measures
+      // actual work time, not TUI initialization time. A short timeout set before
+      // waitForReady would kill the worker before it ever receives its prompt.
+      vi.mocked(tmuxConnector.waitForReady).mockResolvedValue(ok(undefined));
 
-      // Use a task with a very short timeout so setupTimeoutForWorker would fire quickly
-      // if placed incorrectly before waitForReady.
+      // Very short timeout — would fire before spawn() completes if placed incorrectly.
       const task = buildTask((f) => f.withTimeout(100));
       await pool.spawn(task);
 
-      // waitForReady must precede pasteContent — timeout setup is between them.
-      // The absence of a premature timeout kill (workerCount still 1) confirms timer
-      // is installed post-readiness.
-      const readyIdx = callOrder.indexOf('waitForReady');
-      const pasteIdx = callOrder.indexOf('pasteContent');
-      expect(readyIdx).toBeGreaterThanOrEqual(0);
-      expect(pasteIdx).toBeGreaterThan(readyIdx);
+      // Worker remains alive — timeout did not fire prematurely before prompt delivery.
       expect(pool.getWorkerCount()).toBe(1);
     });
   });

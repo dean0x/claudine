@@ -405,8 +405,8 @@ describe('TmuxConnector.waitForReady()', () => {
       contentThreshold: 50,
     });
 
-    // First poll: early liveness ok(true), second poll: isAlive returns err()
-    await vi.advanceTimersByTimeAsync(10);
+    // Flush initial delay (0ms) — early liveness check passes (ok(true)),
+    // then loop attempt 0 isAlive returns err() and exits immediately.
     await vi.advanceTimersByTimeAsync(10);
 
     const result = await promise;

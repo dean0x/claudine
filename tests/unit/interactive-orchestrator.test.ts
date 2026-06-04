@@ -1029,32 +1029,17 @@ describe('spawnAndDeliverPrompt — waitForReady err() path', () => {
     };
 
     const destroy = vi.fn().mockReturnValue(ok(undefined));
-    const mockTmuxConnector: TmuxConnectorPort = {
+    const mockTmuxConnector = {
       spawn: vi.fn().mockReturnValue(ok(handle)),
       destroy,
-      sendKeys: vi.fn().mockReturnValue(ok(undefined)),
-      sendControlKeys: vi.fn().mockReturnValue(ok(undefined)),
-      isAlive: vi.fn().mockReturnValue(ok(true)),
-      setEnvironment: vi.fn().mockReturnValue(ok(undefined)),
-      pasteContent: vi.fn().mockReturnValue(ok(undefined)),
-      capturePaneContent: vi.fn().mockReturnValue(ok('')),
       waitForReady: vi
         .fn()
         .mockResolvedValue(err(new AutobeatError(ErrorCode.TMUX_SESSION_FAILED, 'session died during init'))),
-      prepareForReuse: vi.fn().mockReturnValue(ok(undefined)),
-      getActiveHandles: vi.fn().mockReturnValue([]),
-      dispose: vi.fn(),
     } as unknown as TmuxConnectorPort;
 
     const finalizeInteractiveOrchestration = vi.fn().mockResolvedValue(ok(undefined));
-    const mockOrchestrationService: OrchestrationService = {
+    const mockOrchestrationService = {
       finalizeInteractiveOrchestration,
-      createInteractiveOrchestration: vi.fn(),
-      createOrchestration: vi.fn(),
-      updateInteractiveOrchestrationSessionName: vi.fn(),
-      getOrchestration: vi.fn(),
-      listOrchestrations: vi.fn(),
-      cancelOrchestration: vi.fn(),
     } as unknown as OrchestrationService;
 
     const mockContainer: Container = {
