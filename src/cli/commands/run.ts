@@ -3,91 +3,19 @@ import type { AgentProvider } from '../../core/agents.js';
 import type { Container } from '../../core/container.js';
 import type { TaskRequest } from '../../core/domain.js';
 import { OrchestratorId, Priority, TaskId } from '../../core/domain.js';
-import type { EventBus } from '../../core/events/event-bus.js';
-import type {
-  OutputCapturedEvent,
-  TaskCancelledEvent,
-  TaskCompletedEvent,
-  TaskFailedEvent,
-  TaskTimeoutEvent,
-} from '../../core/events/events.js';
 import type { OrchestrationRepository, TaskManager } from '../../core/interfaces.js';
-import { createDetachLogDir, createDetachLogFile, pollLogFileForId, spawnDetachedProcess } from '../detach-helpers.js';
+import { driveToCompletion, runDetached, waitForTaskCompletion } from '../drive-helpers.js';
 import { errorMessage } from '../services.js';
 import * as ui from '../ui.js';
 
 /**
- * Subscribe to EventBus events for a specific task and wait for terminal state.
- * Streams OutputCaptured to stdout/stderr in real-time.
- * Returns the worker's exit code (0 = success, non-zero = failure).
+ * Detach `beat run` to a background worker that drives the task to completion.
+ *
+ * ARCHITECTURE (issue #205): thin wrapper over the shared {@link runDetached} — the
+ * background worker re-runs `beat run` with the internal worker flag, which routes it
+ * into {@link runTask}. The foreground polls the worker's log for the task id and exits.
  */
-export function waitForTaskCompletion(container: Container, taskId: string): Promise<number> {
-  const eventBusResult = container.get<EventBus>('eventBus');
-  if (!eventBusResult.ok) {
-    ui.error(`Failed to get event bus: ${eventBusResult.error.message}`);
-    return Promise.resolve(1);
-  }
-  const eventBus = eventBusResult.value;
-
-  return new Promise((resolve) => {
-    let resolved = false;
-    const subscriptionIds: string[] = [];
-
-    const cleanup = () => {
-      for (const id of subscriptionIds) {
-        eventBus.unsubscribe(id);
-      }
-    };
-
-    const resolveOnce = (exitCode: number) => {
-      if (resolved) return;
-      resolved = true;
-      cleanup();
-      resolve(exitCode);
-    };
-
-    // Stream output in real-time
-    const outputSub = eventBus.subscribe<OutputCapturedEvent>('OutputCaptured', async (event) => {
-      if (event.taskId !== taskId) return;
-      const stream = event.outputType === 'stderr' ? process.stderr : process.stdout;
-      stream.write(event.data);
-    });
-    if (outputSub.ok) subscriptionIds.push(outputSub.value);
-
-    // Terminal states
-    const completedSub = eventBus.subscribe<TaskCompletedEvent>('TaskCompleted', async (event) => {
-      if (event.taskId !== taskId) return;
-      resolveOnce(event.exitCode);
-    });
-    if (completedSub.ok) subscriptionIds.push(completedSub.value);
-
-    const failedSub = eventBus.subscribe<TaskFailedEvent>('TaskFailed', async (event) => {
-      if (event.taskId !== taskId) return;
-      resolveOnce(event.exitCode ?? 1);
-    });
-    if (failedSub.ok) subscriptionIds.push(failedSub.value);
-
-    const cancelledSub = eventBus.subscribe<TaskCancelledEvent>('TaskCancelled', async (event) => {
-      if (event.taskId !== taskId) return;
-      resolveOnce(1);
-    });
-    if (cancelledSub.ok) subscriptionIds.push(cancelledSub.value);
-
-    const timeoutSub = eventBus.subscribe<TaskTimeoutEvent>('TaskTimeout', async (event) => {
-      if (event.taskId !== taskId) return;
-      resolveOnce(1);
-    });
-    if (timeoutSub.ok) subscriptionIds.push(timeoutSub.value);
-  });
-}
-
-/**
- * Default detach mode: re-spawn the CLI as a detached background process.
- * The background process runs the full lifecycle (bootstrap, delegate, wait, dispose, exit)
- * with --foreground so it doesn't recurse back into detach mode.
- * The foreground polls the background's log file to extract and print the task ID, then exits.
- */
-export async function handleDetachMode(runArgs: string[]): Promise<void> {
+export async function handleRunDetach(runArgs: readonly string[]): Promise<void> {
   // Validate that at least one non-flag word exists (the prompt)
   const hasPrompt = runArgs.some((arg) => !arg.startsWith('-'));
   if (!hasPrompt) {
@@ -96,31 +24,16 @@ export async function handleDetachMode(runArgs: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const logDir = createDetachLogDir();
-  const { logFile, logFd } = createDetachLogFile(logDir, 'detach');
-
-  // Re-spawn CLI with --foreground as a detached background process
-  const childArgs = [process.argv[1], 'run', '--foreground', ...runArgs];
-  const pid = spawnDetachedProcess(childArgs, logFd);
-
-  ui.info(`Background process started (PID: ${pid})`);
-  ui.info(`Log file: ${logFile}`);
-
-  // Poll log file for task ID (max 15s at 200ms intervals)
-  const result = await pollLogFileForId(logFile, {
+  await runDetached({
+    command: 'run',
+    args: runArgs,
+    logPrefix: 'run',
+    // CRITICAL: matches the load-bearing "Task ID:" line printed by runTask.
     idPattern: /Task ID:\s+(task-\S+)/,
-    errorPattern: /^❌/m,
     foundMessage: (id) => `Task delegated: ${id}`,
-    timeoutMessage: 'Task ID not yet available (background process still starting)',
     infoLines: ['Check status: beat status {id}', 'View logs:    beat logs {id}'],
-    maxAttempts: 75,
-    pollIntervalMs: 200,
+    entityLabel: 'Task',
   });
-
-  if (result.type === 'error') {
-    process.exit(1);
-  }
-  process.exit(0);
 }
 
 export async function runTask(
@@ -231,29 +144,15 @@ export async function runTask(
     // CRITICAL: "Task ID:" pattern is used by detach-mode polling
     ui.success(`Task ID: ${task.id}`);
 
-    // Wait for worker completion with real-time output streaming
-    let cancelledBySigint = false;
-    const sigintHandler = () => {
-      process.stderr.write('\nCancelling task...\n');
-      cancelledBySigint = true;
-      taskManager.cancel(task.id, 'User interrupted (SIGINT)');
-    };
-    process.on('SIGINT', sigintHandler);
-
-    const waitSpinner = ui.createSpinner();
-    waitSpinner.start('Running... (Ctrl+C to cancel)');
-
-    const exitCode = await waitForTaskCompletion(container, task.id);
-
-    if (exitCode === 0) {
-      waitSpinner.stop(`Completed (exit ${exitCode})`);
-    } else {
-      waitSpinner.error(`Failed (exit ${exitCode})`);
-    }
-
-    process.removeListener('SIGINT', sigintHandler);
-    await container.dispose();
-    process.exit(cancelledBySigint ? 130 : exitCode);
+    // Drive the task to completion (SIGINT cancels), then dispose + exit.
+    await driveToCompletion({
+      container,
+      wait: () => waitForTaskCompletion(container, task.id),
+      onSigint: () => {
+        taskManager.cancel(task.id, 'User interrupted (SIGINT)');
+      },
+      sigintMessage: '\nCancelling task...\n',
+    });
   } catch (error) {
     s.stop('Failed');
     ui.error(errorMessage(error));

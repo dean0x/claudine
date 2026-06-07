@@ -213,7 +213,13 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
     error: LogLevel.ERROR,
   };
 
-  const logLevel = LOG_LEVEL_MAP[config.logLevel];
+  // DECISION (issue #205): CLI commands run quiet by default. Previously every `beat <cmd>`
+  // dumped ~15 handler-init INFO lines to the user's terminal, burying the one useful output
+  // line. In 'cli' mode we floor the level at WARN so only warnings/errors and the command's
+  // own ui.* output reach the terminal. Escape hatch: `beat config set logLevel debug` restores
+  // full verbosity for troubleshooting. Server/run modes keep the configured level (run-mode
+  // workers log to their detach log file, not the user's terminal).
+  const logLevel = mode === 'cli' && config.logLevel !== 'debug' ? LogLevel.WARN : LOG_LEVEL_MAP[config.logLevel];
 
   // If the caller provided a Logger instance (e.g. FileLogger from the dashboard),
   // use it directly. Otherwise construct the default logger based on NODE_ENV.
