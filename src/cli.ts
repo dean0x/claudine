@@ -315,16 +315,21 @@ if (mainCommand === 'mcp') {
   }
 } else if (mainCommand === 'resume') {
   const resumeArgs = stripWorkerFlag(args.slice(1));
-  const taskId = resumeArgs.find((a) => !a.startsWith('-'));
-  if (!taskId) {
-    ui.error('Usage: beat resume <task-id> [--context "additional instructions"]');
-    process.exit(1);
-  }
 
   let additionalContext: string | undefined;
   const contextIndex = resumeArgs.indexOf('--context');
   if (contextIndex !== -1 && resumeArgs[contextIndex + 1]) {
     additionalContext = resumeArgs[contextIndex + 1];
+  }
+
+  // Find the positional task id, skipping any flag AND the --context value. A bare
+  // `find(a => !a.startsWith('-'))` would mis-pick the --context value when the flag is
+  // passed before the task id (`beat resume --context "..." task-99`).
+  const contextValueIndex = contextIndex === -1 ? -1 : contextIndex + 1;
+  const taskId = resumeArgs.find((a, i) => i !== contextValueIndex && !a.startsWith('-'));
+  if (!taskId) {
+    ui.error('Usage: beat resume <task-id> [--context "additional instructions"]');
+    process.exit(1);
   }
 
   await handleResumeCommand(taskId, additionalContext, isWorkerInvocation(args.slice(1)));

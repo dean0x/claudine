@@ -133,6 +133,38 @@ describe('drive-helpers — terminal-event waiters', () => {
       await eventBus.emit<LoopCancelledEvent>('LoopCancelled', { loopId });
       expect(await promise).toBe(1);
     });
+
+    // FAIL HONESTLY: when the terminal loop status cannot be determined, the worker must
+    // exit non-zero rather than silently reporting success and masking a failed loop.
+    it('exits 1 when the loop repository is unavailable', async () => {
+      const loopId = LoopId('loop-4');
+      // container (default) has no loopRepository registered.
+      const promise = waitForLoopCompletion(container, loopId);
+      await eventBus.emit<LoopCompletedEvent>('LoopCompleted', { loopId, reason: 'done' });
+      expect(await promise).toBe(1);
+    });
+
+    it('exits 1 when the status read fails', async () => {
+      const loopId = LoopId('loop-5');
+      const c = containerWith((cc) => {
+        cc.registerValue('loopRepository', {
+          findById: async () => ({ ok: false, error: new Error('db read failed') }),
+        });
+      });
+      const promise = waitForLoopCompletion(c, loopId);
+      await eventBus.emit<LoopCompletedEvent>('LoopCompleted', { loopId, reason: 'done' });
+      expect(await promise).toBe(1);
+    });
+
+    it('exits 1 when the loop record is not found', async () => {
+      const loopId = LoopId('loop-6');
+      const c = containerWith((cc) => {
+        cc.registerValue('loopRepository', { findById: async () => ok(null) });
+      });
+      const promise = waitForLoopCompletion(c, loopId);
+      await eventBus.emit<LoopCompletedEvent>('LoopCompleted', { loopId, reason: 'done' });
+      expect(await promise).toBe(1);
+    });
   });
 
   describe('waitForPipelineCompletion', () => {
@@ -161,6 +193,22 @@ describe('drive-helpers — terminal-event waiters', () => {
       const promise = waitForChannelCompletion(container, channelId);
       await eventBus.emit<ChannelDestroyedEvent>('ChannelDestroyed', { channelId, reason: 'max-rounds-reached' });
       expect(await promise).toBe(0);
+    });
+  });
+
+  // RELIABILITY: a waiter whose every subscription fails must exit non-zero immediately
+  // rather than leaving the detached worker process hung forever waiting for an event that
+  // can never arrive. waitForChannelCompletion is the worst case (single subscription).
+  describe('awaitTerminal — zero-subscription guard', () => {
+    it('exits 1 (does not hang) when the event subscription fails', async () => {
+      const failingBus = {
+        subscribe: () => ({ ok: false as const, error: new Error('subscribe failed') }),
+        unsubscribe: () => ({ ok: true as const, value: undefined }),
+      };
+      const c = new Container();
+      c.registerValue('eventBus', failingBus);
+      // Without the guard this promise would never settle; the test would time out.
+      expect(await waitForChannelCompletion(c, ChannelId('ch-zero'))).toBe(1);
     });
   });
 });

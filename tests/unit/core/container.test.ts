@@ -565,6 +565,8 @@ describe('Container - Dependency Injection', () => {
       container.registerValue('workerPool', mockWorkerPool);
       container.registerValue('tmuxSessionManager', mockTmuxSessionManager);
       container.registerValue('database', mockDatabase);
+      // ISSUE #205: the global session sweep is gated to server mode.
+      container.registerValue('mode', 'server');
 
       await container.dispose();
 
@@ -581,6 +583,37 @@ describe('Container - Dependency Injection', () => {
         'emit:ShutdownComplete',
         'eventBus:dispose',
       ]);
+    });
+
+    // ISSUE #205: a self-contained CLI/run worker must NOT sweep all process-wide beat-*
+    // tmux sessions on dispose — that would destroy sibling workers' live task sessions.
+    // killAll() handles the worker's own sessions; the global sweep is server-only.
+    it.each(['cli', 'run'] as const)('does NOT sweep tmux sessions in %s mode', async (mode) => {
+      const swept: string[] = [];
+      const mockTmuxSessionManager = {
+        listSessions: vi.fn(() => {
+          swept.push('listSessions');
+          return { ok: true as const, value: [{ name: 'beat-sibling-session', created: 0 }] };
+        }),
+        destroySession: vi.fn(() => {
+          swept.push('destroySession');
+          return { ok: true as const, value: undefined };
+        }),
+        isAlive: vi.fn(),
+        sendControlKeys: vi.fn(),
+      };
+      const mockWorkerPool = { killAll: vi.fn(async () => {}) };
+
+      container.registerValue('eventBus', { emit: vi.fn(async () => {}), dispose: vi.fn() });
+      container.registerValue('workerPool', mockWorkerPool);
+      container.registerValue('tmuxSessionManager', mockTmuxSessionManager);
+      container.registerValue('mode', mode);
+
+      await container.dispose();
+
+      // killAll still runs (own sessions), but the process-wide sweep must not.
+      expect(mockWorkerPool.killAll).toHaveBeenCalledTimes(1);
+      expect(swept).toEqual([]);
     });
   });
 

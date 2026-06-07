@@ -205,6 +205,12 @@ export async function bootstrap(options: BootstrapOptions = {}): Promise<Result<
   // Register configuration
   container.registerValue('config', config);
 
+  // Register the bootstrap mode so lifecycle code (e.g. container.dispose) can make
+  // mode-aware decisions. ISSUE #205: only the long-lived 'server' owns every beat-*
+  // tmux session process-wide, so only it may sweep all sessions on shutdown. Ephemeral
+  // 'run'/'cli' workers each manage only their own sessions and must not sweep siblings'.
+  container.registerValue('mode', mode);
+
   // Register logger with resolved log level
   const LOG_LEVEL_MAP: Record<Configuration['logLevel'], LogLevel> = {
     debug: LogLevel.DEBUG,

@@ -56,6 +56,13 @@ import * as ui from './ui.js';
  */
 export const WORKER_FLAG = '--__worker';
 
+/**
+ * Bounded grace period after SIGINT before a detached worker force-exits (130).
+ * Backstop for a cancel callback that fails before emitting its terminal event — see
+ * {@link driveToCompletion}. Generous enough for a normal cancel + terminal event to land.
+ */
+const SIGINT_FORCE_EXIT_MS = 8_000;
+
 /** Returns true if the given arg list contains the internal worker flag. */
 export function isWorkerInvocation(args: readonly string[]): boolean {
   return args.includes(WORKER_FLAG);
@@ -105,6 +112,16 @@ function awaitTerminal(
     };
 
     subscriptionIds = register(eventBus, resolveOnce);
+
+    // RELIABILITY (issue #205): the returned Promise resolves ONLY via resolveOnce, which
+    // is invoked exclusively by the subscribed handlers. If every eventBus.subscribe() call
+    // failed, register() returns an empty id list and nothing could ever resolve — the
+    // detached worker process would hang forever (most acute for single-subscription waiters
+    // like waitForChannelCompletion). Fail fast with a non-zero exit instead of hanging.
+    if (subscriptionIds.length === 0) {
+      ui.error('Failed to subscribe to terminal events — cannot drive work to completion');
+      resolveOnce(1);
+    }
   });
 }
 
@@ -158,14 +175,32 @@ export function waitForLoopCompletion(container: Container, loopId: string): Pro
 
     const completedSub = eventBus.subscribe<LoopCompletedEvent>('LoopCompleted', async (event) => {
       if (event.loopId !== loopId) return;
-      let exitCode = 0;
-      if (loopRepoResult.ok) {
-        const loopResult = await loopRepoResult.value.findById(event.loopId);
-        if (loopResult.ok && loopResult.value && loopResult.value.status === LoopStatus.FAILED) {
-          exitCode = 1;
-        }
+      // LoopCompleted is emitted for BOTH COMPLETED and FAILED terminal statuses — the event
+      // payload carries only a free-text `reason`, not the status — so re-read the loop record
+      // to map status → exit code. completeLoop() persists the terminal status before emitting,
+      // so the happy-path read is authoritative.
+      //
+      // FAIL HONESTLY (issue #205): if the status cannot be determined (repo unavailable, read
+      // error, or record missing) we exit 1 rather than defaulting to 0. A false success would
+      // mask a FAILED loop in scripts (`beat loop ... && deploy`); a false failure on a
+      // genuinely-completed loop is the safer error to surface, and the cause is logged.
+      if (!loopRepoResult.ok) {
+        ui.error(`Cannot determine loop outcome (loop repository unavailable): ${loopRepoResult.error.message}`);
+        resolve(1);
+        return;
       }
-      resolve(exitCode);
+      const loopResult = await loopRepoResult.value.findById(event.loopId);
+      if (!loopResult.ok) {
+        ui.error(`Cannot determine loop outcome (status read failed): ${loopResult.error.message}`);
+        resolve(1);
+        return;
+      }
+      if (!loopResult.value) {
+        ui.error(`Cannot determine loop outcome (loop ${event.loopId} not found)`);
+        resolve(1);
+        return;
+      }
+      resolve(loopResult.value.status === LoopStatus.FAILED ? 1 : 0);
     });
     if (completedSub.ok) ids.push(completedSub.value);
 
@@ -240,6 +275,16 @@ export async function driveToCompletion(opts: {
     process.stderr.write(opts.sigintMessage ?? '\nCancelling...\n');
     cancelledBySigint = true;
     opts.onSigint();
+    // SAFETY NET (issue #205): onSigint is fire-and-forget — it requests cancellation but
+    // unblocking depends on the cancel path emitting the work's terminal event. If that path
+    // errors BEFORE emitting (e.g. destroyChannel/cancelLoop returns err on a DB write), the
+    // wait() Promise would never resolve and the worker would hang after Ctrl-C instead of
+    // exiting. Force a bounded exit so SIGINT always terminates the process promptly.
+    const forceExit = setTimeout(() => {
+      process.stderr.write('Cancellation did not complete in time — force exiting.\n');
+      process.exit(130);
+    }, SIGINT_FORCE_EXIT_MS);
+    forceExit.unref();
   };
   process.on('SIGINT', sigintHandler);
 
