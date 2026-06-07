@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   isWorkerInvocation,
   stripWorkerFlag,
@@ -10,7 +10,15 @@ import {
 } from '../../../src/cli/drive-helpers.js';
 import { loadConfiguration } from '../../../src/core/configuration.js';
 import { Container } from '../../../src/core/container.js';
-import { ChannelId, LoopId, LoopStatus, PipelineId, TaskId } from '../../../src/core/domain.js';
+import {
+  ChannelId,
+  ChannelStatus,
+  LoopId,
+  LoopStatus,
+  PipelineId,
+  PipelineStatus,
+  TaskId,
+} from '../../../src/core/domain.js';
 import { InMemoryEventBus } from '../../../src/core/events/event-bus.js';
 import type {
   ChannelDestroyedEvent,
@@ -200,15 +208,95 @@ describe('drive-helpers — terminal-event waiters', () => {
   // rather than leaving the detached worker process hung forever waiting for an event that
   // can never arrive. waitForChannelCompletion is the worst case (single subscription).
   describe('awaitTerminal — zero-subscription guard', () => {
-    it('exits 1 (does not hang) when the event subscription fails', async () => {
+    it('exits 1 (does not hang) when the event subscription fails and no DB poll is registered', async () => {
       const failingBus = {
         subscribe: () => ({ ok: false as const, error: new Error('subscribe failed') }),
         unsubscribe: () => ({ ok: true as const, value: undefined }),
       };
       const c = new Container();
       c.registerValue('eventBus', failingBus);
-      // Without the guard this promise would never settle; the test would time out.
+      // No channelRepository registered → no poll fallback. Without the guard this promise
+      // would never settle; the test would time out.
       expect(await waitForChannelCompletion(c, ChannelId('ch-zero'))).toBe(1);
+    });
+  });
+
+  // ISSUE #205: the in-process EventBus is invisible across processes, so a terminal event
+  // emitted by a SEPARATE CLI process (`beat channel destroy`, `beat loop cancel`,
+  // `beat loop pause --force`, a step `beat cancel` for a pipeline) never reaches the detached
+  // host worker. The shared SQLite row is the authoritative cross-process signal — each
+  // long-lived waiter polls it as a fallback so the host terminates instead of hanging forever.
+  describe('cross-process DB-status poll fallback', () => {
+    const POLL_MS = 1500;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('waitForLoopCompletion resolves via the DB poll when cancelled by another process', async () => {
+      const loopId = LoopId('loop-xproc');
+      const c = containerWith((cc) => {
+        cc.registerValue('loopRepository', { findById: async () => ok({ status: LoopStatus.CANCELLED }) });
+      });
+      // No LoopCancelled event emitted — it would land on the other process's bus.
+      const promise = waitForLoopCompletion(c, loopId);
+      await vi.advanceTimersByTimeAsync(POLL_MS);
+      expect(await promise).toBe(1);
+    });
+
+    it('waitForChannelCompletion resolves via the DB poll when destroyed by another process', async () => {
+      const channelId = ChannelId('ch-xproc');
+      const c = containerWith((cc) => {
+        cc.registerValue('channelRepository', { findById: async () => ok({ status: ChannelStatus.DESTROYED }) });
+      });
+      const promise = waitForChannelCompletion(c, channelId);
+      await vi.advanceTimersByTimeAsync(POLL_MS);
+      expect(await promise).toBe(0);
+    });
+
+    it('waitForPipelineCompletion resolves via the DB poll on cross-process cancel', async () => {
+      const pipelineId = PipelineId('pipeline-xproc');
+      const c = containerWith((cc) => {
+        cc.registerValue('pipelineRepository', { findById: async () => ok({ status: PipelineStatus.CANCELLED }) });
+      });
+      const promise = waitForPipelineCompletion(c, pipelineId);
+      await vi.advanceTimersByTimeAsync(POLL_MS);
+      expect(await promise).toBe(1);
+    });
+
+    it('keeps polling while the entity is still active, then resolves when its status flips', async () => {
+      const channelId = ChannelId('ch-flip');
+      let status: ChannelStatus = ChannelStatus.ACTIVE;
+      const c = containerWith((cc) => {
+        cc.registerValue('channelRepository', { findById: async () => ok({ status }) });
+      });
+      const promise = waitForChannelCompletion(c, channelId);
+      let settled = false;
+      void promise.then(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(POLL_MS);
+      expect(settled).toBe(false); // still ACTIVE → no resolution
+      status = ChannelStatus.DESTROYED;
+      await vi.advanceTimersByTimeAsync(POLL_MS);
+      expect(await promise).toBe(0);
+    });
+
+    it('clears the poll timer once the in-process event resolves (no leaked interval)', async () => {
+      const channelId = ChannelId('ch-evt');
+      const findById = vi.fn(async () => ok({ status: ChannelStatus.ACTIVE }));
+      const c = containerWith((cc) => {
+        cc.registerValue('channelRepository', { findById });
+      });
+      const promise = waitForChannelCompletion(c, channelId);
+      await eventBus.emit<ChannelDestroyedEvent>('ChannelDestroyed', { channelId, reason: 'max-rounds-reached' });
+      expect(await promise).toBe(0);
+      const callsAtResolve = findById.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(POLL_MS * 5);
+      expect(findById.mock.calls.length).toBe(callsAtResolve); // timer cleared — no further polls
     });
   });
 });

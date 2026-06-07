@@ -15,6 +15,7 @@ import type { Container } from '../../core/container.js';
 import { CHANNEL_NAME_REGEX, ChannelId, ChannelStatus, type CommunicationMode } from '../../core/domain.js';
 import type { ChannelRepository, ChannelService } from '../../core/interfaces.js';
 import { err, ok, type Result } from '../../core/result.js';
+import type { TmuxSessionManagerCorePort } from '../../core/tmux-types.js';
 import { validatePath } from '../../utils/validation.js';
 import {
   driveToCompletion,
@@ -598,6 +599,7 @@ async function resolveChannelOp(
   idOrName: string,
   spinnerMsg: string,
 ): Promise<{
+  container: Container;
   channelService: ChannelService;
   channelId: ChannelId;
   s: ReturnType<typeof ui.createSpinner>;
@@ -631,7 +633,7 @@ async function resolveChannelOp(
     process.exit(1);
   }
 
-  return { channelService, channelId, s };
+  return { container, channelService, channelId, s };
 }
 
 // ─── Destroy ─────────────────────────────────────────────────────────────────
@@ -643,9 +645,42 @@ async function handleChannelDestroy(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const { channelService, channelId, s } = await resolveChannelOp(idOrName, 'Destroying channel...');
+  const { container, channelService, channelId, s } = await resolveChannelOp(idOrName, 'Destroying channel...');
+
+  // Capture member tmux session names BEFORE destroy so we can tear them down by name.
+  // ARCHITECTURE (issue #205): this `beat channel destroy` runs in a fresh mode='cli' process
+  // whose in-memory ChannelManager.memberHandles map is empty, so destroyChannel's own
+  // session-kill loop is a no-op cross-process — it would flip the DB to DESTROYED and emit
+  // ChannelDestroyed on THIS process's bus while orphaning the live member sessions the
+  // detached host worker spawned. Mirror `beat cancel`: kill each member session directly by
+  // its persisted name (idempotent). The host worker observes DESTROYED via its DB-status poll
+  // (waitForChannelCompletion) and exits cleanly.
+  let memberSessions: readonly string[] = [];
+  const channelRepoResult = container.get<ChannelRepository>('channelRepository');
+  if (channelRepoResult.ok) {
+    const channelResult = await channelRepoResult.value.findById(channelId);
+    if (channelResult.ok && channelResult.value) {
+      memberSessions = channelResult.value.members.map((m) => m.tmuxSession);
+    }
+  }
+
   const result = await channelService.destroyChannel(channelId, 'user-requested');
   exitOnError(result, s, 'Failed to destroy channel');
+
+  // Kill member tmux sessions directly (destroySession is idempotent). The session manager is
+  // absent when a custom TmuxConnector is injected (tests) — skip the kill then.
+  if (memberSessions.length > 0) {
+    const sessionManagerResult = container.get<TmuxSessionManagerCorePort>('tmuxSessionManager');
+    if (sessionManagerResult.ok) {
+      for (const sessionName of memberSessions) {
+        const destroyResult = sessionManagerResult.value.destroySession(sessionName);
+        if (!destroyResult.ok) {
+          ui.info(`Warning: failed to destroy tmux session ${sessionName}: ${destroyResult.error.message}`);
+        }
+      }
+    }
+  }
+
   s.stop('Destroyed');
   ui.success(`Channel ${idOrName} destroyed`);
   process.exit(0);

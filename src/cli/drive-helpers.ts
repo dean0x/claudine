@@ -20,7 +20,7 @@
  */
 
 import type { Container } from '../core/container.js';
-import { LoopStatus } from '../core/domain.js';
+import { ChannelId, ChannelStatus, LoopId, LoopStatus, PipelineId, PipelineStatus } from '../core/domain.js';
 import type { EventBus } from '../core/events/event-bus.js';
 import type {
   AutobeatEvent,
@@ -36,7 +36,7 @@ import type {
   TaskFailedEvent,
   TaskTimeoutEvent,
 } from '../core/events/events.js';
-import type { LoopRepository } from '../core/interfaces.js';
+import type { ChannelRepository, LoopRepository, PipelineRepository } from '../core/interfaces.js';
 import {
   createDetachLogDir,
   createDetachLogFile,
@@ -89,7 +89,11 @@ export function stripWorkerFlag(args: readonly string[]): string[] {
  */
 function awaitTerminal(
   container: Container,
-  register: (eventBus: EventBus, resolve: (exitCode: number) => void) => readonly string[],
+  register: (
+    eventBus: EventBus,
+    resolve: (exitCode: number) => void,
+    onCleanup: (teardown: () => void) => void,
+  ) => readonly string[],
 ): Promise<number> {
   const eventBusResult = container.get<EventBus>('eventBus');
   if (!eventBusResult.ok) {
@@ -101,6 +105,7 @@ function awaitTerminal(
   return new Promise<number>((resolve) => {
     let resolved = false;
     let subscriptionIds: readonly string[] = [];
+    const cleanups: Array<() => void> = [];
 
     const resolveOnce = (exitCode: number) => {
       if (resolved) return;
@@ -108,21 +113,82 @@ function awaitTerminal(
       for (const id of subscriptionIds) {
         eventBus.unsubscribe(id);
       }
+      // Tear down non-subscription resources (e.g. the cross-process DB-status poll timer) so
+      // a resolved waiter never leaks a setInterval into the disposing worker process.
+      for (const teardown of cleanups) {
+        try {
+          teardown();
+        } catch {
+          // best-effort: a failing teardown must not block resolution
+        }
+      }
       resolve(exitCode);
     };
 
-    subscriptionIds = register(eventBus, resolveOnce);
+    subscriptionIds = register(eventBus, resolveOnce, (teardown) => {
+      cleanups.push(teardown);
+    });
 
-    // RELIABILITY (issue #205): the returned Promise resolves ONLY via resolveOnce, which
-    // is invoked exclusively by the subscribed handlers. If every eventBus.subscribe() call
-    // failed, register() returns an empty id list and nothing could ever resolve — the
-    // detached worker process would hang forever (most acute for single-subscription waiters
-    // like waitForChannelCompletion). Fail fast with a non-zero exit instead of hanging.
-    if (subscriptionIds.length === 0) {
+    // RELIABILITY (issue #205): the returned Promise resolves ONLY via resolveOnce. If every
+    // eventBus.subscribe() call failed AND no fallback was registered, register() returns an
+    // empty id list with no cleanups and nothing could ever resolve — the detached worker
+    // would hang forever. Fail fast with a non-zero exit instead. A registered cleanup means a
+    // DB-status poll is running as an independent resolution path, so a zero-subscription
+    // waiter can still make progress and must NOT fast-fail.
+    if (subscriptionIds.length === 0 && cleanups.length === 0) {
       ui.error('Failed to subscribe to terminal events — cannot drive work to completion');
       resolveOnce(1);
     }
   });
+}
+
+/**
+ * Interval for the cross-process DB-status poll that backs the long-lived host waiters.
+ *
+ * RELIABILITY (issue #205): the in-process EventBus is a pure in-memory Map — a terminal event
+ * emitted by a SEPARATE CLI process (`beat channel destroy`, `beat loop cancel`, `beat loop
+ * pause --force`, or a step `beat cancel` for a pipeline) lands on that process's bus and is
+ * invisible to the detached host worker. The shared SQLite row is the only authoritative
+ * cross-process signal, so each long-lived waiter polls it as a fallback alongside its
+ * in-process subscription. The in-process event still wins the resolve-once race on the happy
+ * path; the poll only matters when the terminal transition happened in another process.
+ */
+const STATUS_POLL_INTERVAL_MS = 1_500;
+
+/**
+ * Register a self-guarded DB-status poll as an independent resolution path on a terminal-event
+ * waiter. `probe` reads the entity's authoritative status from the shared DB and returns the
+ * worker exit code once the entity is terminal, or null while it is still active.
+ *
+ * BOUND (reliability): each tick performs exactly one bounded DB read, gated by a re-entrancy
+ * guard so reads never overlap. The poll is deliberately NOT capped by a tick count — the
+ * authoritative upper bound is the work's own guaranteed terminal state (loops have
+ * max-iterations / exit conditions, pipelines have finite steps, channels are destroyed), at
+ * which point the timer is cleared via onCleanup. An artificial attempt cap would abandon a
+ * legitimately long-running host mid-flight, so the terminal status — not a tick count — is the
+ * bound. Transient read errors are swallowed and retried on the next tick.
+ */
+function registerStatusPoll(
+  probe: () => Promise<number | null>,
+  resolve: (exitCode: number) => void,
+  onCleanup: (teardown: () => void) => void,
+): void {
+  let inFlight = false;
+  const timer = setInterval(() => {
+    if (inFlight) return;
+    inFlight = true;
+    void probe()
+      .then((exitCode) => {
+        if (exitCode !== null) resolve(exitCode);
+      })
+      .catch(() => {
+        // transient DB read error — retry on the next tick rather than resolving falsely
+      })
+      .finally(() => {
+        inFlight = false;
+      });
+  }, STATUS_POLL_INTERVAL_MS);
+  onCleanup(() => clearInterval(timer));
 }
 
 /**
@@ -170,7 +236,7 @@ export function waitForTaskCompletion(container: Container, taskId: string): Pro
  */
 export function waitForLoopCompletion(container: Container, loopId: string): Promise<number> {
   const loopRepoResult = container.get<LoopRepository>('loopRepository');
-  return awaitTerminal(container, (eventBus, resolve) => {
+  return awaitTerminal(container, (eventBus, resolve, onCleanup) => {
     const ids: string[] = [];
 
     const completedSub = eventBus.subscribe<LoopCompletedEvent>('LoopCompleted', async (event) => {
@@ -209,13 +275,34 @@ export function waitForLoopCompletion(container: Container, loopId: string): Pro
     });
     if (cancelledSub.ok) ids.push(cancelledSub.value);
 
+    // Cross-process fallback (issue #205): `beat loop cancel` / `beat loop pause --force` run in
+    // a SEPARATE process that flips the loop's DB status (loop-handler persists CANCELLED) but
+    // emits LoopCancelled on a bus this host never observes. Poll the shared loop record so the
+    // host still terminates instead of hanging forever. completeLoop persists the terminal
+    // status before emitting LoopCompleted, so the poll and the in-process event agree.
+    if (loopRepoResult.ok) {
+      const loopRepo = loopRepoResult.value;
+      registerStatusPoll(
+        async () => {
+          const result = await loopRepo.findById(LoopId(loopId));
+          if (!result.ok || !result.value) return null;
+          if (result.value.status === LoopStatus.CANCELLED || result.value.status === LoopStatus.FAILED) return 1;
+          if (result.value.status === LoopStatus.COMPLETED) return 0;
+          return null;
+        },
+        resolve,
+        onCleanup,
+      );
+    }
+
     return ids;
   });
 }
 
 /** Wait for a pipeline to reach a terminal state. */
 export function waitForPipelineCompletion(container: Container, pipelineId: string): Promise<number> {
-  return awaitTerminal(container, (eventBus, resolve) => {
+  const pipelineRepoResult = container.get<PipelineRepository>('pipelineRepository');
+  return awaitTerminal(container, (eventBus, resolve, onCleanup) => {
     const ids: string[] = [];
     const sub = <T extends AutobeatEvent>(type: T['type'], handler: (event: T) => void): void => {
       const result = eventBus.subscribe<T>(type, async (event) => handler(event));
@@ -232,20 +319,63 @@ export function waitForPipelineCompletion(container: Container, pipelineId: stri
       if (event.pipelineId === pipelineId) resolve(1);
     });
 
+    // Cross-process fallback (issue #205): cancelling a pipeline step via a separate `beat
+    // cancel <step>` process flips the pipeline's DB status (pipeline-handler persists it) but
+    // emits the terminal Pipeline event on that process's bus, invisible to this host. Poll the
+    // shared pipeline record so the host still terminates instead of hanging.
+    if (pipelineRepoResult.ok) {
+      const pipelineRepo = pipelineRepoResult.value;
+      registerStatusPoll(
+        async () => {
+          const result = await pipelineRepo.findById(PipelineId(pipelineId));
+          if (!result.ok || !result.value) return null;
+          if (result.value.status === PipelineStatus.COMPLETED) return 0;
+          if (result.value.status === PipelineStatus.FAILED || result.value.status === PipelineStatus.CANCELLED) {
+            return 1;
+          }
+          return null;
+        },
+        resolve,
+        onCleanup,
+      );
+    }
+
     return ids;
   });
 }
 
 /**
  * Wait for a channel to be destroyed (its terminal state).
- * Used only for bounded channels (maxRounds reached / all members crashed).
+ *
+ * A bounded channel (maxRounds reached / all members crashed) destroys itself in-process and
+ * resolves via the ChannelDestroyed subscription. An OPEN-ENDED channel is destroyed by a
+ * separate `beat channel destroy` process whose ChannelDestroyed event the host can never see
+ * (the EventBus is in-process only), so the DB-status poll is the authoritative cross-process
+ * terminal signal — destroyChannel persists DESTROYED before emitting.
  */
 export function waitForChannelCompletion(container: Container, channelId: string): Promise<number> {
-  return awaitTerminal(container, (eventBus, resolve) => {
-    const result = eventBus.subscribe<ChannelDestroyedEvent>('ChannelDestroyed', async (event) => {
+  const channelRepoResult = container.get<ChannelRepository>('channelRepository');
+  return awaitTerminal(container, (eventBus, resolve, onCleanup) => {
+    const ids: string[] = [];
+    const sub = eventBus.subscribe<ChannelDestroyedEvent>('ChannelDestroyed', async (event) => {
       if (event.channelId === channelId) resolve(0);
     });
-    return result.ok ? [result.value] : [];
+    if (sub.ok) ids.push(sub.value);
+
+    if (channelRepoResult.ok) {
+      const channelRepo = channelRepoResult.value;
+      registerStatusPoll(
+        async () => {
+          const result = await channelRepo.findById(ChannelId(channelId));
+          if (!result.ok || !result.value) return null;
+          return result.value.status === ChannelStatus.DESTROYED ? 0 : null;
+        },
+        resolve,
+        onCleanup,
+      );
+    }
+
+    return ids;
   });
 }
 
