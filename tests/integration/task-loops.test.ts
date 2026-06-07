@@ -50,12 +50,28 @@ describe('Integration: Task Loops - End-to-End Flow', () => {
   let handler: LoopHandler;
   let service: LoopManagerService;
   let tempDir: string;
+  let originalCwd: string;
 
   beforeEach(async () => {
     logger = new TestLogger();
     const config = createTestConfiguration();
     eventBus = new InMemoryEventBus(config, logger);
     tempDir = await mkdtemp(join(tmpdir(), 'autobeat-loop-test-'));
+
+    // CRITICAL: run every loop in a NON-git temp dir, not the project repo.
+    //
+    // This suite drives a REAL LoopHandler with git-state UNMOCKED (mocking it is unreliable
+    // here: vitest runs with isolate:false, so a sibling integration file loads loop-manager
+    // with the real git-state before this file's vi.mock can rewire it). A loop's
+    // workingDirectory defaults to process.cwd() (loop-manager.ts), and createLoop's
+    // validatePath() rejects any workingDirectory OUTSIDE cwd — so the only way to give the
+    // loops an isolated, non-git directory is to chdir into one. Because tempDir is not a git
+    // repo, captureLoopGitContext() finds no gitStartCommitSha, setupGitForIteration() treats
+    // the loop as non-git, and the pass-iteration auto-commit (commitAllChanges → `git add -A`
+    // + commit) is skipped entirely. Without this, each "pass" iteration committed the
+    // developer's entire working tree on every `npm run test:integration` run.
+    originalCwd = process.cwd();
+    process.chdir(tempDir);
 
     database = new Database(':memory:');
 
@@ -84,6 +100,10 @@ describe('Integration: Task Loops - End-to-End Flow', () => {
   afterEach(async () => {
     eventBus.dispose();
     database.close();
+    // Restore cwd BEFORE removing tempDir (cannot rm the current working directory cleanly).
+    if (originalCwd) {
+      process.chdir(originalCwd);
+    }
     if (tempDir) {
       await rm(tempDir, { recursive: true, force: true });
     }
