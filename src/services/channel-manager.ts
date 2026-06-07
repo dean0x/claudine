@@ -445,9 +445,18 @@ export class ChannelManager implements ChannelService {
     // serialized with internal member-output messages. Without this, concurrent
     // broadcastToActiveMembers calls could interleave with queued routing tasks,
     // causing members to receive messages out of causal order.
-    const queue = this.messageQueues.get(channelId);
+    //
+    // ISSUE #205: In a long-lived host process (mode:'run'/server) the queue and member
+    // TmuxHandles are built at create/recover time. A short-lived `beat msg` CLI process
+    // (mode:'cli') skips channel recovery, so neither exists. Fall back to a transient
+    // one-shot queue and reconstruct delivery handles from the persisted session names:
+    // tmux send-keys is cross-process and the pane serializes input, so a single external
+    // send needs no shared queue. We deliberately do NOT recover routing watchers — that
+    // would double-deliver against the live channel host worker.
+    let queue = this.messageQueues.get(channelId);
     if (!queue) {
-      return err(new AutobeatError(ErrorCode.INVALID_INPUT, `Channel '${channelId}' has no message queue`));
+      queue = new SerialQueue();
+      this.ensureDeliveryHandles(channel);
     }
 
     let dispatchError: Error | undefined;
@@ -897,6 +906,29 @@ export class ChannelManager implements ChannelService {
    * Round-robin: sends to the current turn member (or broadcasts as fallback).
    * Broadcast/directed/other: delivers to all active members.
    */
+  /**
+   * Reconstruct in-memory delivery handles for a channel's ACTIVE members from their
+   * persisted session names. Used by processes that did not run channel recovery (the
+   * short-lived `beat msg` CLI process under mode:'cli'). Only fills gaps — never overwrites
+   * a handle already owned by this process. Sets up NO output watchers, so it cannot
+   * double-deliver against a live channel host worker; it enables a one-shot external send.
+   *
+   * ISSUE #205: mirrors the recovery path's handle shape — the sentinel TaskId(channel.id)
+   * satisfies the branded type; tmux delivery uses sessionName only.
+   */
+  private ensureDeliveryHandles(channel: Channel): void {
+    for (const member of channel.members) {
+      if (member.status !== ChannelMemberStatus.ACTIVE) continue;
+      const key = this.handleKey(channel.id, member.name);
+      if (this.memberHandles.has(key)) continue;
+      this.memberHandles.set(key, {
+        sessionName: member.tmuxSession,
+        taskId: TaskId(channel.id),
+        sessionsDir: this.sessionsDir,
+      });
+    }
+  }
+
   private async dispatchMessage(channel: Channel, message: string, targetMember?: string): Promise<Result<void>> {
     if (targetMember !== undefined) {
       const member = channel.members.find((m) => m.name === targetMember && m.status === ChannelMemberStatus.ACTIVE);

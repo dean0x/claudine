@@ -511,6 +511,53 @@ describe('ChannelManager', () => {
       }
     });
 
+    it('delivers in a fresh process that never created/recovered the channel (issue #205: beat msg under mode:cli)', async () => {
+      // Host process created the channel (populating its handles + queue)...
+      const createResult = await manager.createChannel({
+        name: 'cli-send',
+        members: [
+          { name: 'a', agent: 'claude' },
+          { name: 'b', agent: 'claude' },
+        ],
+        communicationMode: 'broadcast',
+        maxRounds: 10,
+      });
+      expect(createResult.ok).toBe(true);
+      if (!createResult.ok) return;
+
+      // ...now a SEPARATE short-lived `beat msg` process: a fresh ChannelManager sharing
+      // only the persisted repo state. It never ran createChannel/recoverChannels, so its
+      // memberHandles and messageQueues are empty — the pre-fix code returned
+      // "Channel has no message queue" and the message was silently undelivered.
+      const cliManagerResult = await ChannelManager.create({
+        eventBus,
+        logger,
+        channelRepository: channelRepo,
+        config: createTestConfiguration(),
+        tmuxConnector: tmuxConnector as ReturnType<typeof createMockTmuxConnector>,
+        agentRegistry: agentRegistry as ReturnType<typeof createMockAgentRegistry>,
+        sessionsDir,
+      });
+      expect(cliManagerResult.ok).toBe(true);
+      if (!cliManagerResult.ok) return;
+      const cliManager = cliManagerResult.value;
+
+      try {
+        vi.mocked(tmuxConnector.pasteContent).mockClear();
+
+        const sendResult = await cliManager.sendMessage(createResult.value.id, 'cross-process hello');
+        expect(sendResult.ok).toBe(true);
+
+        // Both members are reachable via handles reconstructed from persisted session names.
+        expect(tmuxConnector.pasteContent).toHaveBeenCalledTimes(2);
+        for (const [, content] of vi.mocked(tmuxConnector.pasteContent).mock.calls) {
+          expect(content).toBe('cross-process hello');
+        }
+      } finally {
+        cliManager.dispose();
+      }
+    });
+
     it('delivers message to specific target member when targetMember is provided', async () => {
       const createResult = await manager.createChannel({
         name: 'targeted-ch',

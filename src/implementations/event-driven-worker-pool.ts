@@ -1278,9 +1278,15 @@ export class EventDrivenWorkerPool implements WorkerPool {
     // would require making the entire callback chain async, introducing re-ordering risks
     // between cleanup (synchronous) and event emission (async). Errors are logged; task
     // completion is not lost — PersistenceHandler independently persists state from events.
+    // ISSUE #205: emit() resolves to a Result — a handler-side failure surfaces as a
+    // resolved { ok: false }, NOT a rejection, so a bare .catch() would silently swallow it
+    // and leave a terminal-event waiter (driveToCompletion) hung. Observe the Result too.
     if (exitCode === 0) {
       this.eventBus
         .emit('TaskCompleted', { taskId, exitCode, duration })
+        .then((result) => {
+          if (!result.ok) this.logger.error('Failed to emit TaskCompleted', result.error, { taskId });
+        })
         .catch((e) => this.logger.error('Failed to emit TaskCompleted', toError(e), { taskId }));
     } else {
       this.eventBus
@@ -1288,6 +1294,9 @@ export class EventDrivenWorkerPool implements WorkerPool {
           taskId,
           exitCode,
           error: new AutobeatError(ErrorCode.TASK_EXECUTION_FAILED, `Task failed with exit code ${exitCode}`),
+        })
+        .then((result) => {
+          if (!result.ok) this.logger.error('Failed to emit TaskFailed', result.error, { taskId });
         })
         .catch((e) => this.logger.error('Failed to emit TaskFailed', toError(e), { taskId }));
     }

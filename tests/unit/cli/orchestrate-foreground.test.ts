@@ -1,11 +1,13 @@
 /**
- * Unit tests for waitForLoopCompletion
- * ARCHITECTURE: Tests the extracted event subscription + wait logic
- * that monitors loop lifecycle events in foreground orchestration mode.
+ * Unit tests for waitForLoopCompletion (shared drive-helpers waiter).
+ * ARCHITECTURE: foreground orchestration now reuses the shared bounded-execution
+ * waiter (issue #205) instead of a bespoke local copy; these tests pin its lifecycle
+ * behavior. With no loopRepository in the mock container the FAILED-status re-read is
+ * skipped, so LoopCompleted maps to exit 0 as before.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { waitForLoopCompletion } from '../../../src/cli/commands/orchestrate.js';
+import { waitForLoopCompletion } from '../../../src/cli/drive-helpers.js';
 import { loadConfiguration } from '../../../src/core/configuration.js';
 import type { Container } from '../../../src/core/container.js';
 import { LoopId } from '../../../src/core/domain.js';

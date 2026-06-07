@@ -7,16 +7,14 @@
 import { bootstrap } from '../../bootstrap.js';
 import type { AgentProvider } from '../../core/agents.js';
 import type { Container } from '../../core/container.js';
-import type { LoopId } from '../../core/domain.js';
 import { OrchestratorId, OrchestratorStatus } from '../../core/domain.js';
-import type { EventBus } from '../../core/events/event-bus.js';
-import type { LoopCancelledEvent, LoopCompletedEvent } from '../../core/events/events.js';
 import type { OrchestrationService } from '../../core/interfaces.js';
 import { scaffoldCustomOrchestrator } from '../../core/orchestrator-scaffold.js';
 import { readStateFile } from '../../core/orchestrator-state.js';
 import { err, ok, type Result } from '../../core/result.js';
 import { validatePath } from '../../utils/validation.js';
 import { createDetachLogDir, createDetachLogFile, pollLogFileForId, spawnDetachedProcess } from '../detach-helpers.js';
+import { driveToCompletion, waitForLoopCompletion } from '../drive-helpers.js';
 import { errorMessage, withReadOnlyContext, withServices } from '../services.js';
 import * as ui from '../ui.js';
 import {
@@ -41,50 +39,6 @@ function stepStatusIcon(status: string): string {
     default:
       return '   ';
   }
-}
-
-/**
- * Subscribe to EventBus events for a specific loop and wait for terminal state.
- * Returns 0 on LoopCompleted, 1 on LoopCancelled or if eventBus is unavailable.
- * Mirrors waitForTaskCompletion in run.ts.
- */
-export function waitForLoopCompletion(container: Container, loopId: LoopId): Promise<number> {
-  const eventBusResult = container.get<EventBus>('eventBus');
-  if (!eventBusResult.ok) {
-    ui.error(`Failed to get event bus: ${eventBusResult.error.message}`);
-    return Promise.resolve(1);
-  }
-  const eventBus = eventBusResult.value;
-
-  return new Promise((resolve) => {
-    let resolved = false;
-    const subscriptionIds: string[] = [];
-
-    const cleanup = () => {
-      for (const id of subscriptionIds) {
-        eventBus.unsubscribe(id);
-      }
-    };
-
-    const resolveOnce = (code: number) => {
-      if (resolved) return;
-      resolved = true;
-      cleanup();
-      resolve(code);
-    };
-
-    const completedSub = eventBus.subscribe<LoopCompletedEvent>('LoopCompleted', async (event) => {
-      if (event.loopId !== loopId) return;
-      resolveOnce(0);
-    });
-    if (completedSub.ok) subscriptionIds.push(completedSub.value);
-
-    const cancelledSub = eventBus.subscribe<LoopCancelledEvent>('LoopCancelled', async (event) => {
-      if (event.loopId !== loopId) return;
-      resolveOnce(1);
-    });
-    if (cancelledSub.ok) subscriptionIds.push(cancelledSub.value);
-  });
 }
 
 // ============================================================================
@@ -392,29 +346,28 @@ async function handleOrchestrateForeground(parsed: OrchestrateCreateParsed): Pro
       process.exit(1);
     }
 
-    // SIGINT stays in parent — references service.cancelOrchestration (closure context)
-    const sigintHandler = () => {
-      process.stderr.write('\nCancelling orchestration...\n');
-      service.cancelOrchestration(orchestration.id, 'User interrupted (SIGINT)');
-    };
-    process.on('SIGINT', sigintHandler);
-
-    let exitCode: number;
-    try {
-      exitCode = await waitForLoopCompletion(container, orchestration.loopId);
-    } finally {
-      process.removeListener('SIGINT', sigintHandler);
-    }
-
-    const waitSpinner = ui.createSpinner();
-    if (exitCode === 0) {
-      waitSpinner.stop('Orchestration completed');
-    } else {
-      waitSpinner.error('Orchestration terminated');
-    }
-
-    await container.dispose();
-    process.exit(exitCode);
+    // ISSUE #205: share the one bounded execution shape with every other action command.
+    // driveToCompletion owns the SIGINT handler, terminal-event wait, container disposal,
+    // and exit — orchestrate only supplies the loop waiter, the cancel callback, and a
+    // wrapper that prints its completion/terminated status before the shared teardown.
+    const loopId = orchestration.loopId;
+    await driveToCompletion({
+      container,
+      wait: async () => {
+        const exitCode = await waitForLoopCompletion(container as Container, loopId);
+        const waitSpinner = ui.createSpinner();
+        if (exitCode === 0) {
+          waitSpinner.stop('Orchestration completed');
+        } else {
+          waitSpinner.error('Orchestration terminated');
+        }
+        return exitCode;
+      },
+      onSigint: () => {
+        service.cancelOrchestration(orchestration.id, 'User interrupted (SIGINT)');
+      },
+      sigintMessage: '\nCancelling orchestration...\n',
+    });
   } catch (error) {
     s.stop('Failed');
     ui.error(errorMessage(error));
