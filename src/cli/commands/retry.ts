@@ -69,9 +69,7 @@ export async function retryTask(taskId: string, isWorker: boolean): Promise<void
     await driveToCompletion({
       container,
       wait: () => waitForTaskCompletion(container as Container, newTask.id),
-      onSigint: () => {
-        taskManager.cancel(newTask.id, 'User interrupted (SIGINT)');
-      },
+      onSigint: () => taskManager.cancel(newTask.id, 'User interrupted (SIGINT)'),
       sigintMessage: '\nCancelling task...\n',
     });
   } catch (error) {

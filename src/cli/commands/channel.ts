@@ -450,9 +450,7 @@ async function handleChannelCreate(args: string[]): Promise<void> {
     await driveToCompletion({
       container,
       wait: () => waitForChannelCompletion(container as Container, channel.id),
-      onSigint: () => {
-        channelService.destroyChannel(channel.id, 'user-requested');
-      },
+      onSigint: () => channelService.destroyChannel(channel.id, 'user-requested'),
       sigintMessage: '\nDestroying channel...\n',
     });
   } catch (error) {

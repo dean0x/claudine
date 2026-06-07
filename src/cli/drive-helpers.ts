@@ -37,6 +37,7 @@ import type {
   TaskTimeoutEvent,
 } from '../core/events/events.js';
 import type { ChannelRepository, LoopRepository, PipelineRepository } from '../core/interfaces.js';
+import type { Result } from '../core/result.js';
 import {
   createDetachLogDir,
   createDetachLogFile,
@@ -391,37 +392,74 @@ export function waitForChannelCompletion(container: Container, channelId: string
  * that cancels the work, await the terminal event, then clean up. Returns `never` —
  * it always exits the process.
  *
- * @param onSigint cancel callback (e.g. `() => taskManager.cancel(id, reason)`)
+ * @param onSigint cancel callback — may return a `Promise<Result<void>>` or nothing; failures
+ *                 are logged centrally so callers never need to scatter `if (!r.ok)` boilerplate
  * @param wait     resolves with the exit code when the work reaches a terminal state
  */
 export async function driveToCompletion(opts: {
   readonly container: Container;
   readonly wait: () => Promise<number>;
-  readonly onSigint: () => void;
+  readonly onSigint: () => void | Promise<Result<void>>;
   readonly sigintMessage?: string;
 }): Promise<never> {
   let cancelledBySigint = false;
+
+  // DECISION (A1): one-shot guard so repeated Ctrl-C (common when "nothing seems to happen")
+  // does not multiply cancel callbacks or force-exit timers. Only the FIRST SIGINT triggers
+  // cancellation; subsequent SIGINTs are ignored while we wait for the terminal event (the
+  // force-exit timer below bounds the total wait).
+  let sigintFired = false;
   const sigintHandler = () => {
+    if (sigintFired) return;
+    sigintFired = true;
     process.stderr.write(opts.sigintMessage ?? '\nCancelling...\n');
     cancelledBySigint = true;
-    opts.onSigint();
+    // DECISION (ADR-008): surface cancel failures centrally rather than silently discarding the
+    // Result<void> returned by each cancel method. The contract is widened to allow callers to
+    // return a Promise<Result<void>> (or void for backward compat); failures are logged here so
+    // no caller needs to scatter `if (!r.ok)` boilerplate, and success is fully silent.
+    void Promise.resolve(opts.onSigint())
+      .then((r) => {
+        if (r && r.ok === false) {
+          process.stderr.write(`Cancellation failed: ${r.error.message}\n`);
+        }
+      })
+      .catch((err) => {
+        process.stderr.write(`Cancellation error: ${err instanceof Error ? err.message : String(err)}\n`);
+      });
     // SAFETY NET (issue #205): onSigint is fire-and-forget — it requests cancellation but
     // unblocking depends on the cancel path emitting the work's terminal event. If that path
     // errors BEFORE emitting (e.g. destroyChannel/cancelLoop returns err on a DB write), the
     // wait() Promise would never resolve and the worker would hang after Ctrl-C instead of
     // exiting. Force a bounded exit so SIGINT always terminates the process promptly.
-    const forceExit = setTimeout(() => {
+    //
+    // DECISION (A1+): do NOT unref() the timer — its purpose is to keep the process alive
+    // long enough to force exit 130. unref() would let Node exit 0 if all other handles
+    // drop before the 8s window (e.g. worker-pool timers torn down by cancel path before
+    // the terminal event fires). A referenced timer is correct because exactly one such
+    // timer is created (sigintFired guard above) so the lifetime is well-defined.
+    setTimeout(() => {
       process.stderr.write('Cancellation did not complete in time — force exiting.\n');
       process.exit(130);
     }, SIGINT_FORCE_EXIT_MS);
-    forceExit.unref();
   };
   process.on('SIGINT', sigintHandler);
 
   const exitCode = await opts.wait();
 
+  // DECISION (A2): keep a SIGINT handler installed THROUGH dispose so a stray Ctrl-C during
+  // async cleanup (killAll workers, DB close) cannot revert to Node's default hard-kill and
+  // leave orphaned tmux sessions or a partially-flushed DB. The dispose-phase handler is a
+  // no-op (we are already shutting down); it merely prevents the default termination signal
+  // from interrupting in-progress cleanup. The handler is removed only after dispose completes.
   process.removeListener('SIGINT', sigintHandler);
+  const disposingHandler = () => {
+    /* shutting down — ignore SIGINT during dispose */
+  };
+  process.on('SIGINT', disposingHandler);
   await opts.container.dispose();
+  process.removeListener('SIGINT', disposingHandler);
+
   // SIGINT cancellation conventionally exits 130.
   process.exit(cancelledBySigint ? 130 : exitCode);
 }
@@ -459,7 +497,17 @@ export async function runDetached(spec: DetachSpec): Promise<void> {
   const logDir = createDetachLogDir();
   const { logFile, logFd } = createDetachLogFile(logDir, spec.logPrefix);
 
-  const childArgs = [process.argv[1], spec.command, ...spec.args, WORKER_FLAG];
+  // DECISION (A3): validate process.argv[1] before constructing the detached argv. With
+  // noUncheckedIndexedAccess off the compiler types this as string, but at runtime it is
+  // undefined in some launch contexts (embedded, REPL, programmatic invocation). Failing here
+  // with a clear message is safer than silently spawning a worker with [undefined, command, …]
+  // which would fail opaquely in the background log. Applies parse-at-boundaries rule.
+  const selfPath = process.argv[1];
+  if (selfPath === undefined) {
+    ui.error('Cannot determine CLI entrypoint (process.argv[1] is undefined) — cannot detach worker');
+    process.exit(1);
+  }
+  const childArgs = [selfPath, spec.command, ...spec.args, WORKER_FLAG];
   const pid = spawnDetachedProcess(childArgs, logFd);
 
   ui.info(`Background process started (PID: ${pid})`);

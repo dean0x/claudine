@@ -363,9 +363,7 @@ async function handleOrchestrateForeground(parsed: OrchestrateCreateParsed): Pro
         }
         return exitCode;
       },
-      onSigint: () => {
-        service.cancelOrchestration(orchestration.id, 'User interrupted (SIGINT)');
-      },
+      onSigint: () => service.cancelOrchestration(orchestration.id, 'User interrupted (SIGINT)'),
       sigintMessage: '\nCancelling orchestration...\n',
     });
   } catch (error) {

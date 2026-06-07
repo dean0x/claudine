@@ -16,8 +16,23 @@ import * as ui from '../ui.js';
  * into {@link runTask}. The foreground polls the worker's log for the task id and exits.
  */
 export async function handleRunDetach(runArgs: readonly string[]): Promise<void> {
+  // DECISION (issue #205 deprecation): `--foreground` / `-f` was removed when the CLI
+  // became self-contained — every `beat run` now always detaches to a background worker
+  // and drives the task to completion there; there is no meaningful foreground mode with
+  // tmux-based workers. Stripping the flag here (rather than exiting non-zero) keeps old
+  // scripts and README examples working. A one-line notice on stderr informs the user of
+  // the change without breaking automation. Applies ADR-009 (CLI-first, self-contained);
+  // avoids PF-009 (keep CLI output clean and actionable).
+  const cleanArgs = runArgs.filter((arg) => arg !== '--foreground' && arg !== '-f');
+  if (cleanArgs.length !== runArgs.length) {
+    process.stderr.write(
+      '[beat] Note: --foreground / -f has been removed. beat run now always runs in the background.\n' +
+        '       Use "beat dashboard" or "beat logs <task-id>" to follow live output.\n',
+    );
+  }
+
   // Validate that at least one non-flag word exists (the prompt)
-  const hasPrompt = runArgs.some((arg) => !arg.startsWith('-'));
+  const hasPrompt = cleanArgs.some((arg) => !arg.startsWith('-'));
   if (!hasPrompt) {
     ui.error('Usage: beat run "<prompt>" [options]');
     process.stderr.write('  A prompt is required to delegate a task\n');
@@ -26,7 +41,7 @@ export async function handleRunDetach(runArgs: readonly string[]): Promise<void>
 
   await runDetached({
     command: 'run',
-    args: runArgs,
+    args: cleanArgs,
     logPrefix: 'run',
     // CRITICAL: matches the load-bearing "Task ID:" line printed by runTask.
     idPattern: /Task ID:\s+(task-\S+)/,
@@ -148,9 +163,7 @@ export async function runTask(
     await driveToCompletion({
       container,
       wait: () => waitForTaskCompletion(container as Container, task.id),
-      onSigint: () => {
-        taskManager.cancel(task.id, 'User interrupted (SIGINT)');
-      },
+      onSigint: () => taskManager.cancel(task.id, 'User interrupted (SIGINT)'),
       sigintMessage: '\nCancelling task...\n',
     });
   } catch (error) {

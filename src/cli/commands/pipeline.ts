@@ -3,6 +3,7 @@ import { AGENT_PROVIDERS, type AgentProvider, isAgentProvider } from '../../core
 import type { Container } from '../../core/container.js';
 import { createPipeline, type PipelineStepDefinition, TaskId, type TaskRequest } from '../../core/domain.js';
 import type { PipelineRepository, TaskManager } from '../../core/interfaces.js';
+import { ok, type Result } from '../../core/result.js';
 import {
   driveToCompletion,
   isWorkerInvocation,
@@ -82,7 +83,7 @@ export async function handlePipelineCommand(pipelineArgs: string[]): Promise<voi
       logPrefix: 'pipeline',
       idPattern: /Pipeline ID:\s+(pipeline-\S+)/,
       foundMessage: (id) => `Pipeline started: ${id}`,
-      infoLines: ['Check status: beat status', 'Pipelines:    beat dashboard'],
+      infoLines: ['Pipeline ID:   {id}', 'Check status: beat dashboard'],
       entityLabel: 'Pipeline',
     });
     return;
@@ -184,11 +185,11 @@ async function runPipelineWorker(steps: readonly string[], agent?: AgentProvider
     await driveToCompletion({
       container,
       wait: () => waitForPipelineCompletion(container as Container, pipeline.id),
-      onSigint: () => {
-        for (const id of taskIds) {
-          taskManager.cancel(id, 'User interrupted (SIGINT)');
-        }
-      },
+      onSigint: (): Promise<Result<void>> =>
+        Promise.all(taskIds.map((id) => taskManager.cancel(id, 'User interrupted (SIGINT)'))).then((results) => {
+          const failed = results.find((r) => !r.ok);
+          return failed ?? ok(undefined);
+        }),
       sigintMessage: '\nCancelling pipeline...\n',
     });
   } catch (error) {

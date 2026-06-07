@@ -90,7 +90,7 @@ ${bold('Orchestrate Commands:')}
   ${cyan('orchestrate cancel')} <id> [reason]   Cancel orchestration
 
 ${bold('Pipeline Commands:')}
-  ${cyan('pipeline')} <prompt> [<prompt>]...   Create chained one-time schedules
+  ${cyan('pipeline')} <prompt> [<prompt>]...   Run steps sequentially as dependency-chained tasks (executes immediately, no schedule)
     Example: pipeline "set up db" "run migrations" "seed data"
 
 ${bold('Loop Commands:')}

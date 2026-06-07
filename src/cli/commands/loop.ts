@@ -508,9 +508,7 @@ async function handleLoopCreate(loopArgs: string[]): Promise<void> {
     await driveToCompletion({
       container,
       wait: () => waitForLoopCompletion(container as Container, loop.id),
-      onSigint: () => {
-        loopService.cancelLoop(loop.id, 'User interrupted (SIGINT)', true);
-      },
+      onSigint: () => loopService.cancelLoop(loop.id, 'User interrupted (SIGINT)', true),
       sigintMessage: '\nCancelling loop...\n',
     });
   } catch (error) {
