@@ -13,11 +13,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   checkActiveSchedules,
+  hasInFlightWork,
   registerSignalHandlers,
   startIdleCheckLoop,
 } from '../../../src/cli/commands/schedule-executor.js';
-import { ScheduleStatus } from '../../../src/core/domain.js';
-import type { ScheduleRepository } from '../../../src/core/interfaces.js';
+import { LoopStatus, PipelineStatus, ScheduleStatus } from '../../../src/core/domain.js';
+import type { LoopRepository, PipelineRepository, ScheduleRepository } from '../../../src/core/interfaces.js';
 import { err, ok } from '../../../src/core/result.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -35,6 +36,67 @@ function makeScheduleRepo(
     findByStatus: vi.fn(findByStatusImpl),
   } as unknown as ScheduleRepository;
 }
+
+function makeLoopRepo(
+  findByStatusImpl: (status: LoopStatus) => ReturnType<LoopRepository['findByStatus']>,
+): LoopRepository {
+  return { findByStatus: vi.fn(findByStatusImpl) } as unknown as LoopRepository;
+}
+
+function makePipelineRepo(
+  findByStatusImpl: (status: PipelineStatus) => ReturnType<PipelineRepository['findByStatus']>,
+): PipelineRepository {
+  return { findByStatus: vi.fn(findByStatusImpl) } as unknown as PipelineRepository;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// hasInFlightWork (issue #205 — don't abandon scheduled loops/pipelines on idle exit)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('hasInFlightWork', () => {
+  it('returns true when a RUNNING loop exists', async () => {
+    const loopRepo = makeLoopRepo(async () => ok([{ id: 'loop-1', status: LoopStatus.RUNNING }] as never));
+    const pipelineRepo = makePipelineRepo(async () => ok([]));
+    expect(await hasInFlightWork(loopRepo, pipelineRepo)).toBe(true);
+  });
+
+  it('returns true when a PENDING pipeline exists', async () => {
+    const loopRepo = makeLoopRepo(async () => ok([]));
+    const pipelineRepo = makePipelineRepo(async (status) =>
+      ok(status === PipelineStatus.PENDING ? ([{ id: 'p-1', status }] as never) : []),
+    );
+    expect(await hasInFlightWork(loopRepo, pipelineRepo)).toBe(true);
+  });
+
+  it('returns true when a RUNNING pipeline exists', async () => {
+    const loopRepo = makeLoopRepo(async () => ok([]));
+    const pipelineRepo = makePipelineRepo(async (status) =>
+      ok(status === PipelineStatus.RUNNING ? ([{ id: 'p-1', status }] as never) : []),
+    );
+    expect(await hasInFlightWork(loopRepo, pipelineRepo)).toBe(true);
+  });
+
+  it('returns false when no loops or pipelines are in flight', async () => {
+    const loopRepo = makeLoopRepo(async () => ok([]));
+    const pipelineRepo = makePipelineRepo(async () => ok([]));
+    expect(await hasInFlightWork(loopRepo, pipelineRepo)).toBe(false);
+  });
+
+  it('returns true (conservative) when a repository read fails', async () => {
+    const loopRepo = makeLoopRepo(async () => err(new Error('db down')));
+    const pipelineRepo = makePipelineRepo(async () => ok([]));
+    expect(await hasInFlightWork(loopRepo, pipelineRepo)).toBe(true);
+  });
+
+  it('checks RUNNING loops, never PAUSED (a paused loop is not progressing in-process)', async () => {
+    const findByStatus = vi.fn(async () => ok([]));
+    const loopRepo = { findByStatus } as unknown as LoopRepository;
+    const pipelineRepo = makePipelineRepo(async () => ok([]));
+    await hasInFlightWork(loopRepo, pipelineRepo);
+    expect(findByStatus).toHaveBeenCalledWith(LoopStatus.RUNNING);
+    expect(findByStatus).not.toHaveBeenCalledWith(LoopStatus.PAUSED);
+  });
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // checkActiveSchedules
@@ -329,5 +391,57 @@ describe('startIdleCheckLoop', () => {
     clearInterval(timer);
     await vi.advanceTimersByTimeAsync(2000);
     expect(onIdle).toHaveBeenCalledTimes(1); // still 1, not 2 or 3
+  });
+
+  // ISSUE #205: a one-time schedule flips to COMPLETED the instant it fires, so "no active
+  // schedules" alone must NOT tear the executor down while it is still driving the loop/pipeline
+  // that schedule launched in-process.
+  it('does NOT call onIdle when in-flight work exists despite no active schedules', async () => {
+    const repo = makeScheduleRepo(async () => ok([]));
+    const onIdle = vi.fn();
+    const warn = vi.fn();
+
+    const timer = startIdleCheckLoop(repo, 1000, onIdle, warn, async () => true);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onIdle).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+    clearInterval(timer);
+  });
+
+  it('calls onIdle when there are no active schedules AND no in-flight work', async () => {
+    const repo = makeScheduleRepo(async () => ok([]));
+    const onIdle = vi.fn();
+
+    const timer = startIdleCheckLoop(
+      repo,
+      1000,
+      onIdle,
+      () => {},
+      async () => false,
+    );
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onIdle).toHaveBeenCalledTimes(1);
+    clearInterval(timer);
+  });
+
+  it('stays alive (no onIdle) when the in-flight-work check throws — conservative', async () => {
+    const repo = makeScheduleRepo(async () => ok([]));
+    const onIdle = vi.fn();
+
+    const timer = startIdleCheckLoop(
+      repo,
+      1000,
+      onIdle,
+      () => {},
+      async () => {
+        throw new Error('check failed');
+      },
+    );
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onIdle).not.toHaveBeenCalled();
+    clearInterval(timer);
   });
 });

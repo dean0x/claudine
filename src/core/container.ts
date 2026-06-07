@@ -237,12 +237,24 @@ export class Container {
 
     // Belt-and-suspenders session sweep — destroy any remaining beat-* sessions
     // that killAll() may have missed (e.g. sessions that were spawning during shutdown).
-    const tmuxSessionManagerResult = this.get<TmuxSessionManagerCorePort>('tmuxSessionManager');
-    if (tmuxSessionManagerResult.ok) {
-      // INTENTIONAL: result discarded — no logger available at this call site and
-      // DB close must not be blocked by a stale session entry. Individual destroy
-      // failures are logged inside sweepTmuxSessions when a logger is provided.
-      sweepTmuxSessions(tmuxSessionManagerResult.value);
+    //
+    // ISSUE #205: SERVER-ONLY. tmux is a shared server, so sweepTmuxSessions destroys EVERY
+    // beat-* session process-wide, not just this container's. That is correct for the
+    // long-lived daemon (it owns them all) but catastrophic for the many independent,
+    // self-contained CLI/run workers #205 introduces: a completing `beat loop`/`retry`/
+    // `pipeline`/`cancel` worker would otherwise sweep sibling workers' live task sessions.
+    // Ephemeral workers already tear down their own sessions via workerPool.killAll() above.
+    // The server additionally sweeps explicitly in index.ts shutdown, so gating here loses
+    // no cleanup. When mode is unregistered (hand-built containers in tests) we do NOT sweep.
+    const modeResult = this.get<string>('mode');
+    if (modeResult.ok && modeResult.value === 'server') {
+      const tmuxSessionManagerResult = this.get<TmuxSessionManagerCorePort>('tmuxSessionManager');
+      if (tmuxSessionManagerResult.ok) {
+        // INTENTIONAL: result discarded — no logger available at this call site and
+        // DB close must not be blocked by a stale session entry. Individual destroy
+        // failures are logged inside sweepTmuxSessions when a logger is provided.
+        sweepTmuxSessions(tmuxSessionManagerResult.value);
+      }
     }
 
     // Close database if exists

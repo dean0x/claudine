@@ -1720,11 +1720,16 @@ describe('CLI - Help Text Coverage', () => {
     expect(helpText).toContain('--cron');
   });
 
-  it('should include --foreground flag in help text', () => {
+  it('should NOT include --foreground or -f flag for run in help text (removed in #205)', () => {
+    // REGRESSION SENTINEL (avoids PF-007): --foreground was removed when every `beat run`
+    // became self-contained and always detaches. Asserting its absence catches any
+    // accidental re-addition to the help copy.
     const helpText = getHelpText();
-
-    expect(helpText).toContain('--foreground');
-    expect(helpText).toContain('-f');
+    // The run section must not document --foreground or -f.
+    // (orchestrate still has its own --foreground but is in a separate section not tested here)
+    const runSection = helpText.split('Schedule Commands:')[0] ?? helpText;
+    expect(runSection).not.toContain('--foreground');
+    expect(runSection).not.toContain('-f, --foreground');
   });
 
   it('should include list/ls and retry commands', () => {
@@ -1987,57 +1992,92 @@ describe('CLI - Task Completion Lifecycle', () => {
     });
   });
 
-  describe('--foreground flag', () => {
-    it('should be recognized as a valid run option', () => {
-      const options = parseRunArgs(['--foreground', 'analyze codebase']);
-      expect(options.foreground).toBe(true);
-      expect(options.prompt).toBe('analyze codebase');
+  // UPDATED (#205): --foreground was REMOVED from `beat run`. The suites below replace
+  // the stale assertions and verify the new deprecation/strip behavior implemented in
+  // handleRunDetach (src/cli/commands/run.ts).
+
+  describe('run --foreground/-f deprecation strip (avoids PF-007, applies ADR-009)', () => {
+    it('handleRunDetach strips --foreground and writes a deprecation notice to stderr', async () => {
+      // Import the real handleRunDetach so this test exercises actual production behavior,
+      // not a local mirror that can diverge (the root cause of the stale-test problem).
+      const { handleRunDetach } = await import('../../src/cli/commands/run');
+
+      const detachHelpers = await import('../../src/cli/detach-helpers');
+      const logDirSpy = vi.spyOn(detachHelpers, 'createDetachLogDir').mockReturnValue('/tmp/fake');
+      const logFileSpy = vi.spyOn(detachHelpers, 'createDetachLogFile').mockReturnValue({
+        logFile: '/tmp/fake/run.log',
+        logFd: 99,
+      });
+      const spawnSpy = vi.spyOn(detachHelpers, 'spawnDetachedProcess').mockReturnValue(42);
+      vi.spyOn(detachHelpers, 'pollLogFileForId').mockResolvedValue({ type: 'found', id: 'task-xyz' });
+
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation((_code?: number) => {
+        throw new Error(`process.exit(${_code})`);
+      });
+
+      try {
+        await expect(handleRunDetach(['--foreground', 'analyze codebase'])).rejects.toThrow('process.exit(0)');
+
+        // A deprecation notice must have been written to stderr.
+        const stderrCalls = stderrSpy.mock.calls.map((c) => String(c[0]));
+        expect(stderrCalls.some((line) => line.includes('--foreground') && line.includes('removed'))).toBe(true);
+
+        // WORKER_FLAG must appear in the spawned args (avoids PF-007 silent no-op).
+        const spawnCallArgs = spawnSpy.mock.calls[0]?.[0] as string[] | undefined;
+        expect(spawnCallArgs).toBeDefined();
+        expect(spawnCallArgs).toContain('--__worker');
+        // --foreground must NOT have been forwarded to the worker.
+        expect(spawnCallArgs).not.toContain('--foreground');
+        expect(spawnCallArgs).not.toContain('-f');
+      } finally {
+        logDirSpy.mockRestore();
+        logFileSpy.mockRestore();
+        spawnSpy.mockRestore();
+        vi.restoreAllMocks();
+        stderrSpy.mockRestore();
+        exitSpy.mockRestore();
+      }
     });
 
-    it('should support short form -f', () => {
-      const options = parseRunArgs(['-f', 'analyze codebase']);
-      expect(options.foreground).toBe(true);
+    it('handleRunDetach strips short-form -f and still writes a deprecation notice', async () => {
+      const { handleRunDetach } = await import('../../src/cli/commands/run');
+
+      const detachHelpers = await import('../../src/cli/detach-helpers');
+      vi.spyOn(detachHelpers, 'createDetachLogDir').mockReturnValue('/tmp/fake');
+      vi.spyOn(detachHelpers, 'createDetachLogFile').mockReturnValue({ logFile: '/tmp/fake/run.log', logFd: 99 });
+      const spawnSpy = vi.spyOn(detachHelpers, 'spawnDetachedProcess').mockReturnValue(42);
+      vi.spyOn(detachHelpers, 'pollLogFileForId').mockResolvedValue({ type: 'found', id: 'task-abc' });
+
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation((_code?: number) => {
+        throw new Error(`process.exit(${_code})`);
+      });
+
+      try {
+        await expect(handleRunDetach(['-f', 'run tests'])).rejects.toThrow('process.exit(0)');
+
+        const stderrCalls = stderrSpy.mock.calls.map((c) => String(c[0]));
+        expect(stderrCalls.some((line) => line.includes('removed') || line.includes('background'))).toBe(true);
+
+        const spawnArgs = spawnSpy.mock.calls[0]?.[0] as string[] | undefined;
+        expect(spawnArgs).not.toContain('-f');
+        expect(spawnArgs).toContain('--__worker');
+      } finally {
+        vi.restoreAllMocks();
+      }
     });
 
-    it('should default foreground to undefined when not specified', () => {
-      const options = parseRunArgs(['analyze codebase']);
-      expect(options.foreground).toBeUndefined();
+    it('parseRunArgs no longer recognises --foreground (removed option, not stored)', () => {
+      const opts = parseRunArgs(['--foreground', 'analyze codebase']);
+      expect(opts.prompt).toBe('analyze codebase');
+      expect((opts as Record<string, unknown>).foreground).toBeUndefined();
     });
 
-    it('should combine with other flags', () => {
-      const options = parseRunArgs(['--foreground', '--priority', 'P0', 'run tests']);
-      expect(options.foreground).toBe(true);
-      expect(options.priority).toBe('P0');
-      expect(options.prompt).toBe('run tests');
-    });
-  });
-
-  describe('Foreground mode - arg filtering', () => {
-    it('should filter --foreground from args', () => {
-      const args = ['--foreground', 'analyze', '--priority', 'P0'];
-      const filtered = args.filter((arg) => arg !== '--foreground' && arg !== '-f');
-      expect(filtered).toEqual(['analyze', '--priority', 'P0']);
-      expect(filtered).not.toContain('--foreground');
-    });
-
-    it('should filter -f from args', () => {
-      const args = ['-f', 'analyze', '--priority', 'P0'];
-      const filtered = args.filter((arg) => arg !== '--foreground' && arg !== '-f');
-      expect(filtered).toEqual(['analyze', '--priority', 'P0']);
-      expect(filtered).not.toContain('-f');
-    });
-
-    it('should preserve other flags when filtering', () => {
-      const args = ['--foreground', 'run tests', '-p', 'P0', '-w', '/workspace'];
-      const filtered = args.filter((arg) => arg !== '--foreground' && arg !== '-f');
-      expect(filtered).toEqual(['run tests', '-p', 'P0', '-w', '/workspace']);
-      expect(filtered).toHaveLength(5);
-    });
-
-    it('should filter multiple --foreground and -f occurrences', () => {
-      const args = ['--foreground', '-f', 'analyze', '--foreground'];
-      const filtered = args.filter((arg) => arg !== '--foreground' && arg !== '-f');
-      expect(filtered).toEqual(['analyze']);
+    it('parseRunArgs no longer recognises -f as a valid run option', () => {
+      const opts = parseRunArgs(['-f', 'analyze codebase']);
+      expect(opts.prompt).toBe('analyze codebase');
+      expect((opts as Record<string, unknown>).foreground).toBeUndefined();
     });
   });
 
@@ -2081,26 +2121,36 @@ describe('CLI - Task Completion Lifecycle', () => {
     });
   });
 
-  describe('Detach mode - child args construction', () => {
-    it('should construct child args with --foreground for background process', () => {
-      const runArgs = ['analyze', '--priority', 'P0'];
-      const childArgs = ['path/to/cli.js', 'run', '--foreground', ...runArgs];
+  describe('Detach mode - child args construction (avoids PF-007)', () => {
+    // UPDATED (#205): worker args now use WORKER_FLAG (--__worker), NOT --foreground.
+    // --foreground in child args was the old pattern; it is now replaced by --__worker
+    // which is the internal flag driving the worker-vs-detach routing.
 
-      expect(childArgs).toEqual(['path/to/cli.js', 'run', '--foreground', 'analyze', '--priority', 'P0']);
-      expect(childArgs).toContain('--foreground');
+    it('should construct child args with WORKER_FLAG for background process (not --foreground)', () => {
+      const WORKER_FLAG = '--__worker';
+      const runArgs = ['analyze', '--priority', 'P0'];
+      // Mirrors drive-helpers.ts:runDetached — [argv[1], command, ...args, WORKER_FLAG]
+      const childArgs = ['/path/to/dist/cli.js', 'run', ...runArgs, WORKER_FLAG];
+
+      expect(childArgs[childArgs.length - 1]).toBe(WORKER_FLAG);
+      expect(childArgs).toContain(WORKER_FLAG);
+      // CRITICAL: --foreground must NOT appear (avoids PF-007 recursive detach loop).
+      expect(childArgs).not.toContain('--foreground');
+      expect(childArgs).not.toContain('-f');
     });
 
     it('should preserve all flags in child args', () => {
+      const WORKER_FLAG = '--__worker';
       const runArgs = ['run tests', '-p', 'P0', '-w', '/workspace', '-t', '60000'];
-      const childArgs = ['run', '--foreground', ...runArgs];
+      const childArgs = ['/path/to/dist/cli.js', 'run', ...runArgs, WORKER_FLAG];
 
-      expect(childArgs).toContain('--foreground');
       expect(childArgs).toContain('-p');
       expect(childArgs).toContain('P0');
       expect(childArgs).toContain('-w');
       expect(childArgs).toContain('/workspace');
       expect(childArgs).toContain('-t');
       expect(childArgs).toContain('60000');
+      expect(childArgs[childArgs.length - 1]).toBe(WORKER_FLAG);
     });
 
     it('should detect missing prompt in args', () => {
@@ -2219,7 +2269,10 @@ describe('CLI - Task Completion Lifecycle', () => {
 // ============================================================================
 
 function getHelpText(): string {
-  // Simulate help text extraction - must match actual showHelp() output
+  // Simulate help text extraction - must match actual showHelp() output.
+  // UPDATED for #205: `beat run` no longer has a --foreground flag — every run detaches
+  // to a background worker automatically. The flag was removed to avoid the PF-007 silent
+  // no-op; see DECISION note in src/cli/commands/run.ts:handleRunDetach.
   return `
 🤖 Autobeat - MCP Server for Task Delegation
 
@@ -2230,8 +2283,7 @@ MCP Server Commands:
   mcp start              Start the MCP server
 
 Task Commands:
-  run <prompt> [options]       Delegate a task (fire-and-forget by default)
-    -f, --foreground           Stream output and wait for task completion
+  run <prompt> [options]       Delegate a task to a background worker
     -p, --priority P0|P1|P2    Task priority
     --deps TASK_IDS            Comma-separated task IDs (alias: --depends-on)
     -c, --continue TASK_ID     Continue from checkpoint (alias: --continue-from)
@@ -2264,7 +2316,7 @@ Configuration:
   config path                Print config file location
 
 Examples:
-  beat run "analyze codebase" --foreground
+  beat run "analyze the codebase"
   beat status abc123
   beat list
   beat schedule create "run tests" --cron "0 9 * * 1-5"
@@ -2315,7 +2367,9 @@ interface RunOptions {
   maxOutputBuffer?: number;
   dependsOn?: string[];
   continueFrom?: string;
-  foreground?: boolean;
+  // NOTE: `foreground` was removed in #205. `beat run` always detaches to a background
+  // worker. Passing -f / --foreground now triggers a deprecation notice and strip in
+  // handleRunDetach (src/cli/commands/run.ts) — it no longer modifies run behavior.
 }
 
 function validateRunInput(prompt: string, options: RunOptions) {
@@ -3592,6 +3646,10 @@ describe('CLI - Schedule --loop flag', () => {
 /**
  * Parse run command args — mirrors the option parsing loop in cli.ts
  * for testing flag recognition without running the full CLI.
+ *
+ * UPDATED (#205): --foreground / -f are no longer valid run options. The real CLI
+ * strips them with a deprecation notice in handleRunDetach (run.ts). This parser
+ * correctly omits them so tests assert against the current contract, not old behavior.
  */
 function parseRunArgs(args: string[]): RunOptions & { prompt: string } {
   const options: RunOptions & { prompt: string } = { prompt: '' };
@@ -3601,9 +3659,7 @@ function parseRunArgs(args: string[]): RunOptions & { prompt: string } {
     const arg = args[i];
     const next = args[i + 1];
 
-    if (arg === '--foreground' || arg === '-f') {
-      (options as RunOptions & { foreground?: boolean }).foreground = true;
-    } else if ((arg === '--priority' || arg === '-p') && next) {
+    if ((arg === '--priority' || arg === '-p') && next) {
       options.priority = next;
       i++;
     } else if ((arg === '--working-directory' || arg === '-w') && next) {
@@ -3624,6 +3680,8 @@ function parseRunArgs(args: string[]): RunOptions & { prompt: string } {
     } else if (!arg.startsWith('-')) {
       promptWords.push(arg);
     }
+    // --foreground / -f: deliberately not parsed — removed in #205.
+    // The real handleRunDetach strips them with a deprecation notice.
   }
 
   options.prompt = promptWords.join(' ');

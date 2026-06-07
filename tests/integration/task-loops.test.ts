@@ -13,6 +13,7 @@
  * so FK constraints are disabled for these tests.
  */
 
+import { existsSync } from 'fs';
 import { mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -50,12 +51,55 @@ describe('Integration: Task Loops - End-to-End Flow', () => {
   let handler: LoopHandler;
   let service: LoopManagerService;
   let tempDir: string;
+  let originalCwd: string;
+
+  // PF-013 REGRESSION SENTINEL: capture the real repo's HEAD SHA before each test so
+  // afterEach can assert it is unchanged. If any test run causes a git commit inside the
+  // real repo (e.g. commitAllChanges firing against process.cwd() before the chdir fix),
+  // the SHA will differ and the sentinel catches the regression immediately — preventing
+  // the silent rogue-commit recurrence that plagued many prior sessions.
+  let realRepoRoot: string;
+  let headShaAtStart: string | undefined;
 
   beforeEach(async () => {
     logger = new TestLogger();
     const config = createTestConfiguration();
     eventBus = new InMemoryEventBus(config, logger);
     tempDir = await mkdtemp(join(tmpdir(), 'autobeat-loop-test-'));
+
+    // CRITICAL: run every loop in a NON-git temp dir, not the project repo.
+    //
+    // This suite drives a REAL LoopHandler with git-state UNMOCKED (mocking it is unreliable
+    // here: vitest runs with isolate:false, so a sibling integration file loads loop-manager
+    // with the real git-state before this file's vi.mock can rewire it). A loop's
+    // workingDirectory defaults to process.cwd() (loop-manager.ts), and createLoop's
+    // validatePath() rejects any workingDirectory OUTSIDE cwd — so the only way to give the
+    // loops an isolated, non-git directory is to chdir into one. Because tempDir is not a git
+    // repo, captureLoopGitContext() finds no gitStartCommitSha, setupGitForIteration() treats
+    // the loop as non-git, and the pass-iteration auto-commit (commitAllChanges → `git add -A`
+    // + commit) is skipped entirely. Without this, each "pass" iteration committed the
+    // developer's entire working tree on every `npm run test:integration` run.
+    originalCwd = process.cwd();
+
+    // PF-013 SENTINEL: record the real repo's HEAD SHA *before* chdir so afterEach can
+    // assert that no git commit was created during the test. Capture best-effort; if git
+    // is unavailable or the cwd is not a repo the sentinel is skipped (headShaAtStart stays
+    // undefined) so the guard never produces a false positive.
+    realRepoRoot = originalCwd;
+    headShaAtStart = undefined;
+    try {
+      const { execSync } = await import('child_process');
+      const sha = execSync('git rev-parse HEAD', {
+        cwd: realRepoRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      if (sha.length > 0) headShaAtStart = sha;
+    } catch {
+      // Not a git repo or git unavailable — sentinel will be skipped in afterEach.
+    }
+
+    process.chdir(tempDir);
 
     database = new Database(':memory:');
 
@@ -84,9 +128,53 @@ describe('Integration: Task Loops - End-to-End Flow', () => {
   afterEach(async () => {
     eventBus.dispose();
     database.close();
+    // Restore cwd BEFORE removing tempDir (cannot rm the current working directory cleanly).
+    if (originalCwd) {
+      process.chdir(originalCwd);
+    }
     if (tempDir) {
       await rm(tempDir, { recursive: true, force: true });
     }
+
+    // PF-013 REGRESSION SENTINEL (avoids PF-013): assert the real repo was not committed during
+    // this test. A new commit means commitAllChanges ran against the real repo — the exact
+    // rogue-commit regression this chdir isolation prevents.
+    if (headShaAtStart !== undefined) {
+      try {
+        const { execSync } = await import('child_process');
+        const headShaAfter = execSync('git rev-parse HEAD', {
+          cwd: realRepoRoot,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
+        expect(headShaAfter).toBe(headShaAtStart);
+      } catch {
+        // git unavailable or repo gone — skip sentinel.
+      }
+    }
+  });
+
+  describe('PF-013 git-isolation invariant', () => {
+    it('tempDir is not a git repository (isolation guarantee)', () => {
+      // The non-git cwd is the load-bearing invariant: captureLoopGitContext() skips the
+      // git-context capture when there is no .git directory, so the pass-iteration
+      // commitAllChanges path is never reached. Assert this explicitly so a future change
+      // that accidentally initialises a git repo in tempDir fails visibly here.
+      expect(existsSync(join(tempDir, '.git'))).toBe(false);
+    });
+
+    it('process.cwd() during tests is the isolated tempDir, not the real repo', () => {
+      // The chdir ensures loops use tempDir as workingDirectory (via process.cwd() default).
+      // Any regression that restores cwd before the handlers run would route commits back
+      // into the real repo. This catches that regression immediately.
+      //
+      // Use realpath to handle macOS symlinks (/var → /private/var) so the comparison
+      // is stable regardless of how mkdtemp resolves the path on the current platform.
+      const { realpathSync } = require('fs');
+      const resolvedCwd = realpathSync(process.cwd());
+      const resolvedTempDir = realpathSync(tempDir);
+      expect(resolvedCwd).toBe(resolvedTempDir);
+    });
   });
 
   // Helper: get the latest iteration

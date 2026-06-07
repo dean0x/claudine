@@ -191,6 +191,13 @@ export interface TaskRequest {
   readonly priority?: Priority;
   readonly workingDirectory?: string;
 
+  // Pre-assigned task id (optional). When omitted, createTask generates a fresh id.
+  // ISSUE #205: lets a caller persist a record that references this task BEFORE delegating
+  // it — used by `beat pipeline` to save the Pipeline entity (with its stepTaskIds) ahead of
+  // delegation, so PipelineHandler can correlate a task terminal event even if the first step
+  // fails synchronously during delegate(). Callers MUST pass globally-unique ids.
+  readonly id?: TaskId;
+
   // Execution control
   readonly timeout?: number;
   readonly maxOutputBuffer?: number;
@@ -259,7 +266,8 @@ export const updateTask = (task: Task, update: TaskUpdate): Task => ({
 export const createTask = (request: TaskRequest): Task => {
   const now = Date.now(); // Capture once to ensure createdAt === updatedAt
   return Object.freeze({
-    id: TaskId(`task-${crypto.randomUUID()}`),
+    // Honor a caller-supplied id (issue #205, e.g. pipeline pre-assignment); else generate.
+    id: request.id ?? TaskId(`task-${crypto.randomUUID()}`),
     prompt: request.prompt,
     status: TaskStatus.QUEUED,
     priority: request.priority || Priority.P2,

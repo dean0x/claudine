@@ -121,9 +121,16 @@ export function pollLogFileForId(logFile: string, options: DetachPollOptions): P
 
         // Check ID pattern FIRST — task output after delegation may contain ❌
         const match = content.match(options.idPattern);
-        if (match) {
+        // DECISION (A4): validate the capture group before trusting it. With
+        // noUncheckedIndexedAccess off, match[1] is typed string but is undefined at
+        // runtime if idPattern has no capture groups (or an optional group 1). Resolving
+        // type:'found' with id=undefined would print "Loop started: undefined" and silently
+        // succeed — a parse-at-boundaries violation. Treat a missing capture as not-yet-found
+        // and continue polling so a misconfigured spec surfaces as a timeout rather than a
+        // fake success. (Each DetachSpec.idPattern is documented to require one capture group.)
+        const id = match?.[1];
+        if (id !== undefined) {
           clearInterval(pollInterval);
-          const id = match[1];
           s.stop(options.foundMessage(id));
           for (const line of options.infoLines) {
             ui.info(line.replace('{id}', id));

@@ -1,10 +1,19 @@
+import { bootstrap } from '../../bootstrap.js';
 import { AGENT_PROVIDERS, type AgentProvider, isAgentProvider } from '../../core/agents.js';
+import type { Container } from '../../core/container.js';
 import { EvalMode, LoopId, LoopStatus, LoopStrategy, Priority } from '../../core/domain.js';
 import type { LoopService } from '../../core/interfaces.js';
 import { err, ok, type Result } from '../../core/result.js';
 import { toOptimizeDirection, truncatePrompt } from '../../utils/format.js';
 import { validatePath } from '../../utils/validation.js';
-import { exitOnError, exitOnNull, withReadOnlyContext, withServices } from '../services.js';
+import {
+  driveToCompletion,
+  isWorkerInvocation,
+  runDetached,
+  stripWorkerFlag,
+  waitForLoopCompletion,
+} from '../drive-helpers.js';
+import { errorMessage, exitOnError, exitOnNull, withReadOnlyContext, withServices } from '../services.js';
 import * as ui from '../ui.js';
 
 /**
@@ -405,52 +414,109 @@ export async function handleLoopCommand(subCmd: string | undefined, loopArgs: st
 // ============================================================================
 
 async function handleLoopCreate(loopArgs: string[]): Promise<void> {
-  const parsed = parseLoopCreateArgs(loopArgs);
+  const isWorker = isWorkerInvocation(loopArgs);
+  const cleanArgs = stripWorkerFlag(loopArgs);
+
+  const parsed = parseLoopCreateArgs(cleanArgs);
   if (!parsed.ok) {
     ui.error(parsed.error);
     process.exit(1);
   }
   const args = parsed.value;
 
-  const s = ui.createSpinner();
-  s.start('Creating loop...');
-  const { loopService } = await withServices(s);
-
-  const result = await loopService.createLoop({
-    prompt: args.isPipeline ? undefined : args.prompt,
-    strategy: args.strategy,
-    exitCondition: args.exitCondition || undefined,
-    evalMode: args.evalMode,
-    evalPrompt: args.evalPrompt,
-    evalDirection: toOptimizeDirection(args.evalDirection),
-    evalTimeout: args.evalTimeout,
-    workingDirectory: args.workingDirectory,
-    maxIterations: args.maxIterations,
-    maxConsecutiveFailures: args.maxConsecutiveFailures,
-    cooldownMs: args.cooldownMs,
-    freshContext: args.freshContext,
-    pipelineSteps: args.isPipeline ? args.pipelineSteps : undefined,
-    priority: args.priority ? Priority[args.priority] : undefined,
-    agent: args.agent,
-    gitBranch: args.gitBranch,
-    systemPrompt: args.systemPrompt,
-  });
-
-  const loop = exitOnError(result, s, 'Failed to create loop');
-  s.stop('Loop created');
-
-  ui.success(`Loop created: ${loop.id}`);
-  const details = [
-    `Strategy: ${loop.strategy}`,
-    `Status: ${loop.status}`,
-    `Max iterations: ${loop.maxIterations === 0 ? 'unlimited' : loop.maxIterations}`,
-  ];
-  if (loop.pipelineSteps && loop.pipelineSteps.length > 0) {
-    details.push(`Pipeline steps: ${loop.pipelineSteps.length}`);
+  // Default: detach a background worker that creates the loop AND drives its iterations
+  // to completion. Previously this bootstrapped mode='cli' and exited immediately, so the
+  // loop record was created but no worker ever ran (issue #205).
+  if (!isWorker) {
+    await runDetached({
+      command: 'loop',
+      args: cleanArgs,
+      logPrefix: 'loop',
+      idPattern: /Loop created:\s+(loop-\S+)/,
+      foundMessage: (id) => `Loop started: ${id}`,
+      infoLines: ['Check status: beat loop status {id}', 'Cancel:       beat loop cancel {id}'],
+      entityLabel: 'Loop',
+    });
+    return;
   }
-  if (args.agent) details.push(`Agent: ${args.agent}`);
-  ui.info(details.join(' | '));
-  process.exit(0);
+
+  // Worker path: bootstrap mode='run' (wires the tmux worker subsystem) and stay alive
+  // until the loop reaches a terminal state.
+  let container: Container | undefined;
+  const s = ui.createSpinner();
+  try {
+    s.start('Creating loop...');
+    const containerResult = await bootstrap({ mode: 'run' });
+    if (!containerResult.ok) {
+      s.stop('Failed to create loop');
+      ui.error(`Bootstrap failed: ${containerResult.error.message}`);
+      process.exit(1);
+    }
+    container = containerResult.value;
+
+    const loopServiceResult = container.get<LoopService>('loopService');
+    if (!loopServiceResult.ok) {
+      s.stop('Failed to create loop');
+      ui.error(`Failed to get loop service: ${loopServiceResult.error.message}`);
+      await container.dispose();
+      process.exit(1);
+    }
+    const loopService = loopServiceResult.value;
+
+    const result = await loopService.createLoop({
+      prompt: args.isPipeline ? undefined : args.prompt,
+      strategy: args.strategy,
+      exitCondition: args.exitCondition || undefined,
+      evalMode: args.evalMode,
+      evalPrompt: args.evalPrompt,
+      evalDirection: toOptimizeDirection(args.evalDirection),
+      evalTimeout: args.evalTimeout,
+      workingDirectory: args.workingDirectory,
+      maxIterations: args.maxIterations,
+      maxConsecutiveFailures: args.maxConsecutiveFailures,
+      cooldownMs: args.cooldownMs,
+      freshContext: args.freshContext,
+      pipelineSteps: args.isPipeline ? args.pipelineSteps : undefined,
+      priority: args.priority ? Priority[args.priority] : undefined,
+      agent: args.agent,
+      gitBranch: args.gitBranch,
+      systemPrompt: args.systemPrompt,
+    });
+
+    if (!result.ok) {
+      s.stop('Failed to create loop');
+      ui.error(`Failed to create loop: ${result.error.message}`);
+      await container.dispose();
+      process.exit(1);
+    }
+    const loop = result.value;
+    s.stop('Loop created');
+
+    // CRITICAL: "Loop created:" pattern is used by detach-mode polling.
+    ui.success(`Loop created: ${loop.id}`);
+    const details = [
+      `Strategy: ${loop.strategy}`,
+      `Status: ${loop.status}`,
+      `Max iterations: ${loop.maxIterations === 0 ? 'unlimited' : loop.maxIterations}`,
+    ];
+    if (loop.pipelineSteps && loop.pipelineSteps.length > 0) {
+      details.push(`Pipeline steps: ${loop.pipelineSteps.length}`);
+    }
+    if (args.agent) details.push(`Agent: ${args.agent}`);
+    ui.info(details.join(' | '));
+
+    await driveToCompletion({
+      container,
+      wait: () => waitForLoopCompletion(container as Container, loop.id),
+      onSigint: () => loopService.cancelLoop(loop.id, 'User interrupted (SIGINT)', true),
+      sigintMessage: '\nCancelling loop...\n',
+    });
+  } catch (error) {
+    s.stop('Failed to create loop');
+    ui.error(errorMessage(error));
+    if (container) await container.dispose();
+    process.exit(1);
+  }
 }
 
 // ============================================================================

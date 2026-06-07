@@ -75,8 +75,8 @@ beat init
 # Orchestrate -fire and forget
 beat orchestrate "Add real-time collaborative editing to the document editor"
 
-# Or run a single task in the foreground
-beat run "Fix the failing test in parser.test.ts" -f
+# Or run a single task in the background (detached)
+beat run "Fix the failing test in parser.test.ts"
 ```
 
 ## Orchestrate Mode
@@ -367,7 +367,7 @@ beat orchestrate status <id>          Orchestration details
 beat orchestrate list                 List orchestrations
 beat orchestrate cancel <id>          Cancel orchestration
 
-beat run <prompt> [options]           Single task (detached or -f foreground)
+beat run <prompt> [options]           Single task (always detached; check logs or dashboard for output)
 beat list                             List tasks
 beat status [id]                      Task status
 beat logs <id>                        Task logs

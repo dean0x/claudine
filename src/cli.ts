@@ -26,9 +26,10 @@ import { handleOrchestrateCommand } from './cli/commands/orchestrate.js';
 import { handlePipelineCommand } from './cli/commands/pipeline.js';
 import { handleResumeCommand } from './cli/commands/resume.js';
 import { retryTask } from './cli/commands/retry.js';
-import { handleDetachMode, runTask } from './cli/commands/run.js';
+import { handleRunDetach, runTask } from './cli/commands/run.js';
 import { handleScheduleCommand } from './cli/commands/schedule.js';
 import { getTaskStatus } from './cli/commands/status.js';
+import { isWorkerInvocation, stripWorkerFlag } from './cli/drive-helpers.js';
 import * as ui from './cli/ui.js';
 import { AGENT_PROVIDERS, isAgentProvider } from './core/agents.js';
 import { VERSION } from './generated/version.js';
@@ -62,12 +63,11 @@ if (mainCommand === 'mcp') {
   }
 } else if (mainCommand === 'run') {
   const runArgs = args.slice(1);
-  const hasForeground = runArgs.includes('--foreground') || runArgs.includes('-f');
 
-  if (!hasForeground) {
-    await handleDetachMode(runArgs);
+  if (!isWorkerInvocation(runArgs)) {
+    await handleRunDetach(runArgs);
   } else {
-    const foregroundArgs = runArgs.filter((arg) => arg !== '--foreground' && arg !== '-f');
+    const workerArgs = stripWorkerFlag(runArgs);
 
     const options: {
       priority?: 'P0' | 'P1' | 'P2';
@@ -83,11 +83,11 @@ if (mainCommand === 'mcp') {
 
     let promptWords: string[] = [];
 
-    for (let i = 0; i < foregroundArgs.length; i++) {
-      const arg = foregroundArgs[i];
+    for (let i = 0; i < workerArgs.length; i++) {
+      const arg = workerArgs[i];
 
       if (arg === '--priority' || arg === '-p') {
-        const next = foregroundArgs[i + 1];
+        const next = workerArgs[i + 1];
         if (next && ['P0', 'P1', 'P2'].includes(next)) {
           options.priority = next as 'P0' | 'P1' | 'P2';
           i++;
@@ -96,7 +96,7 @@ if (mainCommand === 'mcp') {
           process.exit(1);
         }
       } else if (arg === '--working-directory' || arg === '-w') {
-        const next = foregroundArgs[i + 1];
+        const next = workerArgs[i + 1];
         if (next && !next.startsWith('-')) {
           const pathResult = validatePath(next);
           if (!pathResult.ok) {
@@ -110,7 +110,7 @@ if (mainCommand === 'mcp') {
           process.exit(1);
         }
       } else if (arg === '--depends-on' || arg === '--deps') {
-        const next = foregroundArgs[i + 1];
+        const next = workerArgs[i + 1];
         if (next && !next.startsWith('-')) {
           const taskIds = next
             .split(',')
@@ -127,7 +127,7 @@ if (mainCommand === 'mcp') {
           process.exit(1);
         }
       } else if (arg === '--continue-from' || arg === '--continue' || arg === '-c') {
-        const next = foregroundArgs[i + 1];
+        const next = workerArgs[i + 1];
         if (next && !next.startsWith('-')) {
           options.continueFrom = next;
           i++;
@@ -136,7 +136,7 @@ if (mainCommand === 'mcp') {
           process.exit(1);
         }
       } else if (arg === '--timeout' || arg === '-t') {
-        const next = foregroundArgs[i + 1];
+        const next = workerArgs[i + 1];
         const timeout = parseInt(next);
         const timeoutResult = validateTimeout(timeout);
         if (!timeoutResult.ok) {
@@ -146,7 +146,7 @@ if (mainCommand === 'mcp') {
         options.timeout = timeoutResult.value;
         i++;
       } else if (arg === '--max-output-buffer' || arg === '--buffer' || arg === '-b') {
-        const next = foregroundArgs[i + 1];
+        const next = workerArgs[i + 1];
         const buffer = parseInt(next);
         const bufferResult = validateBufferSize(buffer);
         if (!bufferResult.ok) {
@@ -156,7 +156,7 @@ if (mainCommand === 'mcp') {
         options.maxOutputBuffer = bufferResult.value;
         i++;
       } else if (arg === '--agent' || arg === '-a') {
-        const next = foregroundArgs[i + 1];
+        const next = workerArgs[i + 1];
         if (next && !next.startsWith('-')) {
           if (!isAgentProvider(next)) {
             ui.error(`Unknown agent: "${next}". Available agents: ${AGENT_PROVIDERS.join(', ')}`);
@@ -169,7 +169,7 @@ if (mainCommand === 'mcp') {
           process.exit(1);
         }
       } else if (arg === '--model' || arg === '-m') {
-        const next = foregroundArgs[i + 1];
+        const next = workerArgs[i + 1];
         if (next && !next.startsWith('-')) {
           options.model = next;
           i++;
@@ -178,7 +178,7 @@ if (mainCommand === 'mcp') {
           process.exit(1);
         }
       } else if (arg === '--system-prompt') {
-        const next = foregroundArgs[i + 1];
+        const next = workerArgs[i + 1];
         if (next !== undefined) {
           options.systemPrompt = next;
           i++;
@@ -200,7 +200,6 @@ if (mainCommand === 'mcp') {
       process.stderr.write(
         [
           'Options:',
-          '  -f, --foreground              Stream output and wait for completion',
           '  -p, --priority P0|P1|P2      Task priority (P0=critical, P1=high, P2=normal)',
           '  -w, --working-directory DIR   Working directory for task execution',
           '  -a, --agent AGENT            AI agent to use (claude, codex)',
@@ -210,8 +209,7 @@ if (mainCommand === 'mcp') {
           '  --max-output-buffer BYTES     Maximum output buffer size',
           '',
           'Examples:',
-          '  beat run "refactor auth"                     # Fire-and-forget (default)',
-          '  beat run "quick fix" --foreground            # Stream output, wait',
+          '  beat run "refactor auth"                     # Runs in the background',
           '  beat run "analyze code" --agent codex        # Use Codex instead of Claude',
           '  beat run "analyze code" --model claude-opus-4-5  # Use specific model',
           '',
@@ -266,13 +264,14 @@ if (mainCommand === 'mcp') {
   const reason = args.slice(2).join(' ') || undefined;
   await cancelTask(taskId, reason);
 } else if (mainCommand === 'retry') {
-  const taskId = args[1];
+  const retryArgs = args.slice(1);
+  const taskId = stripWorkerFlag(retryArgs).find((a) => !a.startsWith('-'));
   if (!taskId) {
     ui.error('Usage: beat retry <task-id>');
     process.exit(1);
   }
 
-  await retryTask(taskId);
+  await retryTask(taskId, isWorkerInvocation(retryArgs));
 } else if (mainCommand === 'list' || mainCommand === 'ls') {
   await getTaskStatus(undefined);
 } else if (mainCommand === 'schedule') {
@@ -315,19 +314,25 @@ if (mainCommand === 'mcp') {
     process.exit(1);
   }
 } else if (mainCommand === 'resume') {
-  const taskId = args[1];
+  const resumeArgs = stripWorkerFlag(args.slice(1));
+
+  let additionalContext: string | undefined;
+  const contextIndex = resumeArgs.indexOf('--context');
+  if (contextIndex !== -1 && resumeArgs[contextIndex + 1]) {
+    additionalContext = resumeArgs[contextIndex + 1];
+  }
+
+  // Find the positional task id, skipping any flag AND the --context value. A bare
+  // `find(a => !a.startsWith('-'))` would mis-pick the --context value when the flag is
+  // passed before the task id (`beat resume --context "..." task-99`).
+  const contextValueIndex = contextIndex === -1 ? -1 : contextIndex + 1;
+  const taskId = resumeArgs.find((a, i) => i !== contextValueIndex && !a.startsWith('-'));
   if (!taskId) {
     ui.error('Usage: beat resume <task-id> [--context "additional instructions"]');
     process.exit(1);
   }
 
-  let additionalContext: string | undefined;
-  const contextIndex = args.indexOf('--context');
-  if (contextIndex !== -1 && args[contextIndex + 1]) {
-    additionalContext = args[contextIndex + 1];
-  }
-
-  await handleResumeCommand(taskId, additionalContext);
+  await handleResumeCommand(taskId, additionalContext, isWorkerInvocation(args.slice(1)));
 } else if (mainCommand === 'init') {
   await initCommand(args.slice(1));
 } else if (mainCommand === 'config') {

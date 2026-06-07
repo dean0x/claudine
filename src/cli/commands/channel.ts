@@ -9,12 +9,22 @@
  * names are valid tmux session name suffixes (no transformation required).
  */
 
+import { bootstrap } from '../../bootstrap.js';
 import { AGENT_PROVIDERS, type AgentProvider, isAgentProvider } from '../../core/agents.js';
+import type { Container } from '../../core/container.js';
 import { CHANNEL_NAME_REGEX, ChannelId, ChannelStatus, type CommunicationMode } from '../../core/domain.js';
 import type { ChannelRepository, ChannelService } from '../../core/interfaces.js';
 import { err, ok, type Result } from '../../core/result.js';
+import type { TmuxSessionManagerCorePort } from '../../core/tmux-types.js';
 import { validatePath } from '../../utils/validation.js';
-import { exitOnError, exitOnNull, withReadOnlyContext, withServices } from '../services.js';
+import {
+  driveToCompletion,
+  isWorkerInvocation,
+  runDetached,
+  stripWorkerFlag,
+  waitForChannelCompletion,
+} from '../drive-helpers.js';
+import { errorMessage, exitOnError, exitOnNull, withReadOnlyContext, withServices } from '../services.js';
 import * as ui from '../ui.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -338,53 +348,117 @@ async function resolveChannelId(
 
 // ─── Create ──────────────────────────────────────────────────────────────────
 
+/**
+ * `beat channel create <name> ...` — create a channel and host its routing engine.
+ *
+ * ARCHITECTURE (issue #205): self-contained, no MCP server required. Previously this
+ * bootstrapped mode='cli', spawned the member tmux sessions, then process.exit(0) — which
+ * tore down the in-process routing engine (TmuxConnector staleness timer + watchers +
+ * ChannelHandler), leaving orphaned sessions and no inter-member message routing. Now the
+ * default invocation detaches a mode='run' worker that hosts the routing engine for the
+ * channel's whole life: it stays alive until the channel is destroyed (a bounded
+ * maxRounds channel destroys itself at the round limit; an open-ended channel is destroyed
+ * by `beat channel destroy`). The detached worker IS the host — no separate daemon.
+ *
+ * NOTE: Exactly one host per channel. If a separate MCP server is also attached to the same
+ * channel's tmux sessions, both would route messages (double-delivery); a single-owner lease
+ * is tracked as future work.
+ */
 async function handleChannelCreate(args: string[]): Promise<void> {
-  const parsed = parseChannelCreateArgs(args);
+  const isWorker = isWorkerInvocation(args);
+  const cleanArgs = stripWorkerFlag(args);
+
+  const parsed = parseChannelCreateArgs(cleanArgs);
   if (!parsed.ok) {
     ui.error(parsed.error);
     process.exit(1);
   }
   const createArgs = parsed.value;
 
-  const s = ui.createSpinner();
-  s.start('Creating channel...');
-  const { container, resolveChannelService } = await withServices(s);
-  const channelService = await resolveChannelService();
-
-  if (!channelService) {
-    s.stop('Failed');
-    await container.dispose();
-    ui.error('Channel service unavailable. Ensure the server is properly configured.');
-    process.exit(1);
+  if (!isWorker) {
+    await runDetached({
+      command: 'channel',
+      args: cleanArgs,
+      logPrefix: 'channel',
+      idPattern: /Channel created:\s+(ch-\S+)/,
+      foundMessage: (id) => `Channel started: ${id}`,
+      infoLines: [
+        'Send a message: beat msg ' + createArgs.name + ' "<text>"',
+        'Status:         beat channel status {id}',
+      ],
+      entityLabel: 'Channel',
+    });
+    return;
   }
 
-  const members =
-    createArgs.mode === 'single'
-      ? [{ name: createArgs.name, agent: createArgs.agent as AgentProvider, systemPrompt: createArgs.systemPrompt }]
-      : createArgs.members.map((m) => ({
-          name: m.name,
-          agent: m.agent as AgentProvider,
-          systemPrompt: m.systemPrompt,
-        }));
+  // Worker path: bootstrap mode='run' so the routing engine + worker subsystem stay alive.
+  let container: Container | undefined;
+  const s = ui.createSpinner();
+  try {
+    s.start('Creating channel...');
+    const containerResult = await bootstrap({ mode: 'run' });
+    if (!containerResult.ok) {
+      s.stop('Failed');
+      ui.error(`Bootstrap failed: ${containerResult.error.message}`);
+      process.exit(1);
+    }
+    container = containerResult.value;
 
-  const result = await channelService.createChannel({
-    name: createArgs.name,
-    members,
-    communicationMode: createArgs.mode === 'multi' ? createArgs.communicationMode : undefined,
-    maxRounds: createArgs.mode === 'multi' ? createArgs.maxRounds : undefined,
-    topic: createArgs.topic,
-    workingDirectory: createArgs.workingDirectory,
-  });
+    const channelServiceResult = await container.resolve<ChannelService>('channelService');
+    if (!channelServiceResult.ok) {
+      s.stop('Failed');
+      ui.error(`Channel service unavailable: ${channelServiceResult.error.message}`);
+      await container.dispose();
+      process.exit(1);
+    }
+    const channelService = channelServiceResult.value;
 
-  const channel = exitOnError(result, s, 'Failed to create channel');
-  s.stop('Channel created');
+    const members =
+      createArgs.mode === 'single'
+        ? [{ name: createArgs.name, agent: createArgs.agent as AgentProvider, systemPrompt: createArgs.systemPrompt }]
+        : createArgs.members.map((m) => ({
+            name: m.name,
+            agent: m.agent as AgentProvider,
+            systemPrompt: m.systemPrompt,
+          }));
 
-  ui.success(`Channel created: ${channel.id}`);
-  const details = [`Name: ${channel.name}`, `Members: ${channel.members.length}`, `Status: ${channel.status}`];
-  if (channel.communicationMode) details.push(`Mode: ${channel.communicationMode}`);
-  if (channel.maxRounds !== undefined) details.push(`Max rounds: ${channel.maxRounds}`);
-  ui.info(details.join(' | '));
-  process.exit(0);
+    const result = await channelService.createChannel({
+      name: createArgs.name,
+      members,
+      communicationMode: createArgs.mode === 'multi' ? createArgs.communicationMode : undefined,
+      maxRounds: createArgs.mode === 'multi' ? createArgs.maxRounds : undefined,
+      topic: createArgs.topic,
+      workingDirectory: createArgs.workingDirectory,
+    });
+
+    if (!result.ok) {
+      s.stop('Failed');
+      ui.error(`Failed to create channel: ${result.error.message}`);
+      await container.dispose();
+      process.exit(1);
+    }
+    const channel = result.value;
+    s.stop('Channel created');
+
+    // CRITICAL: "Channel created:" pattern is used by detach-mode polling.
+    ui.success(`Channel created: ${channel.id}`);
+    const details = [`Name: ${channel.name}`, `Members: ${channel.members.length}`, `Status: ${channel.status}`];
+    if (channel.communicationMode) details.push(`Mode: ${channel.communicationMode}`);
+    if (channel.maxRounds !== undefined) details.push(`Max rounds: ${channel.maxRounds}`);
+    ui.info(details.join(' | '));
+
+    await driveToCompletion({
+      container,
+      wait: () => waitForChannelCompletion(container as Container, channel.id),
+      onSigint: () => channelService.destroyChannel(channel.id, 'user-requested'),
+      sigintMessage: '\nDestroying channel...\n',
+    });
+  } catch (error) {
+    s.stop('Failed');
+    ui.error(errorMessage(error));
+    if (container) await container.dispose();
+    process.exit(1);
+  }
 }
 
 // ─── List ─────────────────────────────────────────────────────────────────────
@@ -523,6 +597,7 @@ async function resolveChannelOp(
   idOrName: string,
   spinnerMsg: string,
 ): Promise<{
+  container: Container;
   channelService: ChannelService;
   channelId: ChannelId;
   s: ReturnType<typeof ui.createSpinner>;
@@ -556,7 +631,7 @@ async function resolveChannelOp(
     process.exit(1);
   }
 
-  return { channelService, channelId, s };
+  return { container, channelService, channelId, s };
 }
 
 // ─── Destroy ─────────────────────────────────────────────────────────────────
@@ -568,9 +643,42 @@ async function handleChannelDestroy(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const { channelService, channelId, s } = await resolveChannelOp(idOrName, 'Destroying channel...');
+  const { container, channelService, channelId, s } = await resolveChannelOp(idOrName, 'Destroying channel...');
+
+  // Capture member tmux session names BEFORE destroy so we can tear them down by name.
+  // ARCHITECTURE (issue #205): this `beat channel destroy` runs in a fresh mode='cli' process
+  // whose in-memory ChannelManager.memberHandles map is empty, so destroyChannel's own
+  // session-kill loop is a no-op cross-process — it would flip the DB to DESTROYED and emit
+  // ChannelDestroyed on THIS process's bus while orphaning the live member sessions the
+  // detached host worker spawned. Mirror `beat cancel`: kill each member session directly by
+  // its persisted name (idempotent). The host worker observes DESTROYED via its DB-status poll
+  // (waitForChannelCompletion) and exits cleanly.
+  let memberSessions: readonly string[] = [];
+  const channelRepoResult = container.get<ChannelRepository>('channelRepository');
+  if (channelRepoResult.ok) {
+    const channelResult = await channelRepoResult.value.findById(channelId);
+    if (channelResult.ok && channelResult.value) {
+      memberSessions = channelResult.value.members.map((m) => m.tmuxSession);
+    }
+  }
+
   const result = await channelService.destroyChannel(channelId, 'user-requested');
   exitOnError(result, s, 'Failed to destroy channel');
+
+  // Kill member tmux sessions directly (destroySession is idempotent). The session manager is
+  // absent when a custom TmuxConnector is injected (tests) — skip the kill then.
+  if (memberSessions.length > 0) {
+    const sessionManagerResult = container.get<TmuxSessionManagerCorePort>('tmuxSessionManager');
+    if (sessionManagerResult.ok) {
+      for (const sessionName of memberSessions) {
+        const destroyResult = sessionManagerResult.value.destroySession(sessionName);
+        if (!destroyResult.ok) {
+          ui.info(`Warning: failed to destroy tmux session ${sessionName}: ${destroyResult.error.message}`);
+        }
+      }
+    }
+  }
+
   s.stop('Destroyed');
   ui.success(`Channel ${idOrName} destroyed`);
   process.exit(0);

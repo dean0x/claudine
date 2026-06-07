@@ -1,22 +1,26 @@
 /**
- * Unit tests for waitForLoopCompletion
- * ARCHITECTURE: Tests the extracted event subscription + wait logic
- * that monitors loop lifecycle events in foreground orchestration mode.
+ * Unit tests for waitForLoopCompletion (shared drive-helpers waiter).
+ * ARCHITECTURE: foreground orchestration now reuses the shared bounded-execution
+ * waiter (issue #205) instead of a bespoke local copy; these tests pin its lifecycle
+ * behavior. On LoopCompleted the waiter re-reads the loop's terminal status (the event
+ * carries no status) and maps FAILED→1, otherwise →0; the mock container provides a
+ * loopRepository so these tests exercise that authoritative path.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { waitForLoopCompletion } from '../../../src/cli/commands/orchestrate.js';
+import { waitForLoopCompletion } from '../../../src/cli/drive-helpers.js';
 import { loadConfiguration } from '../../../src/core/configuration.js';
 import type { Container } from '../../../src/core/container.js';
-import { LoopId } from '../../../src/core/domain.js';
+import { LoopId, LoopStatus } from '../../../src/core/domain.js';
 import { InMemoryEventBus } from '../../../src/core/events/event-bus.js';
 import { err, ok } from '../../../src/core/result.js';
 import { createMockLogger } from '../../fixtures/mocks.js';
 
-function createMockContainer(eventBus: InMemoryEventBus): Container {
+function createMockContainer(eventBus: InMemoryEventBus, loopStatus: LoopStatus = LoopStatus.COMPLETED): Container {
   return {
     get: (key: string) => {
       if (key === 'eventBus') return ok(eventBus);
+      if (key === 'loopRepository') return ok({ findById: async () => ok({ status: loopStatus }) });
       return err(new Error(`Unknown key: ${key}`));
     },
   } as unknown as Container;

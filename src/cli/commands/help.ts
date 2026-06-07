@@ -24,8 +24,7 @@ ${bold('MCP Server Commands:')}
   ${cyan('mcp config')}             Show MCP configuration for Claude
 
 ${bold('Task Commands:')}
-  ${cyan('run')} <prompt> [options]       Delegate a task (fire-and-forget; runs in current directory)
-    -f, --foreground           Stream output and wait for task completion
+  ${cyan('run')} <prompt> [options]       Delegate a task (runs in the background; current directory)
     -p, --priority P0|P1|P2    Task priority (P0=critical, P1=high, P2=normal)
     -w, --working-directory D  Working directory for task execution
     -a, --agent AGENT          AI agent to use (claude, codex)
@@ -91,7 +90,7 @@ ${bold('Orchestrate Commands:')}
   ${cyan('orchestrate cancel')} <id> [reason]   Cancel orchestration
 
 ${bold('Pipeline Commands:')}
-  ${cyan('pipeline')} <prompt> [<prompt>]...   Create chained one-time schedules
+  ${cyan('pipeline')} <prompt> [<prompt>]...   Run steps sequentially as dependency-chained tasks (executes immediately, no schedule)
     Example: pipeline "set up db" "run migrations" "seed data"
 
 ${bold('Loop Commands:')}
@@ -148,8 +147,7 @@ ${bold('Examples:')}
   beat init                                            # Interactive setup
   beat init --agent claude                            # Non-interactive (CI/scripting)
   beat mcp start                                      # Start MCP server
-  beat run "analyze this codebase"                    # Fire-and-forget (default)
-  beat run "fix the bug" --foreground                 # Stream output, wait
+  beat run "analyze this codebase"                    # Runs in the background
   beat run "analyze code" --agent codex               # Use Codex instead of Claude
   beat run "run tests" --deps task-abc123             # Wait for dependency
   beat agents list                                    # List available agents

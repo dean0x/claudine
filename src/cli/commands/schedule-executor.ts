@@ -20,8 +20,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { bootstrap } from '../../bootstrap.js';
-import { ScheduleStatus } from '../../core/domain.js';
-import type { ScheduleRepository } from '../../core/interfaces.js';
+import { LoopStatus, PipelineStatus, ScheduleStatus } from '../../core/domain.js';
+import type { LoopRepository, PipelineRepository, ScheduleRepository } from '../../core/interfaces.js';
 import type { Result } from '../../core/result.js';
 import { err, ok } from '../../core/result.js';
 
@@ -187,24 +187,63 @@ export function registerSignalHandlers(
 }
 
 /**
+ * Returns true if the executor is hosting in-flight loop/pipeline work that exiting would
+ * abandon.
+ *
+ * DECISION (issue #205): a ONE_TIME schedule flips to COMPLETED the instant it fires — long
+ * before the loop/pipeline it launched finishes — so "no active schedules" is NOT a safe idle
+ * signal on its own. Scheduled loops/pipelines are driven IN-PROCESS by this executor's
+ * handlers, and the idle exit calls process.exit() (no graceful drain), so tearing the executor
+ * down mid-flight stops all further iterations/steps. Gate the idle exit on RUNNING loops and
+ * PENDING/RUNNING pipelines too. Conservative: a repository read error counts as "busy" so a
+ * transient failure never abandons live work. PAUSED loops are intentionally excluded — they are
+ * not progressing in-process, so holding the executor open for them would be its own leak.
+ */
+export async function hasInFlightWork(loopRepo: LoopRepository, pipelineRepo: PipelineRepository): Promise<boolean> {
+  const runningLoops = await loopRepo.findByStatus(LoopStatus.RUNNING);
+  if (!runningLoops.ok || runningLoops.value.length > 0) return true;
+  const pendingPipelines = await pipelineRepo.findByStatus(PipelineStatus.PENDING);
+  if (!pendingPipelines.ok || pendingPipelines.value.length > 0) return true;
+  const runningPipelines = await pipelineRepo.findByStatus(PipelineStatus.RUNNING);
+  if (!runningPipelines.ok || runningPipelines.value.length > 0) return true;
+  return false;
+}
+
+/**
  * Start the idle-check interval loop.
- * Calls onIdle() and returns the timer handle when no active schedules remain.
- * The caller is responsible for clearing the timer (or calling onIdle to exit).
+ * Calls onIdle() and returns the timer handle when no active schedules remain AND no in-flight
+ * loop/pipeline work is hosted. The caller is responsible for clearing the timer (or calling
+ * onIdle to exit).
  *
  * DECISION: Extracted for testability — works with fake timers in tests.
  * Returns NodeJS.Timeout so callers can unref() or clearInterval().
+ *
+ * @param hasInFlightWork resolves true when the executor is hosting work an exit would abandon
+ *   (issue #205). Defaults to "never busy" so callers that only run bare schedules — and the
+ *   existing tests — keep the original semantics.
  */
 export function startIdleCheckLoop(
   scheduleRepo: ScheduleRepository,
   intervalMs: number,
   onIdle: () => void,
   warn: (message: string) => void,
+  hasInFlightWork: () => Promise<boolean> = async () => false,
 ): NodeJS.Timeout {
   return setInterval(async () => {
     const hasActiveResult = await checkActiveSchedules(scheduleRepo);
     if (hasActiveResult.ok && !hasActiveResult.value) {
-      warn('Schedule executor: no active schedules — exiting');
-      onIdle();
+      // No active schedules — but a one-time schedule may have launched a loop/pipeline still
+      // iterating in THIS process. Exiting now would abandon it (issue #205). Stay alive if so.
+      let busy: boolean;
+      try {
+        busy = await hasInFlightWork();
+      } catch {
+        busy = true; // conservative: on a check error, stay alive rather than abandon work
+      }
+      if (!busy) {
+        warn('Schedule executor: no active schedules — exiting');
+        onIdle();
+      }
     }
     // On error: stay alive (conservative) — do nothing
   }, intervalMs);
@@ -271,6 +310,10 @@ export async function handleScheduleExecutor(): Promise<void> {
     cleanup();
     process.exit(1);
   }
+  // issue #205: keep the executor alive while it is hosting in-flight scheduled loops/pipelines,
+  // not just while schedules are ACTIVE — a one-time schedule completes the moment it fires.
+  const loopRepoResult = container.get<LoopRepository>('loopRepository');
+  const pipelineRepoResult = container.get<PipelineRepository>('pipelineRepository');
   const idleCheckTimer = startIdleCheckLoop(
     scheduleRepoResult.value,
     IDLE_CHECK_INTERVAL_MS,
@@ -280,6 +323,11 @@ export async function handleScheduleExecutor(): Promise<void> {
       process.exit(0);
     },
     (msg) => process.stderr.write(`${msg}\n`),
+    async () => {
+      // Can't read a repo → assume busy and stay alive rather than abandon possible work.
+      if (!loopRepoResult.ok || !pipelineRepoResult.ok) return true;
+      return hasInFlightWork(loopRepoResult.value, pipelineRepoResult.value);
+    },
   );
 
   // Allow the process to exit naturally if idle check timer is the only thing keeping it alive

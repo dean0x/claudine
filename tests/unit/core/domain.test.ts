@@ -96,6 +96,18 @@ describe('Domain Models - REAL Behavior Tests', () => {
       const task = createTask({ prompt: 'regular task' });
       expect(task.persistentSessionKey).toBeUndefined();
     });
+
+    // ISSUE #205: a caller (e.g. `beat pipeline`) can pre-assign the id so it can persist a
+    // correlating record before delegating the task.
+    it('honors a caller-supplied id', () => {
+      const task = createTask({ prompt: 'pipeline step', id: TaskId('task-preassigned-123') });
+      expect(task.id).toBe('task-preassigned-123');
+    });
+
+    it('generates a fresh id when none is supplied', () => {
+      const task = createTask({ prompt: 'auto id' });
+      expect(task.id).toMatch(/^task-[a-f0-9-]+$/);
+    });
   });
 
   describe('updateTask', () => {
