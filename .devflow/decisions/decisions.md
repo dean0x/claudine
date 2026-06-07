@@ -1,4 +1,4 @@
-<!-- TL;DR: 8 decisions. Key: ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008 -->
+<!-- TL;DR: 9 decisions. Key: ADR-005, ADR-006, ADR-007, ADR-008, ADR-009 -->
 # Architecture Decision Records
 
 Explicit design choices and trade-offs made during development.
@@ -66,3 +66,12 @@ Explicit design choices and trade-offs made during development.
 - **Rationale**: If recovery did not complete, stale `RUNNING` tasks have not been cleaned up. Proceeding in that state could trigger the exact race the fix was designed to eliminate. Failing loudly is correct; the caller can surface the error and exit.
 - **Status**: Active
 - **Source**: sidecar:obs_k7p4m1
+
+## ADR-009: Autobeat is CLI-first; the MCP server is parity-only and a candidate for removal — all functionality must work without an MCP server running
+
+- **Date**: 2026-06-07
+- **Status**: Accepted
+- **Context**: E2E testing of v1.5.2 revealed that nearly every mutating CLI command (loop, pipeline, channel, msg, schedule create, cancel, retry, resume) is silently MCP-server-only — each writes records to SQLite then calls process.exit(0), leaving no executor process alive to consume the emitted events. Only beat run works standalone, because it uses spawnDetachedProcess() to re-run itself with --foreground in run mode and stays alive on waitForTaskCompletion(). decision: pivot autobeat to a CLI-first architecture in which every command works standalone regardless of whether an MCP server is running. The MCP server is retained only for convention/parity and is an explicit candidate for complete removal. The fix model is to give every mutating command the same detach/foreground keep-alive mechanism beat run already uses, so each command keeps a process alive long enough to drive its handlers to completion. rationale: the CLI is the primary intended usage surface for the product. Designing features that assume a long-lived MCP server is always running is backwards for a CLI-first tool and produced an entire class of commands that appear to succeed (DB record created) but silently do nothing. Making the CLI self-sufficient eliminates the hidden MCP dependency. User explicitly directed this direction and authorized refactoring out the MCP server
+- **Decision**: pivot autobeat to a CLI-first architecture in which every command works standalone regardless of whether an MCP server is running. The MCP server is retained only for convention/parity and is an explicit candidate for complete removal. The fix model is to give every mutating command the same detach/foreground keep-alive mechanism beat run already uses, so each command keeps a process alive long enough to drive its handlers to completion. rationale: the CLI is the primary intended usage surface for the product. Designing features that assume a long-lived MCP server is always running is backwards for a CLI-first tool and produced an entire class of commands that appear to succeed (DB record created) but silently do nothing. Making the CLI self-sufficient eliminates the hidden MCP dependency. User explicitly directed this direction and authorized refactoring out the MCP server
+- **Consequences**: the CLI is the primary intended usage surface for the product. Designing features that assume a long-lived MCP server is always running is backwards for a CLI-first tool and produced an entire class of commands that appear to succeed (DB record created) but silently do nothing. Making the CLI self-sufficient eliminates the hidden MCP dependency. User explicitly directed this direction and authorized refactoring out the MCP server
+- **Source**: self-learning:obs_p7r2x9
