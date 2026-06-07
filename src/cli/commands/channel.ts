@@ -381,7 +381,10 @@ async function handleChannelCreate(args: string[]): Promise<void> {
       logPrefix: 'channel',
       idPattern: /Channel created:\s+(ch-\S+)/,
       foundMessage: (id) => `Channel started: ${id}`,
-      infoLines: ['Send a message: beat msg ' + createArgs.name + ' "<text>"', 'Status:         beat channel status {id}'],
+      infoLines: [
+        'Send a message: beat msg ' + createArgs.name + ' "<text>"',
+        'Status:         beat channel status {id}',
+      ],
       entityLabel: 'Channel',
     });
     return;

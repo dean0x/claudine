@@ -37,7 +37,13 @@ import type {
   TaskTimeoutEvent,
 } from '../core/events/events.js';
 import type { LoopRepository } from '../core/interfaces.js';
-import { createDetachLogDir, createDetachLogFile, type DetachPollOptions, pollLogFileForId, spawnDetachedProcess } from './detach-helpers.js';
+import {
+  createDetachLogDir,
+  createDetachLogFile,
+  type DetachPollOptions,
+  pollLogFileForId,
+  spawnDetachedProcess,
+} from './detach-helpers.js';
 import * as ui from './ui.js';
 
 /**

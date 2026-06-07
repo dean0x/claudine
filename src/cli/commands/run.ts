@@ -147,7 +147,7 @@ export async function runTask(
     // Drive the task to completion (SIGINT cancels), then dispose + exit.
     await driveToCompletion({
       container,
-      wait: () => waitForTaskCompletion(container, task.id),
+      wait: () => waitForTaskCompletion(container as Container, task.id),
       onSigint: () => {
         taskManager.cancel(task.id, 'User interrupted (SIGINT)');
       },
